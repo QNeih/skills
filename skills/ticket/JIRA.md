@@ -59,7 +59,7 @@ Set the fix version and the status, each only if missing.
    ```bash
    python3 ${CLAUDE_SKILL_DIR}/fetch_attachments.py --site <site> --cloud-id <cloudId> <id> <folder>/attachments
    ```
-   It prints one `saved` or `skipped` line per attachment. `skipped` (over 20 MB) → ask Quinn; rerun with `--max-mb <n>` if he agrees. `error:` → relay its setup hint and ask Quinn to paste each image into the chat instead.
+   It prints one `saved` or `skipped` line per attachment. `skipped` (over 20 MB) → ask Quinn; rerun with `--max-mb <n>` if Quinn agrees. `error:` → relay its setup hint and ask Quinn to paste each image into the chat instead.
 3. **Look** at every saved file: images and PDFs with Read, `.xlsx` / `.docx` / `.pptx` with their skill. Write down what it shows: every number, label and marked spot the ticket's argument rests on. A ticket whose screenshot you have not looked at is not imported.
 4. Fill the template:
    - Title: the summary. `ref:` the id. `board:` `<site>/browse/<id>`.

@@ -49,7 +49,7 @@ State: `<state dir>/teams.json`; absent → start from `{}`. Shape:
 2. **Search** `chat_message_search` with `query: "*"`, `afterDateTime: <since, ISO local>`, `limit: 25`; page with `offset: <nextOffset>` until none comes back. Group the results by chat or channel.
 3. **Waiting**, per chat:
    - 1:1 chat: its latest message isn't Quinn's and isn't a bare acknowledgement ("ok", "thanks", 👍).
-   - Group chat or channel: a message naming Quinn (an @mention, his name, or a quoted reply to him) with no later message from Quinn in that chat.
+   - Group chat or channel: a message naming Quinn (an @mention, Quinn's name, or a quoted reply to Quinn) with no later message from Quinn in that chat.
 4. **Open items**: drop every `open` item whose chat has a message from Quinn after the item's `at`. Add each new waiting message; a 1:1 chat keeps only its latest item. Open items stay until Quinn writes in that chat, so they repeat on every run.
 5. **Names**: for each chat or channel id of an open item not in `names`:
    - Chats: `teams_list_chats`, paging with `cursor` until every missing chat id is found. Name = the topic, else the 1:1 partner's display name.
