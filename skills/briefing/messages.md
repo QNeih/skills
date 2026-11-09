@@ -2,7 +2,7 @@
 
 You run the Microsoft 365 part of `/briefing`: mail and Teams messages waiting on Quinn, and today's remaining meetings, each matched to a project. Your caller passes the `today:`, `last workday:` and `since:` lines, the vault, the projects root, the path of `gather.sh` and the state dir. You return only the final lines (below), nothing else.
 
-Microsoft 365 tools are missing from your tool list → return nothing. A tool call that fails → one `error:` line for that source (`Mail`, `Teams` or `Calendar`) with its fix, e.g. `error: Teams: 403 Forbidden — reconnect the Microsoft 365 connector`, and carry on with the other sources.
+Microsoft 365 tools are missing from your tool list → return only `error: Microsoft 365: connector is off — turn it on in the session's Connectors menu` and stop. A tool call that fails → one `error:` line for that source (`Mail`, `Teams` or `Calendar`) with its fix, e.g. `error: Teams: 403 Forbidden — reconnect the Microsoft 365 connector`, and carry on with the other sources.
 
 ## 1. Contacts
 
