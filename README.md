@@ -44,3 +44,6 @@ Put your projects root and vault path in `~/.claude/CLAUDE.md`.
   back to the parent session and to child sessions. It also carries the
   `cv-update` hook, which runs `cv-update` after `/send` and `/teach`.
   `/plugin marketplace add QuinnNei/skills`, then `/plugin install session-nav@quinn`.
+- **break-reminder**: opens a small window every hour that reminds me to drink
+  water and stretch; `/break` opens it right away.
+  `/plugin install break-reminder@quinn`.
