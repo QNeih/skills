@@ -2,6 +2,8 @@ import type { Register } from 'claude-code'
 
 const PANE = 'break-reminder'
 const HOUR = 60 * 60 * 1000
+const MINUTE = 60 * 1000
+const LAST_AT = 'lastReminderAt'
 const WARM = '#D9895B'
 
 export const register: Register = on => {
@@ -10,7 +12,15 @@ export const register: Register = on => {
       name: 'break',
       description: 'Show the drink-and-stretch reminder now',
     })
-    $.clock.every(HOUR, async () => {
+    // The schedule lives in the store, shared by every session, so one
+    // reminder goes out per hour however many sessions are open or restarted.
+    if ((await $.store.get(LAST_AT)) === undefined) {
+      await $.store.set(LAST_AT, await $.clock.now())
+    }
+    $.clock.every(MINUTE, async () => {
+      const now = await $.clock.now()
+      if (now - Number(await $.store.get(LAST_AT)) < HOUR) return
+      await $.store.set(LAST_AT, now)
       await $.ui.open({ id: PANE, title: '☕ Break' })
       $.ui.toast('☕ Cozy break time: water and a stretch.')
     })
