@@ -14,7 +14,7 @@
     {
       "name": "break-reminder",
       "description": "Opens a small window every hour to remind you to drink water and stretch.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "source": "./mods/break-reminder"
     }
   ]

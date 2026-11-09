@@ -33,7 +33,7 @@ test('opens the reminder each hour, Done closes it, on every surface', async ($,
       component: 'Pane',
       requestId: 'break-reminder',
       props: {
-        title: 'Break',
+        title: '☕ Break',
         isFocused: false,
         bodyColumns: 40,
         placement: 'dock',
@@ -41,7 +41,7 @@ test('opens the reminder each hour, Done closes it, on every surface', async ($,
         view: {},
       },
     })
-    expect((await ui.find({ type: 'Text', text: /water/ }))?.text).toBe('Drink a glass of water.')
+    expect((await ui.find({ type: 'Text', text: /water/ }))?.text).toBe('💧  Grab a glass of water and sip it slowly.')
     await ui.press({ key: 'done' })
     await ui.unmount()
   }
