@@ -1,0 +1,15 @@
+{
+  "name": "quinn",
+  "description": "Quinn's Claude Code mods",
+  "owner": {
+    "name": "Quinn Neihaus"
+  },
+  "plugins": [
+    {
+      "name": "session-nav",
+      "description": "Bar above the prompt: back to the parent session on the left, child sessions on the right. Also runs cv-update after /send and /teach.",
+      "version": "0.2.0",
+      "source": "./mods/session-nav"
+    }
+  ]
+}

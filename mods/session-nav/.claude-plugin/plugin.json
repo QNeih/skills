@@ -1,0 +1,8 @@
+{
+  "name": "session-nav",
+  "version": "0.2.0",
+  "description": "Bar above the prompt: back to the parent session on the left, child sessions on the right. Also runs cv-update after /send and /teach.",
+  "author": {
+    "name": "Quinn Neihaus"
+  }
+}
