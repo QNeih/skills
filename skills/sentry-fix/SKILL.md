@@ -26,7 +26,7 @@ Works in any repo whose Sentry DSNs are committed, from any folder. Everything i
 
 ## 2. Derive the Sentry setup
 
-1. **Projects**: `${CLAUDE_SKILL_DIR}/sentry-projects.sh <local> [<note>]` prints one `sentry: <org>/<project>` line per project (the note's `sentry` property wins over DSNs). `sentry: none` → show the reason; if no DSN is committed, ask Quinn once for `<org>/<project>` and write it into the note as `sentry: <org>/<project>`. `skipped:` lines → mention them in the report. Auth errors → stop with the fix (`sentry auth login`).
+1. **Projects**: `${CLAUDE_SKILL_DIR}/sentry-projects.sh <local> [<note>]` prints one `sentry: <org>/<project>` line per project (the note's `sentry` property wins over DSNs). `sentry: none` → show the reason; if no DSN is committed, or none belongs to a Sentry organization Quinn can see, ask Quinn once for `<org>/<project>` and write it into the note as `sentry: <org>/<project>`. `skipped:` lines → mention them in the report. Auth errors → stop with the fix (`sentry auth login`).
 2. **Environment** per project: `sentry api projects/<org>/<project>/environments/` lists `staging` → filter on `environment:staging`; else no environment filter.
 3. **Releases** per project: `sentry release list <org>/<project> --limit 1 --json` returns one → fixed issues get resolved `--in @next`; none → they stay unresolved and the report says `PR open`.
 4. **Base branch** `<base>`: `git -C <local> symbolic-ref --short refs/remotes/origin/HEAD` without its `origin/` (e.g. `main`). Unset → `git -C <local> remote set-head origin --auto` and read it again.

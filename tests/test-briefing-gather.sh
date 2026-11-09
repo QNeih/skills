@@ -221,7 +221,8 @@ echo "dsn = 'https://k@o1.ingest.us.sentry.io/4501'; api = 'https://k@o1.ingest.
 git -C "$S" add -A; commit "$S" "2026-11-05 09:00" "Add Sentry"
 cat > "$FIX/stub/sentry.sh" <<'SH'
 case "$*" in
-  "api projects/") echo '[{"id":"4501","slug":"shop","organization":{"slug":"acme"}},{"id":"4502","slug":"api","organization":{"slug":"acme"}}]' ;;
+  "api organizations/") echo '[{"slug":"acme"}]' ;;
+  "api organizations/acme/projects/") echo '[{"id":"4501","slug":"shop"},{"id":"4502","slug":"api"}]' ;;
   "api projects/acme/shop/environments/") echo '[{"name":"production"},{"name":"staging"}]' ;;
   "api projects/acme/api/environments/") echo '[{"name":"production"}]' ;;
   "issue list acme/shop --query is:unresolved level:error environment:staging "*) echo '{"data":[
@@ -239,8 +240,20 @@ expect "sentry: staging, new and regressed" "$s" "sentry acme/shop staging: 3 is
 expect "sentry: no staging → no filter" "$s" "sentry acme/api: 1 issues, new: API-1"
 grep -q '^sentry' <<<"$(section Shop "$(gather "" "$(at "2026-11-09 13:00")")")" && fail "sentry: nothing new since last run → no line" || pass "sentry: nothing new since last run → no line"
 s=$(section Shop "$(SENTRY_FAIL="Error: not authenticated" gather "" "$(at "2026-11-09 14:00")")")
-expect "sentry fails: one line with the fix" "$s" "error: Sentry: sentry api projects/ failed: Error: not authenticated — sentry auth login"
+expect "sentry fails: one line with the fix" "$s" "error: Sentry: sentry api organizations/ failed: Error: not authenticated — sentry auth login"
 grep -q 'Sentry' <<<"$(section Acme "$(SENTRY_FAIL=x gather "" "$(at "2026-11-09 14:00")")")" && fail "sentry: no DSN → nothing" || pass "sentry: no DSN → nothing"
+# A DSN outside Quinn's Sentry organizations (a test fixture, a vendor's DSN) → nothing, no error
+fixture_note Fixtures
+F="$PROJECTS_ROOT/fixtures"
+fixture_repo "$F"
+echo "dsn = 'https://k@o5.ingest.sentry.io/999'; ok = 'https://k@o1.ingest.us.sentry.io/4502'" > "$F/t.sh"
+git -C "$F" add -A; commit "$F" "2026-11-05 09:00" "Add fixture"
+s=$(section Fixtures "$(gather "" "$(at "2026-11-09 15:00")")")
+grep -q 'error: Sentry' <<<"$s" && fail "sentry: foreign DSN → no error: $s" || pass "sentry: foreign DSN → no error"
+echo "dsn = 'https://k@o5.ingest.sentry.io/999'" > "$F/t.sh"
+git -C "$F" add -A; commit "$F" "2026-11-05 09:01" "Only foreign"
+s=$(section Fixtures "$(gather "" "$(at "2026-11-09 16:00")")")
+grep -q 'Sentry' <<<"$s" && fail "sentry: only foreign DSNs → nothing: $s" || pass "sentry: only foreign DSNs → nothing"
 
 # --- Dependabot: GitHub repos only, new PRs since the last run ---
 git -C "$S" remote add origin git@github.com:acme/shop.git

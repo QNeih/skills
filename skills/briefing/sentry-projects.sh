@@ -22,14 +22,21 @@ ids=$(git -C "$dir" grep -hIoE '[A-Za-z0-9.-]*\.ingest[A-Za-z0-9.-]*\.sentry\.io
   sed 's|.*/||' | sort -u)
 [ -n "$ids" ] || none "no Sentry DSN committed in $dir; set sentry: <org>/<project> in the project note"
 
-# ponytail: one page of projects/ (100); paginate if an account ever sees more
-projects=$(sentry api projects/ 2>&1) || none "sentry api projects/ failed: $(head -1 <<<"$projects")"
+# Projects of every organization the account sees (the user-level projects/ endpoint can be empty for org tokens).
+# ponytail: one page per organization (100 projects); paginate if an organization ever has more
+orgs=$(sentry api organizations/ 2>&1) || none "sentry api organizations/ failed: $(head -1 <<<"$orgs")"
+projects=
+for org in $(jq -r '.[].slug' <<<"$orgs" 2>/dev/null); do
+  list=$(sentry api "organizations/$org/projects/" 2>&1) ||
+    none "sentry api organizations/$org/projects/ failed: $(head -1 <<<"$list")"
+  projects+=$(jq -r --arg o "$org" '.[] | "\(.id) \($o)/\(.slug)"' <<<"$list")$'\n'
+done
 found= missing=
 for id in $ids; do
-  p=$(jq -r --arg id "$id" '.[] | select(.id == $id) | "\(.organization.slug)/\(.slug)"' <<<"$projects")
-  if [ -n "$p" ]; then found+="sentry: $p"$'\n'
-  else missing+="Sentry project id $id (from a DSN) not found by sentry api projects/"$'\n'; fi
+  p=$(awk -v id="$id" '$1 == id { print $2; exit }' <<<"$projects")
+  if [ -n "$p" ]; then found+="sentry: $p"$'\n'; else missing+="$id "; fi
 done
-[ -n "$found" ] || none "$(head -1 <<<"$missing")"
+# DSNs outside the account's organizations (test fixtures, vendors' DSNs) aren't this project's Sentry
+[ -n "$found" ] || none "no committed DSN belongs to a Sentry organization you can see (project ids: ${missing% })"
 printf '%s' "$found"
-[ -z "$missing" ] || printf '%s' "$missing" | sed 's/^/skipped: /'
+for id in $missing; do echo "skipped: Sentry project id $id (from a DSN) is not in your Sentry organizations"; done

@@ -234,13 +234,12 @@ sentry_lines() {
   local out sp env q list
   out=$("$here/sentry-projects.sh" "$1" "$2")
   if grep -qx 'sentry: none' <<<"$out"; then
-    # no DSN or no git: Sentry isn't set up here
-    grep -qE '^reason: (no Sentry DSN committed|.* is not a git repo)' <<<"$out" && return
+    # no DSN, no git, or only DSNs outside Quinn's Sentry organizations: Sentry isn't set up here
+    grep -qE '^reason: (no Sentry DSN committed|no committed DSN belongs|.* is not a git repo)' <<<"$out" && return
     need sentry Sentry "Sentry CLI" && echo "error: Sentry: $(sed -n 's/^reason: //p' <<<"$out") — sentry auth login"
     return
   fi
   need sentry Sentry "Sentry CLI" || return
-  sed -n 's/^skipped: \(.*\)/error: Sentry: \1 — set sentry: <org>\/<project> in the project note/p' <<<"$out"
   for sp in $(sed -n 's/^sentry: //p' <<<"$out"); do
     env=$(sentry api "projects/$sp/environments/" 2>&1) || { echo "error: Sentry: $(head -1 <<<"$env") — sentry auth login"; continue; }
     jq -e 'any(.[]; .name == "staging")' <<<"$env" >/dev/null 2>&1 && env=staging || env=

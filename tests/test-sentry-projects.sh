@@ -9,10 +9,12 @@ cat > "$FIX/bin/sentry" <<'SH'
 #!/usr/bin/env bash
 echo "$*" >> "$FIX/sentry-calls"
 [ -n "${SENTRY_FAIL:-}" ] && { echo "Error: not authenticated" >&2; exit 1; }
-[ "$*" = "api projects/" ] || exit 2
-echo '[{"id":"4501","slug":"web","organization":{"slug":"acme"}},
-       {"id":"4502","slug":"api","organization":{"slug":"acme"}},
-       {"id":"77","slug":"other","organization":{"slug":"globex"}}]'
+case "$*" in
+  "api organizations/") echo '[{"slug":"acme"},{"slug":"globex"}]' ;;
+  "api organizations/acme/projects/") echo '[{"id":"4501","slug":"web"},{"id":"4502","slug":"api"}]' ;;
+  "api organizations/globex/projects/") echo '[{"id":"77","slug":"other"}]' ;;
+  *) exit 2 ;;
+esac
 SH
 chmod +x "$FIX/bin/sentry"
 export PATH="$FIX/bin:$PATH" FIX
@@ -68,7 +70,7 @@ expect "no git: reason" "$(run "$FIX/plain")" "reason: $FIX/plain is not a git r
 # sentry api fails → its error in the reason
 out=$(SENTRY_FAIL=1 run "$r")
 expect "api fails: none" "$out" "sentry: none"
-expect "api fails: reason" "$out" "reason: sentry api projects/ failed: Error: not authenticated"
+expect "api fails: reason" "$out" "reason: sentry api organizations/ failed: Error: not authenticated"
 
 # DSN id not visible to the logged-in account
 r2="$PROJECTS_ROOT/stranger"
@@ -77,14 +79,14 @@ echo "https://k@o5.ingest.sentry.io/123456" > "$r2/sentry.conf"
 commit_all "$r2"
 out=$(run "$r2")
 expect "unknown id: none" "$out" "sentry: none"
-expect "unknown id: reason" "$out" "reason: Sentry project id 123456 (from a DSN) not found by sentry api projects/"
+expect "unknown id: reason" "$out" "reason: no committed DSN belongs to a Sentry organization you can see (project ids: 123456)"
 
 # One DSN known, one not → the known project, plus a skipped line
 echo "https://k@o11.ingest.us.sentry.io/4501" >> "$r2/sentry.conf"
 commit_all "$r2"
 out=$(run "$r2")
 expect "partial: known project" "$out" "sentry: acme/web"
-expect "partial: skipped line" "$out" "skipped: Sentry project id 123456 (from a DSN) not found by sentry api projects/"
+expect "partial: skipped line" "$out" "skipped: Sentry project id 123456 (from a DSN) is not in your Sentry organizations"
 grep -q '^sentry: none' <<<"$out" && fail "partial: no none line" || pass "partial: no none line"
 
 done_testing
