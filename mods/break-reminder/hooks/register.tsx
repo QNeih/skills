@@ -30,11 +30,8 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" gap={1} padding={1}>
         <Text bold color={WARM}>
-          ☕  Time for a cozy little break
+          Time to stretch 🧘 and drink water 💧
         </Text>
-        <Text>💧  Grab a glass of water and sip it slowly.</Text>
-        <Text>🧘  Stand up, roll your shoulders, stretch for a minute.</Text>
-        <Text dimColor>🌿  The code will still be here when you get back.</Text>
         <Button key="done" onPress={() => $.ui.close({ id: PANE })}>
           ✨ Done, back to it
         </Button>

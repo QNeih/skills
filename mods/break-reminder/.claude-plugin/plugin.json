@@ -1,6 +1,6 @@
 {
   "name": "break-reminder",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Opens a small window every hour to remind you to drink water and stretch.",
   "author": {
     "name": "Quinn Neihaus"
