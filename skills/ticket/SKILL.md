@@ -1,7 +1,7 @@
 ---
 name: ticket
 description: Start a ticket from the project's board — claim it, cut its branch, import it to .scratch, then start the route that works on it.
-argument-hint: "[KEY-12 | 12], or nothing for the top ticket"
+argument-hint: "[KEY-12 | 12], or nothing for the top unblocked ticket"
 disable-model-invocation: true
 ---
 
@@ -36,7 +36,7 @@ VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
 - `$ARGUMENTS` matches `[A-Z][A-Z0-9]+-[0-9]+` → that id.
 - Digits only → on a number-only tracker (`OTHER.md` › Ids) the digits are the id; else `<key>-<digits>`, `<key>` from the board file (vault: the lookup's `key:`). No key → stop and ask for the full id.
 - A number-only tracker's ref (`AB#1234`) → its number is the id.
-- Empty → the board file's **Pick**: print the ranked list to Quinn, then take its top ticket.
+- Empty → the board file's **Pick**: print the ranked list of unblocked tickets to Quinn, then take its top ticket.
 - Anything else → stop and ask for a ticket.
 
 Then the board file's **Find**.

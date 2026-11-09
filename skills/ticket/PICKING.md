@@ -4,7 +4,7 @@ Only when `/ticket` got no argument. `<key>` is the Jira project key; **Hotfix**
 
 ## 1. List the current sprint
 
-`searchJiraIssuesUsingJql`, `maxResults: 100`, `fields: ["summary","issuetype","priority","status","updated","labels"]`:
+`searchJiraIssuesUsingJql`, `maxResults: 100`, `fields: ["summary","issuetype","priority","status","updated","labels","issuelinks"]`:
 
 ```
 project = <key> AND sprint in openSprints() AND assignee = currentUser() AND resolution = Unresolved
@@ -14,9 +14,15 @@ Empty → drop `AND assignee = currentUser()`, print key and title of the whole 
 
 **Done when:** you hold your open sprint tickets, or Quinn named one from the whole sprint, or the stop is printed.
 
-## 2. Rank
+## 2. Drop blocked tickets
 
-Sort by each rule in order; a later rule only breaks ties of the earlier ones.
+A ticket is **blocked** when an `issuelinks` entry has `type.name` `Blocks` and an `inwardIssue` whose `fields.status.statusCategory.key` is not `done`. Drop blocked tickets. All of them blocked → print each with the keys blocking it and ask which one; wait for the answer.
+
+**Done when:** you hold the unblocked tickets, or Quinn named one.
+
+## 3. Rank
+
+Sort the unblocked tickets by each rule in order; a later rule only breaks ties of the earlier ones.
 
 1. **Hotfix** tickets first.
 2. Jira priority, most urgent first (tie: lower `priority.id`).

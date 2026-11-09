@@ -17,7 +17,7 @@ Digits only on a key tracker → `<KEY>-<digits>`, `<KEY>` from the board link o
 
 ## Pick
 
-The open items in the board's project assigned to Quinn, in the current iteration or sprint when the tool has one, in the tool's own rank order. Print one `<ref> · <title>` line per item and take the top one. None → print the open items of the project and ask which one; wait for the answer.
+The open items in the board's project assigned to Quinn, in the current iteration or sprint when the tool has one, in the tool's own rank order, without items blocked by an open item (a `Blocked by` or `Predecessor` link, or the tool's own blocked flag). Print one `<ref> · <title>` line per item and take the top one. None → print the open items of the project and ask which one; wait for the answer.
 
 ## Find
 

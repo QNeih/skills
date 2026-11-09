@@ -33,10 +33,13 @@ kanban-plugin: board
 
 ## To do
 
+- [ ] **ACM-3 · Export as PDF** #urgent
+	Needs: ACM-1
 - [ ] **ACM-1 · Add export button**
 	Export the list as CSV.
 - [ ] **ACM-2 · Login fails on Safari** #bug #urgent
 	The login button does nothing on Safari 18.
+	Braucht: ACM-4
 
 
 ## In Progress
@@ -61,12 +64,12 @@ setup "$wt"
 run_ticket "$wt" "/t-ticket"
 
 [ "$(grep -oE 'ACM-[12]' <<<"$CLAUDE_OUT" | head -1)" = ACM-2 ] && grep -q 'ACM-1' <<<"$CLAUDE_OUT" \
-  && pass "pick: list printed, urgent card first" || { fail "pick: list printed, urgent card first"; echo "$CLAUDE_OUT"; }
+  && pass "pick: list printed, urgent unblocked card first" || { fail "pick: list printed, urgent unblocked card first"; echo "$CLAUDE_OUT"; }
 grep -qE '^Route: /' <<<"$CLAUDE_OUT" && pass "route line printed" || { fail "route line printed"; echo "$CLAUDE_OUT" | tail -20; }
-want=$'- [ ] **ACM-5 · Older card**\n- [ ] **ACM-2 · Login fails on Safari** #bug #urgent\n\tThe login button does nothing on Safari 18.\n\tBranch `bugfix/ACM-2`'
+want=$'- [ ] **ACM-5 · Older card**\n- [ ] **ACM-2 · Login fails on Safari** #bug #urgent\n\tThe login button does nothing on Safari 18.\n\tBraucht: ACM-4\n\tBranch `bugfix/ACM-2`'
 [ "$(column "$board" 'in progress')" = "$want" ] && pass "claim: card at the end of In progress, branch noted" \
   || { fail "claim: card at the end of In progress, branch noted"; cat "$board"; }
-[ "$(column "$board" 'to do')" = $'- [ ] **ACM-1 · Add export button**\n\tExport the list as CSV.' ] \
+[ "$(column "$board" 'to do')" = $'- [ ] **ACM-3 · Export as PDF** #urgent\n\tNeeds: ACM-1\n- [ ] **ACM-1 · Add export button**\n\tExport the list as CSV.' ] \
   && pass "claim: card left To do" || fail "claim: card left To do"
 git -C "$acme" merge-base --is-ancestor develop bugfix/ACM-2 2>/dev/null \
   && pass "branch: bugfix/ACM-2 from develop" || fail "branch: bugfix/ACM-2 from develop"
