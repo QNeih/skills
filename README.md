@@ -24,6 +24,7 @@ to his `to-spec`, `to-tickets`, `implement-spec`, `implement`, `wayfinder`,
 | **Maintenance** | `sentry-fix` | Fixes Sentry errors in their own worktrees and opens draft PRs; finds the Sentry projects from the DSNs in the code. |
 | | `dependabot-review` | Checks every open Dependabot PR in parallel: does it break the build, could it change behaviour. |
 | **Setup and misc** | `new-project` | Sets up a project: folder and git, project note, board, sidebar group, Fork workspace. Creates only what's missing. |
+| | `add-context` | Files an interview, transcript or meeting notes into a project's `context/` folder by its `INDEX.md`, merges it to main, and tells the running sessions what changed. |
 | | `ask` | Answers questions about the codebase without changing files. |
 | | `cv-update` | After `/send`, decides whether the work belongs on my CV and asks before editing it. |
 
