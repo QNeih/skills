@@ -26,7 +26,7 @@ to his `to-spec`, `to-tickets`, `implement-spec`, `implement`, `wayfinder`,
 | **Setup and misc** | `new-project` | Sets up a project: folder and git, project note, board, sidebar group, Fork workspace. Creates only what's missing. |
 | | `add-context` | Files an interview, transcript or meeting notes into a project's `context/` folder by its `INDEX.md`, merges it to main, and tells the running sessions what changed. |
 | | `ask` | Answers questions about the codebase without changing files. |
-| | `cv-update` | After `/send`, decides whether the work belongs on my CV and asks before editing it. |
+| | `cv-update` | Weekly: checks my GitHub PRs and `/teach` lessons against my CV and asks before editing it. |
 
 ## Install
 
@@ -42,8 +42,7 @@ Put your projects root and vault path in `~/.claude/CLAUDE.md`.
 ## Extras
 
 - **session-nav** (Claude desktop app only): a bar above the prompt that links
-  back to the parent session and to child sessions. It also carries the
-  `cv-update` hook, which runs `cv-update` after `/send` and `/teach`.
+  back to the parent session and to child sessions.
   `/plugin marketplace add QuinnNei/skills`, then `/plugin install session-nav@quinn`.
 - **break-reminder**: opens a small window every hour that reminds me to drink
   water and stretch; `/break` opens it right away.

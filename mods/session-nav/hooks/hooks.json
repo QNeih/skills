@@ -1,17 +1,5 @@
 {
   "modules": [
     "./register.tsx"
-  ],
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "jq -r .prompt | grep -qE \"^/(send|teach)([[:space:]]|$)\" && echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"UserPromptSubmit\\\",\\\"additionalContext\\\":\\\"After this command finishes, run the cv-update skill as the final step.\\\"}}\" || true"
-          }
-        ]
-      }
-    ]
-  }
+  ]
 }
