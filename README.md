@@ -31,7 +31,7 @@ to his `to-spec`, `to-tickets`, `implement-spec`, `implement`, `wayfinder`,
 ## Install
 
     npx skills add mattpocock/skills   # required: the skills above hand off to these
-    npx skills add QuinnNei/skills
+    npx skills add QNeih/skills
 
 These are written for my setup and meant to be read and adapted. They expect:
 an Obsidian vault with one note per project, the Microsoft 365 connector
@@ -43,7 +43,7 @@ Put your projects root and vault path in `~/.claude/CLAUDE.md`.
 
 - **session-nav** (Claude desktop app only): a bar above the prompt that links
   back to the parent session and to child sessions.
-  `/plugin marketplace add QuinnNei/skills`, then `/plugin install session-nav@quinn`.
+  `/plugin marketplace add QNeih/skills`, then `/plugin install session-nav@quinn`.
 - **break-reminder**: opens a small window every hour that reminds me to drink
   water and stretch; `/break` opens it right away.
   `/plugin install break-reminder@quinn`.
