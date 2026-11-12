@@ -170,6 +170,25 @@ while IFS=$'\t' read -r n text; do
   link=$(grep -oE '\[\[[^]]+\]\]$' <<<"$text" | tr -d '[]')
   if [ -z "$link" ] || ! grep -qxF "$link" <<<"$active"; then today_lines+="note $n: $text"$'\n'; fi
 done < "$tmp/notes"
+
+# --- Installed packages changed since $since, from the hourly claude-config backup ---
+cfg="$PROJECTS_ROOT/claude-config"
+# <kind> <path in repo> <jq filter: object name → version>; prints `<kind> <name>: added|removed|<old> → <new>`
+pkg_changes() {
+  local old new
+  old=$(git -C "$cfg" show "$base:$2" 2>/dev/null) || old='{}'
+  new=$(git -C "$cfg" show "HEAD:$2" 2>/dev/null) || new='{}'
+  jq -rn --arg kind "$1" --argjson o "$old" --argjson n "$new" "
+    def f: $3;
+    (\$o | f) as \$a | (\$n | f) as \$b | ([\$a, \$b] | add | keys[]) as \$k | select(\$a[\$k] != \$b[\$k])
+    | \"\(\$kind) \(\$k): \" + if \$a[\$k] == null then \"added\" elif \$b[\$k] == null then \"removed\"
+      elif \$kind == \"skill\" then \"updated\" else \"\(\$a[\$k]) → \(\$b[\$k])\" end"
+}
+if [ -d "$cfg/.git" ] && base=$(git -C "$cfg" rev-list -1 --before="@$since" HEAD) && [ -n "$base" ]; then
+  pkg=$(pkg_changes skill agents/.skill-lock.json '.skills // {} | map_values(.skillFolderHash)'
+    pkg_changes plugin claude/plugins/installed_plugins.json '.plugins // {} | map_values(.[0].version)')
+  [ -z "$pkg" ] || today_lines+="$pkg"$'\n'
+fi
 [ -z "$today_lines" ] || printf '# Today\n%s' "$today_lines"
 
 # --- Next on a vault board: cards in In progress; none → first #urgent card in To do, else the first ---

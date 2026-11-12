@@ -1,6 +1,6 @@
 ---
 name: briefing
-description: Whole-day briefing across every active project: what Quinn did last workday, what's next, Jira changes, new Sentry errors, new Dependabot PRs, mail and Teams waiting on Quinn, today's meetings, open notes. Use when Quinn types "/briefing" or asks for the day's overview, in the morning or after a break.
+description: "Whole-day briefing across every active project: what Quinn did last workday, what's next, Jira changes, new Sentry errors, new Dependabot PRs, mail and Teams waiting on Quinn, today's meetings, open notes. Use when Quinn types \"/briefing\" or asks for the day's overview, in the morning or after a break."
 ---
 
 # Briefing
@@ -26,6 +26,7 @@ It prints header lines, then `# Today` and one `# <project>` section per project
 - `sentry <org>/<project>[ staging]: N issues, new: <shortIds>, regressed: <shortIds>`.
 - `dependabot: N new of M open: #<n> <title>; …`.
 - `note <n>: <date> <text>`: open notes from `<vault>/Briefing notes.md`; under `# Today` when they name no active project.
+- `skill <name>: added|removed|updated` and `plugin <name>: added|removed|<old> → <new>`, under `# Today`: installed third-party skills and plugins that changed since the last run, read from the hourly backup in `<projects root>/claude-config`.
 - `error: <source>: <problem> — <fix>`: a configured source that failed.
 
 `gather.sh` keeps its state in `~/.claude/briefing/` (last-run time, Jira snapshots) and updates it on every run. An `error: vault …` line alone → show it and stop.
@@ -82,7 +83,7 @@ Unmatched: tom@beta.test (2×) → Beta?
 Reply: "fix all" (Sentry) · "/dependabot-review" · "add all" · "done 2"
 ```
 
-- **Today** first: meetings, then messages (`+N more` last), then notes and errors. Then one section per `#` project section of the gather output, in its order; a project with only step 2 lines gets a section after them.
+- **Today** first: meetings, then messages (`+N more` last), then notes, then one `Packages:` line listing the `skill`/`plugin` lines, then errors. For an updated skill, add what changed in a few words, read from `git -C <projects root>/claude-config log -p --since=<since> -- agents/skills/<name>`. Then one section per `#` project section of the gather output, in its order; a project with only step 2 lines gets a section after them.
 - In a project section: Did, Next, Jira, Sentry, Dependabot, messages, notes, errors.
 - **Did**: 2–4 bullets condensed from the `prompt` and `commit` lines, grouped by ticket or topic, then the `left off` value. No `prompt`/`commit` lines (or `later run today`) → no Did line.
 - **Next**: every `next:` line, key and title.

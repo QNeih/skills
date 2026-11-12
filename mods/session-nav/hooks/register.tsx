@@ -15,12 +15,9 @@ async function callJson($: EngineInterface, tool: string, args: Record<string, u
 }
 
 const label = (r: Row) => r.name ?? r.title ?? r.sessionId
-// Archived = done: show only the ticket key ("key-12-fix-login" → "key-12").
-const kidLabel = (r: Row) => (r.isArchived ? label(r).match(/^[a-z]+-\d+/i)?.[0] : undefined) ?? label(r)
 const RUNNING = '#3fb950' // working
 const WAITING = '#d29922' // idle, not archived: waiting on Quinn
-const DONE = '#8b949e' // archived
-const dot = (r: Row) => (r.isRunning ? RUNNING : r.isArchived ? DONE : WAITING)
+const dot = (r: Row) => (r.isRunning ? RUNNING : WAITING)
 
 let family: Family = { kids: [] }
 
@@ -30,7 +27,8 @@ async function refresh($: EngineInterface) {
   const parentId = self.detached ? undefined : self.parentSessionId
   family = {
     parent: parentId ? rows.find(r => r.sessionId === parentId) ?? { sessionId: parentId } : undefined,
-    kids: rows.filter(r => r.startedBy === self.sessionId),
+    // Archived = done: drop it. include_archived stays so an archived parent still resolves.
+    kids: rows.filter(r => r.startedBy === self.sessionId && !r.isArchived),
   }
   $.ui.invalidate('ui.render')
 }
@@ -39,10 +37,19 @@ export const register: Register = on => {
   // Kids appear mid-session (start_session), so re-read after every turn.
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    await refresh($)
+    // ccd_session_mgmt is not connected yet at session.start, so read every second until
+    // the first read lands (the back link shows then, before the first reply), then every 10s.
     // Kids change status while this session sits idle.
     // ponytail: 10s poll, two local MCP calls; a session-status event would replace it if the engine adds one.
-    $.clock.every(10_000, () => refresh($))
+    let ready = false
+    let ticks = 0
+    $.clock.every(1_000, () => {
+      if (ready && ++ticks % 10) return
+      refresh($).then(
+        () => { ready = true },
+        err => { if (!String(err).includes('no connected MCP tool')) throw err },
+      )
+    })
     return result
   })
 
@@ -66,7 +73,7 @@ export const register: Register = on => {
         <Box gap={1}>
           {kids.filter(k => k.link).map(k => (
             <Button key={k.sessionId} onPress={open(k)}>
-              <Text color={dot(k)}>●</Text> {kidLabel(k)}
+              <Text color={dot(k)}>●</Text> {label(k)}
             </Button>
           ))}
         </Box>
