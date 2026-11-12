@@ -176,7 +176,7 @@ cfg="$PROJECTS_ROOT/claude-config"
 # <kind> <path in repo> <jq filter: object name → version>; prints `<kind> <name>: added|removed|<old> → <new>`
 pkg_changes() {
   local old new
-  old=$(git -C "$cfg" show "$base:$2" 2>/dev/null) || old='{}'
+  old=$(git -C "$cfg" show "$base:$2" 2>/dev/null) || return 0 # not backed up yet at $base: no baseline to compare
   new=$(git -C "$cfg" show "HEAD:$2" 2>/dev/null) || new='{}'
   jq -rn --arg kind "$1" --argjson o "$old" --argjson n "$new" "
     def f: $3;
