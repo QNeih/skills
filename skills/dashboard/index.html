@@ -1155,6 +1155,18 @@ document.addEventListener('click', e => {
 window.addEventListener('hashchange', route);
 updateMeta();
 setInterval(updateMeta, 10000);
+// Reload when the server says so: /dashboard on an open window, or a server restart with new code.
+// While the server restarts the check fails; the next one after it is back decides.
+let reloadGen = null;
+async function checkReload() {
+  try {
+    const { gen } = await api('/api/reload');
+    if (reloadGen === null) reloadGen = gen;
+    else if (gen !== reloadGen) location.reload();
+  } catch (e) { console.warn('reload check:', e.message); }
+}
+checkReload();
+setInterval(checkReload, 1000);
 setInterval(tickClock, 1000);
 route();
 </script>

@@ -30,10 +30,12 @@ if ! running; then
   curl -fs -o /dev/null "$url" || { echo "error: server did not start — see $state/server.log"; tail -5 "$state/server.log"; exit 1; }
 fi
 
-# The dashboard's own Chrome (its own profile) already runs → bring it to the front, no second window.
+# The dashboard's own Chrome (its own profile) already runs → reload its page and bring it to the
+# front, no second window.
 chrome=$(pgrep -f -- "--user-data-dir=$state/chrome" | while read -r p; do
   ps -o command= -p "$p" | grep -q -- '--type=' || echo "$p"; done | head -1)
 if [ -n "$chrome" ]; then
+  curl -fsS -o /dev/null -X POST "${url}api/reload" || { echo "error: could not ask the dashboard page to reload"; exit 1; }
   osascript -l JavaScript -e "ObjC.import('AppKit'); \$.NSRunningApplication.runningApplicationWithProcessIdentifier($chrome).activateWithOptions(\$.NSApplicationActivateAllWindows)" >/dev/null
 # Chrome app mode: a window without tabs or address bar, full screen. No Chrome → default browser.
 elif [ -d "/Applications/Google Chrome.app" ]; then

@@ -1518,14 +1518,24 @@ def post_copy(body):
     return {"ok": True}
 
 
+# Open dashboard pages reload when this changes: on a server start (new code) and when start.sh
+# asks for it because the dashboard window is already open.
+_reload = {"gen": now_ms()}
+
+
+def post_reload(body):
+    _reload["gen"] += 1
+    return dict(_reload)
+
+
 GETS = {"/api/briefing": lambda q: BRIEFING.get(), "/api/projects": lambda q: projects_view(),
         "/api/ticket": get_ticket, "/api/session": get_session, "/api/weather": lambda q: weather(),
-        "/api/order": lambda q: {"order": read_order()}}
+        "/api/order": lambda q: {"order": read_order()}, "/api/reload": lambda q: dict(_reload)}
 POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/open-url": post_open_url,
          "/api/bg-session": post_bg_session, "/api/session/send": post_session_send,
          "/api/session/remove": post_session_remove,
          "/api/copy": post_copy, "/api/note-done": lambda b: note_done(need(b, "n")[0]),
-         "/api/order": save_order}
+         "/api/order": save_order, "/api/reload": post_reload}
 
 
 def main():

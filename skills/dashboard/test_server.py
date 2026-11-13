@@ -180,6 +180,13 @@ class BackgroundStart(unittest.TestCase):
         self.assertIn("/api/open", server.POSTS)
 
 
+class Reload(unittest.TestCase):
+    def test_a_reload_request_changes_the_generation_open_pages_watch(self):
+        before = server.GETS["/api/reload"]({})["gen"]
+        server.POSTS["/api/reload"]({})
+        self.assertNotEqual(server.GETS["/api/reload"]({})["gen"], before)
+
+
 class Fixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
