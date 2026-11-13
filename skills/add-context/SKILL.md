@@ -115,7 +115,7 @@ Needs the desktop tools `list_groups`, `list_sessions` and `send_message` (load 
 
 ## 9. To-dos
 
-The to-dos from step 5, if any: list them and ask which to save. Save each chosen one with the `note` skill. Context and open questions stay in the repo; the vault gets only to-dos.
+Quinn wants these offered: look for them actively in the source (promised follow-ups, people to invite or ask, feedback rounds, things to send). A skipped to-do drops only that one, never the habit. The to-dos from step 5, if any: list them and ask which to save. Save each chosen one with the `note` skill. Context and open questions stay in the repo; the vault gets only to-dos.
 
 **Done when:** each chosen to-do is saved, or there were none.
 
