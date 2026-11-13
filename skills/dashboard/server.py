@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -475,19 +476,29 @@ def user_text(content):
 _facts_cache = {}
 
 
+PREVIEW_START = "mcp__Claude_Browser__preview_start"
+
+
 def transcript_facts(path):
-    """First real user prompt and every git branch the transcript recorded (a worktree session
-    starts on claude/<name>; /work then cuts feature/<id> there). Cached per file version."""
+    """First real user prompt, every git branch the transcript recorded (a worktree session
+    starts on claude/<name>; /work then cuts feature/<id> there), and the input (`name` or `url`)
+    of every preview_start call, deduplicated. Cached per file version."""
     st = path.stat()
     key = (str(path), st.st_mtime_ns, st.st_size)
     if key not in _facts_cache:
-        first, branches = None, set()
+        first, branches, servers = None, set(), []
         for e in read_lines(path):
             if e.get("gitBranch"):
                 branches.add(e["gitBranch"])
             if first is None and e.get("type") == "user" and not e.get("isSidechain") and not e.get("isMeta"):
                 first = user_text((e.get("message") or {}).get("content"))
-        _facts_cache[key] = {"firstPrompt": first, "branches": sorted(branches)}
+            if e.get("type") == "assistant":
+                for b in (e.get("message") or {}).get("content") or []:
+                    if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == PREVIEW_START:
+                        start = {k: v for k, v in (b.get("input") or {}).items() if k in ("name", "url")}
+                        if start and start not in servers:
+                            servers.append(start)
+        _facts_cache[key] = {"firstPrompt": first, "branches": sorted(branches), "servers": servers}
     return _facts_cache[key]
 
 
@@ -534,6 +545,8 @@ def session_brief(s, transcripts=None):
     return {"sessionId": s["sessionId"], "title": s.get("title"), "name": (s.get("spawnedFrom") or {}).get("name"),
             "state": session_state(s, transcripts), "lastActivityAt": s.get("lastActivityAt"),
             "summary": session_summary(s), "link": LINK.format(s["sessionId"]),
+            "servers": [] if s.get("isArchived") else [{k: x[k] for k in ("name", "url", "error") if k in x}
+                                                       for x in session_servers(s, transcripts)],
             "prs": [p["url"] for p in s.get("prs") or [] if p.get("url")]}
 
 
@@ -594,6 +607,141 @@ def ticket_sessions(ticket_id, project_dir, sessions, transcripts=None):
     roots = sorted((by_id[i] for i in matched if not ancestor_matched(by_id[i])),
                    key=lambda s: s.get("createdAt") or 0)
     return [node(s, set()) for s in roots]
+
+
+# --- servers ---------------------------------------------------------------------------------
+# A session keeps the dev servers it started with preview_start until it is archived; then the
+# dashboard stops them (reaper thread). A server counts for a session only while something listens
+# on its port from inside the session's folder, so another worktree's server on a reused port and
+# this dashboard itself are never listed or stopped.
+
+REAP_EVERY = 30  # seconds
+
+
+def local_port(url):
+    """Port of an http(s) URL on this machine (localhost, 127.0.0.1, [::1], *.localhost), else None."""
+    try:
+        u = urllib.parse.urlparse(url or "")
+        host, port = (u.hostname or "").lower(), u.port
+    except ValueError:
+        return None
+    if u.scheme not in ("http", "https"):
+        return None
+    if host not in ("localhost", "127.0.0.1", "::1") and not host.endswith(".localhost"):
+        return None
+    return port or (443 if u.scheme == "https" else 80)
+
+
+def lsof(*args):
+    """lsof's stdout; its warnings (unreadable mounts) go to stderr and are not output. Exit 1
+    means nothing matched."""
+    p = subprocess.run(["lsof", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+    if p.returncode not in (0, 1):
+        raise RuntimeError("lsof {}: {}".format(" ".join(args), p.stderr.decode("utf-8", "replace").strip()))
+    return p.stdout.decode("utf-8", "replace")
+
+
+def listeners(port):
+    """[(pid, cwd)] of every process listening on the TCP port (IPv4 and IPv6, forked workers)."""
+    pids = sorted(set(lsof("-nP", "-iTCP:{}".format(port), "-sTCP:LISTEN", "-t").split()))
+    if not pids:
+        return []
+    out, pid = [], None
+    for line in lsof("-a", "-p", ",".join(pids), "-d", "cwd", "-Fpn").splitlines():
+        if line.startswith("p"):
+            pid = int(line[1:])
+        elif line.startswith("n") and pid is not None:
+            out.append((pid, line[1:]))
+    return out
+
+
+def owns(session_cwd, proc_cwd):
+    """The process runs from the session's folder, not from a worktree nested inside it."""
+    d, p = nfc(session_cwd).rstrip("/"), nfc(proc_cwd).rstrip("/")
+    return (p == d or p.startswith(d + "/")) and not p.startswith(d + "/.claude/worktrees/")
+
+
+def launch_configs(cwd):
+    """Configurations of the folder's .claude/launch.json by name; raises ValueError when the file
+    isn't the {"configurations": [{name, port, ...}]} shape."""
+    f = Path(cwd, ".claude", "launch.json")
+    if not f.is_file():
+        return {}
+    data = json.loads(f.read_text(encoding="utf-8"))
+    configs = data.get("configurations") if isinstance(data, dict) else None
+    if not isinstance(configs, list) or not all(isinstance(c, dict) for c in configs):
+        raise ValueError("configurations is not a list of objects")
+    return {c.get("name"): c for c in configs}
+
+
+def session_servers(session, transcripts=None, listen=listeners):
+    """Running servers the session started: {name, url, port, pid}, plus {name, error} for one
+    that can't be checked (its launch.json entry is missing or broken, or lsof failed)."""
+    path, cwd = transcript_path(session, transcripts), session.get("cwd")
+    if not path or not cwd:
+        return []
+    out, ports, configs = [], set(), None
+    launch = "{}/.claude/launch.json".format(cwd)
+    for start in transcript_facts(path)["servers"]:
+        if "name" in start:
+            if configs is None:
+                try:
+                    configs = launch_configs(cwd)
+                except (OSError, ValueError) as e:
+                    configs = e
+            if isinstance(configs, Exception):
+                out.append({"name": start["name"], "error": "{}: {}".format(launch, configs)})
+                continue
+            c = configs.get(start["name"])
+            if not c or not isinstance(c.get("port"), int):
+                out.append({"name": start["name"], "error": "no port for it in " + launch})
+                continue
+            name, port, url = start["name"], c["port"], c.get("url") or "http://localhost:{}/".format(c["port"])
+        else:
+            port = local_port(start["url"])
+            if port is None:
+                continue  # an outside site, not a dev server
+            name, url = urllib.parse.urlparse(start["url"]).netloc, start["url"]
+        if port in ports:
+            continue
+        ports.add(port)
+        try:
+            procs = listen(port)
+        except (RuntimeError, subprocess.TimeoutExpired) as e:
+            out.append({"name": name, "error": str(e)})
+            continue
+        pid = next((p for p, d in procs if p != os.getpid() and owns(cwd, d)), None)
+        if pid:
+            out.append({"name": name, "url": url, "port": port, "pid": pid})
+    return out
+
+
+def reap_servers(sessions, transcripts=None, listen=listeners, kill=os.kill):
+    """Stops (SIGTERM) the running servers of archived sessions, except one an unarchived session
+    also lists. Returns the stopped servers."""
+    found = [(s, session_servers(s, transcripts, listen)) for s in sessions]
+    keep = {x["pid"] for s, xs in found if not s.get("isArchived") for x in xs if "pid" in x}
+    stopped = []
+    for s, xs in found:
+        if not s.get("isArchived"):
+            continue
+        for x in xs:
+            if "pid" in x and x["pid"] not in keep:
+                kill(x["pid"], signal.SIGTERM)
+                keep.add(x["pid"])
+                stopped.append(dict(x, sessionId=s["sessionId"]))
+    return stopped
+
+
+def reaper():
+    while True:
+        try:
+            for x in reap_servers(load_sessions()):
+                print("stopped server {} ({}, pid {}) of archived session {}".format(
+                    x["name"], x["url"], x["pid"], x["sessionId"]), file=sys.stderr)
+        except Exception:
+            traceback.print_exc()
+        time.sleep(REAP_EVERY)
 
 
 # --- tickets ---------------------------------------------------------------------------------
@@ -980,6 +1128,25 @@ def post_open(body):
     return {"ok": True}
 
 
+def chrome_command(url):
+    """Opens the URL in a new tab of Quinn's normal Chrome. `open -n` starts a Chrome process
+    without --user-data-dir, which hands the URL to the Chrome already running on the default
+    profile (or starts it), never to the dashboard's own Chrome (its own --user-data-dir)."""
+    if not Path("/Applications/Google Chrome.app").is_dir():
+        raise ApiError(500, "Google Chrome is not in /Applications")
+    return ["open", "-na", "Google Chrome", "--args", url]
+
+
+def post_open_url(body):
+    url = need(body, "url")[0]
+    if local_port(url) is None:
+        raise ApiError(400, "not a local http(s) URL: " + str(url))
+    code, out = run(chrome_command(url))
+    if code != 0:
+        raise ApiError(500, "open: " + out.strip())
+    return {"ok": True}
+
+
 def post_new_session(body):
     """Opens the Claude app's new Code session screen; Quinn presses Enter there."""
     code, out = run(["open", new_session_url(body.get("text") or "")])
@@ -998,7 +1165,7 @@ def post_copy(body):
 GETS = {"/api/briefing": lambda q: BRIEFING.get(), "/api/projects": lambda q: projects_view(),
         "/api/ticket": get_ticket, "/api/weather": lambda q: weather(),
         "/api/order": lambda q: {"order": read_order()}}
-POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/new-session": post_new_session,
+POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/open-url": post_open_url, "/api/new-session": post_new_session,
          "/api/copy": post_copy, "/api/note-done": lambda b: note_done(need(b, "n")[0]),
          "/api/order": save_order}
 
@@ -1012,6 +1179,7 @@ def main():
     for stale in Path(tempfile.gettempdir()).glob("dashboard-briefing-*"):
         shutil.rmtree(stale)
     BRIEFING.start()
+    threading.Thread(target=reaper, daemon=True).start()
     print("dashboard on http://127.0.0.1:{}".format(args.port), file=sys.stderr)
     try:
         server.serve_forever()
