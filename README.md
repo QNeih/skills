@@ -80,6 +80,39 @@ flowchart TD
 | | `ask` | Answers questions about the codebase without changing files. | repo |
 | | `cv-update` | Weekly: checks my GitHub PRs and `/teach` lessons against my CV and asks before editing it. | GitHub |
 
+### Dashboard keys
+
+`?` shows the same list inside the dashboard.
+
+| Screen | Key | What it does |
+| --- | --- | --- |
+| home, ticket, session | `?` | toggle the key list (`esc` / `⌫` also close it) |
+| ticket, session | `esc` / `⌫` | back |
+| start (clock) | any key or click | go to home |
+| home | `↑` `↓` / `j` `k` | move ticket selection |
+| | `⏎` | open selected ticket |
+| | `←` / `→` | previous / next project |
+| | `tab` / `p` | next project (`⇧tab` back) |
+| | `⇧←` / `⇧→`, `H` / `L` | move project left / right (order saved) |
+| | `[` / `]` | previous / next 3 projects |
+| | `1`–`3` | open next ticket |
+| | `s` | new session: fix new Sentry errors (when there are any) |
+| | `d` | new session: Dependabot review (when there are new PRs) |
+| | `r` | refresh briefing |
+| | `c` | clock screen |
+| | jump key | run the project's jump (to-do done: press twice) |
+| ticket | `↑` `↓` / `j` `k` | move session selection |
+| | `⏎` | open session |
+| | `o` | open session in the Claude app |
+| | `g` | open the PR |
+| | `t` | new session in the app with `/ticket <id>` prefilled |
+| session | `i` / `/` | focus reply box |
+| | `⏎` (in box) | copy reply, open in the app |
+| | `⇧⏎` (in box) | new line |
+| | `esc` (in box) | leave box |
+| | `↑` `↓` / `j` `k` | scroll chat |
+| | `o` | open in the Claude app |
+
 ## Install
 
     npx skills add mattpocock/skills   # required: the skills above hand off to these
