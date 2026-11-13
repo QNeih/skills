@@ -2,7 +2,6 @@
 name: work
 description: Start a ticket from the project's board — claim it, cut its branch, import it to .scratch, then start the route that works on it.
 argument-hint: "[KEY-12 | 12], or nothing for the top unblocked ticket"
-disable-model-invocation: true
 ---
 
 # Work
