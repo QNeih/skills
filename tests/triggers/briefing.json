@@ -1,0 +1,106 @@
+[
+ {
+  "query": "morning! what's on for today across my projects?",
+  "should_trigger": true
+ },
+ {
+  "query": "back from lunch, catch me up. anything new in sentry or mail since this morning?",
+  "should_trigger": true
+ },
+ {
+  "query": "Guten Morgen, was steht heute an? Gib mir den Überblick über alle Projekte",
+  "should_trigger": true
+ },
+ {
+  "query": "just got back from a week off, what did I miss? jira, dependabot, teams, all of it",
+  "should_trigger": true
+ },
+ {
+  "query": "what did I work on on friday and what should I pick up today",
+  "should_trigger": true
+ },
+ {
+  "query": "give me the day overview before my 10:00 standup",
+  "should_trigger": true
+ },
+ {
+  "query": "anything waiting on me today? mails, teams messages, meetings, open notes",
+  "should_trigger": true
+ },
+ {
+  "query": "start of the day, run me through everything that changed overnight",
+  "should_trigger": true
+ },
+ {
+  "query": "was ist neu seit gestern? sentry, jira, mails",
+  "should_trigger": true
+ },
+ {
+  "query": "ok i'm back after the dentist, where do things stand",
+  "should_trigger": true
+ },
+ {
+  "query": "hey it's monday, get me up to speed",
+  "should_trigger": true
+ },
+ {
+  "query": "before I start: which tickets are next and is anything on fire in prod?",
+  "should_trigger": true
+ },
+ {
+  "query": "add a note: call the tax office about the Q3 filing",
+  "should_trigger": false
+ },
+ {
+  "query": "fix the new sentry errors ACME-4F2 and ACME-3A1 in the acme project",
+  "should_trigger": false
+ },
+ {
+  "query": "what meetings do I have on thursday afternoon?",
+  "should_trigger": false
+ },
+ {
+  "query": "summarize what changed on this branch since main so I can write the PR description",
+  "should_trigger": false
+ },
+ {
+  "query": "write my weekly status report for the construct team from the jira tickets I closed this week",
+  "should_trigger": false
+ },
+ {
+  "query": "update my CV with what I shipped this month",
+  "should_trigger": false
+ },
+ {
+  "query": "show me the unresolved sentry issues in staging for the shop project",
+  "should_trigger": false
+ },
+ {
+  "query": "did ann reply to my mail about the offer draft? if so draft an answer",
+  "should_trigger": false
+ },
+ {
+  "query": "what's the status of CON-412 in jira and who is assigned",
+  "should_trigger": false
+ },
+ {
+  "query": "list the open dependabot PRs in ~/Projects/acme and tell me which are safe to merge",
+  "should_trigger": false
+ },
+ {
+  "query": "what's on my calendar today?",
+  "should_trigger": false
+ },
+ {
+  "query": "wrap up my day: what did I get done today across projects, I need it for my timesheet",
+  "should_trigger": false
+ },
+ {
+  "query": "any new mail from the construct customer since this morning?",
+  "should_trigger": false
+ },
+ {
+  "query": "what's next on the acme board? just the top card",
+  "should_trigger": false
+ }
+]

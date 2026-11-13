@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Runs the script tests; with --live also the `claude -p` tests (live-*.sh, cost tokens).
+# Trigger evals (does a skill fire for the right prompts?): ./eval-triggers.py <skill>, cases in triggers/<skill>.json.
 cd "$(dirname "$0")" || exit 1
 rc=0
 tests=(shared-copies.sh test-*.sh)

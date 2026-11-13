@@ -63,7 +63,8 @@ setup "$wt"
 
 run_ticket "$wt" "/t-ticket"
 
-[ "$(grep -oE 'ACM-[12]' <<<"$CLAUDE_OUT" | head -1)" = ACM-2 ] && grep -q 'ACM-1' <<<"$CLAUDE_OUT" \
+# first ranked row, not the first key anywhere ("ACM-3 is blocked by ACM-1" may come before the list)
+[ "$(grep -E '^[[:space:]]*([0-9]+[.)]|[-*]) .*ACM-[123]' <<<"$CLAUDE_OUT" | grep -oE 'ACM-[123]' | head -1)" = ACM-2 ] && grep -q 'ACM-1' <<<"$CLAUDE_OUT" \
   && pass "pick: list printed, urgent unblocked card first" || { fail "pick: list printed, urgent unblocked card first"; echo "$CLAUDE_OUT"; }
 grep -qE '^Route: /' <<<"$CLAUDE_OUT" && pass "route line printed" || { fail "route line printed"; echo "$CLAUDE_OUT" | tail -20; }
 want=$'- [ ] **ACM-5 · Older card**\n- [ ] **ACM-2 · Login fails on Safari** #bug #urgent\n\tThe login button does nothing on Safari 18.\n\tBraucht: ACM-4\n\tBranch `bugfix/ACM-2`'
