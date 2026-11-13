@@ -236,6 +236,12 @@ def rank_vault(cards):
     return sorted(todo, key=lambda c: not c["urgent"])
 
 
+def home_vault(cards):
+    """Home list: In progress cards in board order, then rank_vault. /ticket moves a card to
+    In progress, and the home list is the way to its ticket view and sessions."""
+    return [c for c in cards if c["column"] == "in progress"] + rank_vault(cards)
+
+
 JIRA_BUCKETS = [("bug", "defect", "bugfix", "sub-bug"), ("story", "user story"), ("epic",), ("task",),
                 ("spike", "research", "investigation")]
 
@@ -275,16 +281,18 @@ def jira_search(jql):
 
 
 def jira_board(key):
-    """To Do tickets of the active sprint that are mine or unassigned, ranked. openSprints() alone
+    """In Progress, then To Do tickets of the active sprint that are mine or unassigned, ranked. openSprints() alone
     also matches future sprints. Epics are left out: they can carry a sprint but don't show in the
     sprint backlog.
     Not checked: blocking links. acli's search refuses the `issuelinks` field, so PICKING's
     blocked check is skipped and blockedBy stays empty."""
     jql = ("project = {} AND sprint in openSprints() AND sprint not in futureSprints()"
-           " AND resolution = Unresolved AND statusCategory = \"To Do\" AND issuetype != Epic"
+           " AND resolution = Unresolved AND statusCategory in (\"To Do\", \"In Progress\") AND issuetype != Epic"
            " AND (assignee = currentUser() OR assignee is EMPTY) ORDER BY updated DESC").format(key)
-    return [dict(id=i["id"], title=i["title"], column=i["column"], blockedBy=[], urgent=False)
-            for i in rank_jira(jira_search(jql))]
+    ranked = rank_jira(jira_search(jql))
+    ranked.sort(key=lambda i: i["cat"] != "indeterminate")
+    return [dict(id=i["id"], title=i["title"], column=i["column"], blockedBy=[], urgent=False,
+                 active=i["cat"] == "indeterminate") for i in ranked]
 
 
 def jira_key(info):
@@ -338,7 +346,8 @@ def project_view(name, briefing, sessions):
         if info.get("board") == "vault":
             cards = parse_board(Path(info["board-file"]).read_text(encoding="utf-8"))
             view["next"] = [dict(id=c["id"], title=c["title"], column=c["column"], goal=c["goal"],
-                                 blockedBy=blocked_by(c, cards), urgent=c["urgent"]) for c in rank_vault(cards)[:MAX_TICKETS]]
+                                 blockedBy=blocked_by(c, cards), urgent=c["urgent"], active=c["column"] == "in progress")
+                             for c in home_vault(cards)[:MAX_TICKETS]]
         elif jira_key(info):
             view["key"] = jira_key(info)
             view["next"] = jira_board(view["key"])[:MAX_TICKETS]

@@ -54,6 +54,11 @@ class Board(unittest.TestCase):
         ranked = server.rank_vault(server.parse_board(BOARD))
         self.assertEqual([c["id"] for c in ranked], ["A-3", "A-2", "A-4", "A-6"])
 
+    def test_home_lists_in_progress_before_to_do(self):
+        # A claimed ticket must stay on the home screen, or its sessions can't be reached.
+        home = server.home_vault(server.parse_board(BOARD))
+        self.assertEqual([c["id"] for c in home], ["A-7", "A-3", "A-2", "A-4", "A-6"])
+
     def test_rank_jira(self):
         def issue(key, prio=3, typ="Task", cat="new", title="x", labels=()):
             return dict(id=key, title=title, column="", cat=cat, type=typ, prio=prio, labels=list(labels))

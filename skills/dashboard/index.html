@@ -330,7 +330,7 @@ function toggleOverlay(force) {
   const groups = [
     ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
-    ['home', [['space', 'open selected ticket'], ['⏎', 'prompt box: new session in the project with your text'], ['t', 'new session with /work <selected ticket>'], ['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open to-do ticket 1–9'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
+    ['home', [['space', 'open selected ticket'], ['⏎', 'prompt box: new session in the project with your text'], ['t', 'new session with /work <selected ticket>'], ['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open ticket 1–9 (in progress first, then to do)'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
     ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: new session with /work <id> prefilled'], ['→', 'no live sessions: edit the /work prompt, ⏎ starts it, ← (unchanged) closes'], ['←', 'no live sessions: back']]],
   ];
   const p = focusedProject();
@@ -460,6 +460,7 @@ function projectColumn(p, idx, lines, pageInfo) {
     const tags = [];
     if ((t.blockedBy || []).length) tags.push(`<span class="tag block">blocked by ${esc(t.blockedBy.join(', '))}</span>`);
     if (t.urgent) tags.push('<span class="tag urgent">urgent</span>');
+    if (t.active) tags.push('<span class="tag prog">in progress</span>');
     return `<div class="row${sel ? ' sel' : ''}" data-act="ticket" data-project="${esc(p.name)}" data-id="${esc(t.id)}">
       <span class="k${focused ? '' : ' off'}">${t.num}</span><span class="id">${esc(t.id)}</span>
       <span class="t" title="${esc(t.title)}">${esc(t.title)}</span>${tags.join('')}${sel ? badge('t') : ''}</div>${t.goal ? `<div class="goal" title="${esc(t.goal)}">${esc(t.goal)}</div>` : ''}`;

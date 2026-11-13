@@ -69,7 +69,7 @@ flowchart TD
 | | Skill | What it does | Uses |
 | --- | --- | --- | --- |
 | **Daily** | `briefing` | One whole-day briefing across every project: what I did last workday, what's next, Jira changes, new Sentry errors and Dependabot PRs, mail and Teams messages waiting on me, today's meetings. | vault, Jira, Sentry, GitHub, Microsoft 365 |
-| | `dashboard` | Full-screen local web app: clock and Köln weather, then the next tickets, briefing to-dos and jumps of up to 3 projects (up to 9 to-do tickets each, order saved), and each ticket's workflow, PR status and session tree. Keyboard-driven, no model calls. | vault, Claude app sessions, Jira, Sentry, GitHub, Open-Meteo |
+| | `dashboard` | Full-screen local web app: clock and Köln weather, then the next tickets, briefing to-dos and jumps of up to 3 projects (up to 9 in-progress and to-do tickets each, order saved), and each ticket's workflow, PR status and session tree. Keyboard-driven, no model calls. | vault, Claude app sessions, Jira, Sentry, GitHub, Open-Meteo |
 | | `note` | Saves a to-do for the briefing, tagged with the project I'm in. | vault |
 | **Ticket flow** | `ticket` | Adds one card to the project's vault board, in the language and line pattern of the cards already there, with the next free id. Given only an id, points to `/work`. | vault |
 | | `work` | Claims a ticket on the project's board (Jira, an Obsidian Kanban board, or any tracker with a connector), cuts its branch, imports it, and starts the route that works on it. | board (vault, Jira, other), repo |
@@ -98,7 +98,7 @@ flowchart TD
 | | `tab` / `p` | next project (`⇧tab` back) |
 | | `⇧←` / `⇧→`, `H` / `L` | move project left / right (order saved) |
 | | `[` / `]` | previous / next 3 projects |
-| | `1`–`9` | open to-do ticket 1–9 |
+| | `1`–`9` | open ticket 1–9 (in progress first, then to do) |
 | | `t` | new session in the app with `/work <selected ticket>` prefilled |
 | | `s` | new session: fix new Sentry errors (when there are any) |
 | | `d` | new session: Dependabot review (when there are new PRs) |
