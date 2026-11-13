@@ -80,13 +80,17 @@ main { min-height: 0; padding: 12px; overflow: hidden; }
 .today { flex: none; max-height: 28vh; }
 .today .scroll { padding-bottom: 6px; }
 .cols { flex: 1; display: grid; gap: 12px; min-height: 0; }
-.cols.proj { grid-template-rows: repeat(5, auto) 1fr; row-gap: 0; overflow-y: auto; }
-.panel.proj { display: grid; grid-row: span 6; grid-template-rows: subgrid; min-width: 0; overflow: hidden; }
+.cols.proj { grid-template-rows: repeat(5, auto) 1fr auto; row-gap: 0; overflow-y: auto; }
+.panel.proj { display: grid; grid-row: span 7; grid-template-rows: subgrid; min-width: 0; overflow: hidden; }
 .panel.proj .section { min-width: 0; }
 .panel.proj > .scroll { display: contents; }
 .tag.fail { color: var(--err); }
 .dot.pr-open { background: var(--run); } .dot.pr-draft { background: var(--label); } .dot.pr-merged { background: #a371f7; } .dot.pr-closed { background: var(--err); }
 .line.pr { cursor: pointer; }
+.sigs { padding: 4px 0 6px; }
+.line.sig .n { color: var(--text); }
+.line.sig.zero, .line.sig.zero .n { color: var(--dim); }
+.line.sig.zero .dot { background: transparent; border: 1px solid var(--line); }
 .tgoal { flex: none; padding: 0 2px; color: var(--text); font-size: 13.5px; }
 .goal { padding: 0 12px 4px 30px; color: var(--label); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .page { font: 11px var(--mono); color: var(--dim); }
@@ -297,8 +301,8 @@ function updateMeta() {
 }
 const HINTS = {
   start: [],
-  home: [['↑↓', 'select'], ['⏎', 'open'], ['tab', 'project'], ['⇧← →', 'move project'], ['[ ]', 'page'], ['1–3', 'next ticket'], ['r', 'refresh briefing'], ['s', 'start']],
-  ticket: [['↑↓', 'select'], ['⏎', 'open session'], ['o', 'open in app'], ['g', 'open PR'], ['t', 'copy /ticket'], ['esc', 'back']],
+  home: [['↑↓', 'select'], ['← →', 'project'], ['⇧← →', 'move project'], ['1–3', 'open ticket'], ['s', 'sentry fixes'], ['d', 'dependabot'], ['[ ]', 'page'], ['r', 'refresh'], ['c', 'clock']],
+  ticket: [['↑↓', 'select'], ['⏎', 'open session'], ['o', 'open in app'], ['g', 'open PR'], ['t', 'new session /ticket'], ['esc', 'back']],
   session: [['i', 'reply'], ['↑↓', 'scroll'], ['o', 'open in app'], ['esc', 'back']],
   reply: [['⏎', 'send'], ['⇧⏎', 'new line'], ['esc', 'leave box']],
 };
@@ -328,8 +332,8 @@ function toggleOverlay(force) {
   const groups = [
     ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection'], ['⏎', 'open']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
-    ['home', [['s', 'back to start screen'],['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–3', 'open next ticket'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
-    ['ticket', [['⏎', 'open session'], ['o', 'open session in Claude app'], ['g', 'open the PR'], ['t', 'copy /ticket <id> to start it in the app']]],
+    ['home', [['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–3', 'open next ticket'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
+    ['ticket', [['⏎', 'open session'], ['o', 'open session in Claude app'], ['g', 'open the PR'], ['t', 'new session in the app with /ticket <id> prefilled']]],
     ['session', [['i / /', 'focus reply box'], ['⏎ (in box)', 'copy reply, open in app'], ['esc (in box)', 'leave box'], ['↑↓ / j k', 'scroll chat'], ['o', 'open in Claude app']]],
   ];
   const p = focusedProject();
@@ -467,21 +471,27 @@ function projectColumn(p, idx, lines, pageInfo) {
       <span class="t" title="${esc(t.title)}">${esc(t.title)}</span>${tags.join('')}</div>${t.goal ? `<div class="goal" title="${esc(t.goal)}">${esc(t.goal)}</div>` : ''}`;
   };
   const progItems = items.filter(t => !t.num), nextItems = items.filter(t => t.num);
-  const todo = lines.filter(l => ['jira', 'sentry', 'dependabot', 'note', 'error'].includes(l.kind));
+  const todo = lines.filter(l => ['jira', 'note', 'error'].includes(l.kind));
+  // Sentry and Dependabot always show at the bottom; zero stays quiet.
+  const ids = (txt, k) => ((txt.match(new RegExp(k + ': ([^,]+)')) || [])[1] || '').split(/\s+/).filter(Boolean).length;
+  const sentry = lines.filter(l => l.kind === 'sentry').reduce((n, l) => n + ids(l.text, 'new') + ids(l.text, 'regressed'), 0);
+  const dep = lines.filter(l => l.kind === 'dependabot').reduce((n, l) => n + Number((l.text.match(/(\d+) new/) || [])[1] || 0), 0);
+  const sig = (name, n, cls) => `<div class="line sig${n ? '' : ' zero'}"><span class="dot ${n ? cls : ''}"></span><span class="tx">${name}</span><span class="n">${n}</span></div>`;
   const jumps = p.jumps || [];
   // Every section is always drawn and the columns share row heights (subgrid), so sections line up across projects.
   return `<section class="panel proj${focused ? ' focused' : ''}" data-act="focus" data-idx="${idx}">
     <div class="label"><span class="pname">${esc(p.name)}</span>${p.key ? `<span>· ${esc(p.key)}</span>` : ''}
       <span class="r">${pageInfo ? `<span class="page">${pageInfo}</span> ` : ''}${esc(relTime(p.lastActivityAt))}</span></div>
     <div class="scroll">
-      <div class="section"><div class="label">In progress</div>${p.error ? `<div class="errtext">${esc(p.error)}</div>` : ''}${progItems.length ? progItems.map(t => row(t, items.indexOf(t))).join('') : '<div class="empty">none</div>'}</div>
+      <div class="section"><div class="label">In progress</div>${p.error ? `<div class="errtext">${esc(p.error)}</div>` : ''}${progItems.length ? progItems.map(t => row(t, items.indexOf(t))).join('') : '<div class="empty">—</div>'}</div>
       <div class="section"><div class="label">Next</div>${nextItems.length ? nextItems.map(t => row(t, items.indexOf(t))).join('') : '<div class="empty">no next tickets</div>'}</div>
-      <div class="section"><div class="label">To-do</div>${todo.length ? todo.map(l => dotLine(l.kind, l.text)).join('') : '<div class="empty">none</div>'}</div>
-      <div class="section"><div class="label">Jumps</div>${!jumps.length ? '<div class="empty">none</div>' : jumps.map(j =>
+      <div class="section"><div class="label">To-do</div>${todo.length ? todo.map(l => dotLine(l.kind, l.text)).join('') : '<div class="empty">—</div>'}</div>
+      <div class="section"><div class="label">Jumps</div>${!jumps.length ? '<div class="empty">—</div>' : jumps.map(j =>
         `<div class="row jump${S.armed && S.armed.idx === idx && S.armed.key === j.key ? ' armed' : ''}" data-act="jump" data-idx="${idx}" data-key="${esc(j.key)}">
           <span class="k${focused ? '' : ' off'}">${esc(j.key)}</span><span class="t">${esc(j.label)}</span>
           ${j.arg !== undefined && j.arg !== null && j.action === 'copy' ? `<span class="arg" title="${esc(j.arg)}">${esc(j.arg)}</span>` : ''}</div>`).join('')}</div>
       <div></div>
+      <div class="section sigs">${sig('Sentry', sentry, 'sentry')}${sig('Dependabot', dep, 'dependabot')}</div>
     </div></section>`;
 }
 function focusProject(idx) {
@@ -533,7 +543,7 @@ async function runJump(idx, key) {
   if (!j) return false;
   try {
     if (j.action === 'copy') {
-      await copyText(j.arg);
+      await newSession(p.name, j.arg);
     } else if (j.action === 'note-done') {
       const now = Date.now();
       if (!(S.armed && S.armed.idx === idx && S.armed.key === key && now < S.armed.until)) {
@@ -562,15 +572,21 @@ function homeKey(e) {
   if (k === 'Enter') { const t = items[S.homeSel]; if (t) openTicket(focusedProject().name, t.id); return true; }
   if ((e.shiftKey && k === 'ArrowLeft') || k === 'H') { moveProject(-1); return true; }
   if ((e.shiftKey && k === 'ArrowRight') || k === 'L') { moveProject(1); return true; }
+  if (k === 'ArrowLeft' || k === 'ArrowRight') {
+    const n = (S.projects || []).length, to = S.focus + (k === 'ArrowLeft' ? -1 : 1);
+    if (to >= 0 && to < n) focusProject(to);
+    return true;
+  }
   if (k === 'Tab') { cycleProject(e.shiftKey ? -1 : 1); return true; }
   if (k === 'p') { cycleProject(1); return true; }
   if (k === ']') { pageProjects(1); return true; }
   if (k === '[') { pageProjects(-1); return true; }
   if (/^[1-3]$/.test(k)) { const t = items.find(x => x.num === Number(k)); if (t) openTicket(focusedProject().name, t.id); return true; }
   if (k === 'r') { refreshBriefing(); return true; }
-  if (k === 's') { go('#/start'); return true; }
+  if (k === 'c') { go('#/start'); return true; }
   const p = focusedProject();
   if (p && (p.jumps || []).some(j => j.key === k)) { runJump(S.focus, k); return true; }
+  if (k === 's' || k === 'd') { toast(k === 's' ? 'No new Sentry errors' : 'No new Dependabot PRs'); return true; }
   return false;
 }
 
@@ -669,9 +685,9 @@ async function openInApp(sessionId) {
   if (!sessionId) { toast('No session selected', true); return; }
   try { await api('/api/open', { sessionId }); toast('Opened in the Claude app'); } catch (e) { fail(e); }
 }
-// Copies a command and brings the Claude app forward; the app has no way to start a session from outside.
-async function copyText(text) {
-  try { await api('/api/copy', { text, app: true }); toast('Copied: ' + text + ' — paste it in a new session'); } catch (e) { fail(e); }
+// Opens a new Code session in the project's folder with the command prefilled; Enter in the app starts it.
+async function newSession(project, text) {
+  try { await api('/api/new-session', { project, text }); toast('New session: ' + text); } catch (e) { fail(e); }
 }
 async function openPr(url) {
   try { await api('/api/open-pr', { url }); toast('Opened PR'); } catch (e) { fail(e); }
@@ -683,7 +699,7 @@ function ticketKey(e) {
   if (k === 'Enter') { openSession(S.ticketSel); return true; }
   if (k === 'o') { const f = S.flat[S.ticketSel]; openInApp(f && f.s.sessionId); return true; }
   if (k === 'g') { const pr = (S.ticket && S.ticket.prs || [])[0]; if (pr) openPr(pr.url); else toast('No PR yet', true); return true; }
-  if (k === 't') { copyText('/ticket ' + S.route.id); return true; }
+  if (k === 't') { newSession(S.route.project, '/ticket ' + S.route.id); return true; }
   return false;
 }
 

@@ -242,7 +242,7 @@ class Briefing(unittest.TestCase):
         self.assertEqual(server.briefing_jumps("P", dict(b, status="running")), [])
         jumps = server.briefing_jumps("P", dict(b, status="ready"))
         self.assertEqual([(j["key"], j["action"], j["arg"]) for j in jumps], [
-            ("f", "copy", "/sentry-fix P-4F2 P-3A1 P"), ("d", "copy", "/dependabot-review"), ("n", "note-done", "3")])
+            ("s", "copy", "/sentry-fix P-4F2 P-3A1 P"), ("d", "copy", "/dependabot-review"), ("n", "note-done", "3")])
 
     def test_sort_projects(self):
         def v(name, act, nxt=()):

@@ -314,7 +314,7 @@ def briefing_jumps(name, briefing):
         if line["kind"] == "sentry":
             ids += sentry_ids(line["text"])
     if ids:
-        jumps.append({"key": "f", "label": "fix sentry", "action": "copy",
+        jumps.append({"key": "s", "label": "fix sentry", "action": "copy",
                       "arg": "/sentry-fix {} {}".format(" ".join(ids), name)})
     if any(l["kind"] == "dependabot" for l in section["lines"]):
         jumps.append({"key": "d", "label": "review dependabot", "action": "copy", "arg": "/dependabot-review"})
@@ -1031,6 +1031,21 @@ def post_open_pr(body):
     return {"ok": True}
 
 
+def post_new_session(body):
+    """Opens the Claude app's new Code session screen in the project's folder with the text
+    prefilled (claude://code/new?q=…&folder=…); Quinn presses Enter there. A link can't pick the
+    sidebar group."""
+    project, text = need(body, "project", "text")
+    d = lookup(project).get("dir", "none")
+    if d == "none" or not Path(d).is_dir():
+        raise ApiError(404, "no folder for project " + project)
+    url = "claude://code/new?" + urllib.parse.urlencode({"q": text, "folder": d})
+    code, out = run(["open", url])
+    if code != 0:
+        raise ApiError(500, "open: " + out.strip())
+    return {"ok": True}
+
+
 def post_copy(body):
     pbcopy(need(body, "text")[0])
     if body.get("app"):
@@ -1041,7 +1056,7 @@ def post_copy(body):
 GETS = {"/api/briefing": lambda q: BRIEFING.get(), "/api/projects": lambda q: projects_view(),
         "/api/ticket": get_ticket, "/api/session": get_session, "/api/weather": lambda q: weather(),
         "/api/order": lambda q: {"order": read_order()}}
-POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/open-pr": post_open_pr, "/api/reply": post_reply,
+POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/open-pr": post_open_pr, "/api/new-session": post_new_session, "/api/reply": post_reply,
          "/api/copy": post_copy, "/api/note-done": lambda b: note_done(need(b, "n")[0]),
          "/api/order": save_order}
 
