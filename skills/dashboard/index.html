@@ -558,7 +558,7 @@ async function runJump(idx, key) {
   } catch (e) { fail(e); }
   return true;
 }
-// Enter on a project: a prompt box; ⏎ opens a new session in the project's folder with the text prefilled.
+// Enter on a project: a prompt box; ⏎ opens a new session with the text prefilled.
 function openAsk(project) {
   const a = $('#ask');
   a.innerHTML = `<div class="panel"><div class="label"><span class="spark">✻</span>new session · ${esc(project)}</div>
@@ -700,7 +700,7 @@ function renderTicket() {
 async function openInApp(sessionId) {
   try { await api('/api/open', { sessionId }); toast('Opened in the Claude app'); } catch (e) { fail(e); }
 }
-// Opens a new Code session in the project's folder with the command prefilled; Enter in the app starts it.
+// Opens a new Code session (in the app's last-used folder) with the command prefilled; Enter in the app starts it.
 async function newSession(project, text) {
   try { await api('/api/new-session', { project, text }); toast(text ? 'New session: ' + text : 'New session'); } catch (e) { fail(e); }
 }

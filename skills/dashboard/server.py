@@ -952,12 +952,12 @@ def as_request(text):
     return "Run " + text.strip() if text.strip().startswith("/") else text
 
 
-def new_session_url(folder, text):
-    """claude://code/new?q=…&folder=…: the new Code session screen in the folder, the text
-    prefilled (none → a blank prompt). A link can't pick the sidebar group."""
-    params = {"q": as_request(text)} if text else {}
-    params["folder"] = folder
-    return "claude://code/new?" + urllib.parse.urlencode(params)
+def new_session_url(text):
+    """claude://code/new?q=…: the new Code session screen, the text prefilled (none → a blank
+    prompt). No `folder`: the app marks any link that names one as external and asks to trust
+    the folder every time, so the session opens in the folder the app used last. A link can't
+    pick the sidebar group."""
+    return "claude://code/new" + ("?" + urllib.parse.urlencode({"q": as_request(text)}) if text else "")
 
 
 def post_open(body):
@@ -971,13 +971,8 @@ def post_open(body):
 
 
 def post_new_session(body):
-    """Opens the Claude app's new Code session screen in the project's folder; Quinn presses Enter there."""
-    project = need(body, "project")[0]
-    text = body.get("text") or ""
-    d = lookup(project).get("dir", "none")
-    if d == "none" or not Path(d).is_dir():
-        raise ApiError(404, "no folder for project " + project)
-    code, out = run(["open", new_session_url(d, text)])
+    """Opens the Claude app's new Code session screen; Quinn presses Enter there."""
+    code, out = run(["open", new_session_url(body.get("text") or "")])
     if code != 0:
         raise ApiError(500, "open: " + out.strip())
     return {"ok": True}

@@ -102,8 +102,8 @@ class NewSession(unittest.TestCase):
         self.assertEqual(server.as_request("hello"), "hello")
 
     def test_url(self):
-        self.assertEqual(server.new_session_url("/p/x", ""), "claude://code/new?folder=%2Fp%2Fx")
-        self.assertEqual(server.new_session_url("/p", "hi there"), "claude://code/new?q=hi+there&folder=%2Fp")
+        self.assertEqual(server.new_session_url(""), "claude://code/new")
+        self.assertEqual(server.new_session_url("hi there"), "claude://code/new?q=hi+there")
 
 
 class Fixture(unittest.TestCase):
