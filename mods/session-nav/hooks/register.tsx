@@ -85,7 +85,8 @@ export const register: Register = on => {
     return (
       <Box flexDirection="row" justifyContent="space-between" width="100%">
         <Box gap={1}>
-          <Button key="dashboard" label="▦ dashboard" onPress={() => { void $.process.run(DASHBOARD) }} />
+          {/* autoFocus: when the bar takes the keyboard, the ring starts here, so Enter opens the dashboard. */}
+          <Button key="dashboard" label="▦ dashboard" autoFocus onPress={() => { void $.process.run(DASHBOARD) }} />
           {parent?.link ? <Button key={parent.sessionId} label={`← ${name.get(parent.sessionId)}`} onPress={open(parent)} /> : null}
         </Box>
         <Box gap={1}>
