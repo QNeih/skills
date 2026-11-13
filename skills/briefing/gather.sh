@@ -10,6 +10,8 @@ set -u
 export LC_ALL=C
 here=$(cd "$(dirname "$0")" && pwd)
 [ -d "${VAULT:-}" ] || { echo "error: vault ${VAULT:-(VAULT not set)} not found"; exit 1; }
+# macOS hides iCloud folders from a process without Full Disk Access: the glob below would just find no projects.
+err=$(ls "$VAULT/Projects" 2>&1 >/dev/null) || { echo "error: can't read the vault: $err"; exit 1; }
 notes_file="$VAULT/Briefing notes.md"
 
 # --done N...: numbers as the briefing showed them; resolve all to file lines before ticking any
