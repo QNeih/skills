@@ -49,13 +49,16 @@ Without git, go to step 7.
 4. `git diff --cached --quiet` fails → stop and ask: unstage (`git restore --staged .`) or say how to treat the staged hunks.
 5. **Change set**: `git status --porcelain --untracked-files=all`, minus every path under `.scratch/` or `.handoffs/`.
 6. **Unpushed commits**: `git rev-list origin/<branch>..HEAD`; without an upstream, `git rev-list origin/<base>..HEAD`.
-7. Change set and unpushed commits both empty → stop and print this line as is: `Nothing to send: <branch> is clean and pushed.`
+7. Change set and unpushed commits both empty → nothing to commit or push; the branch may still need its PR:
+   - `git rev-list origin/<base>..HEAD` empty → stop and print this line as is: `Nothing to send: <branch> is clean and pushed, with no commits beyond <base>.`
+   - `gh pr view --json state` shows `OPEN` → stop and print this line as is: `Nothing to send: <branch> is clean and pushed, with an open PR.`
+   - Else go on: steps 3 and 5 have nothing to do, step 6 opens the PR.
 
 **Done when:** no staged hunks, `<base>` is known, and the change set and unpushed commits are listed.
 
 ## 3. Commit
 
-Change set empty → skip and say "no uncommitted changes; sending the unpushed commits".
+Change set empty → skip and say "no uncommitted changes; sending the branch's commits".
 
 1. Read `git diff`, the untracked files, and `git log -10 --format=%s` for the repo's subject style.
 2. Plan one commit per concern: refactor apart from behaviour, unrelated areas apart; prep (renames, moves) before what depends on it. Show the plan: ordered subjects, paths or hunks each.

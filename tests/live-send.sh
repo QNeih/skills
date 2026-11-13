@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# /send through claude -p, against a local bare remote: nothing to send; lint commit, push
+# /send through claude -p, against a local bare remote: nothing to send; pushed without PR; lint commit, push
 # and the "PR on <host> not supported" stop; without git: card to Done, ticket files deleted.
 . "$(dirname "$0")/lib.sh"
 fixture_new
@@ -73,6 +73,15 @@ done
 grep -qF 'ACM-2 · Login fails' <<<"$(column "$board" 'in progress')" && pass "stop: card not moved" || { fail "stop: card not moved"; cat "$board"; }
 [ "$(git -C "$acme" branch --show-current)" = bugfix/ACM-2 ] && [ -f "$acme/.scratch/ACM-2-login-fails/ticket.md" ] \
   && pass "stop: no cleanup" || fail "stop: no cleanup"
+
+# Pushed and clean but no PR yet: /send goes on to the PR step
+git -C "$acme" checkout -q main && git -C "$acme" checkout -q -b feature/ACM-3
+echo 'let d = 4' > "$acme/src/d.js"
+git -C "$acme" add src/d.js && git -C "$acme" commit -qm "Add d" && git -C "$acme" push -q -u origin HEAD 2>/dev/null
+ticket "$acme" ACM-3 add-d feature/ACM-3 main
+run_send "$acme"
+! grep -qi 'nothing to send' <<<"$CLAUDE_OUT" && grep -qE 'PR on .+ not supported' <<<"$CLAUDE_OUT" \
+  && pass "pushed without PR: goes on to the PR step" || { fail "pushed without PR: goes on to the PR step"; echo "$CLAUDE_OUT" | tail -20; }
 
 # --- project without git: two tickets, the one in progress on the board is sent ---
 fixture_note Beta
