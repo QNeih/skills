@@ -253,7 +253,7 @@ class Briefing(unittest.TestCase):
 
     def test_sort_projects(self):
         def v(name, act, nxt=()):
-            return dict(name=name, lastActivityAt=act, next=list(nxt), inProgress=[], jumps=[], error=None)
+            return dict(name=name, lastActivityAt=act, next=list(nxt), jumps=[], error=None)
         views = [v("idle-recent", 30), v("old", 10, ["x"]), v("new", 20, ["x"]), v("never", None, ["x"])]
         self.assertEqual([p["name"] for p in server.sort_projects(views)], ["new", "old", "never", "idle-recent"])
         ordered = server.sort_projects(views, ["gone", "old", "idle-recent"])

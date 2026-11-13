@@ -227,6 +227,9 @@ def blocked_by(card, cards):
     return [i for i in card["needs"] if i not in done]
 
 
+MAX_TICKETS = 9
+
+
 def rank_vault(cards):
     """Unblocked To do cards, #urgent first, then board order (VAULT.md › Pick)."""
     todo = [c for c in cards if c["column"] == "to do" and not blocked_by(c, cards)]
@@ -272,18 +275,13 @@ def jira_search(jql):
 
 
 def jira_board(key):
-    """My open sprint tickets: In Progress category → inProgress; To Do category → next, ranked.
-    Nothing assigned to me → next from the whole sprint (PICKING.md step 1) and mine=False: there is
-    no top pick then, /ticket asks which one.
+    """Open sprint tickets in the To Do category that are mine or unassigned, ranked.
     Not checked: blocking links. acli's search refuses the `issuelinks` field, so PICKING's
     blocked check is skipped and blockedBy stays empty."""
-    base = "project = {} AND sprint in openSprints() AND resolution = Unresolved".format(key)
-    mine = jira_search(base + " AND assignee = currentUser() ORDER BY updated DESC")
-    pool = mine or jira_search(base + " ORDER BY updated DESC")
-    in_progress = [{"id": i["id"], "title": i["title"]} for i in mine if i["cat"] == "indeterminate"]
-    nxt = [dict(id=i["id"], title=i["title"], column=i["column"], blockedBy=[], urgent=False)
-           for i in rank_jira([i for i in pool if i["cat"] == "new"])]
-    return nxt, in_progress, bool(mine)
+    jql = ("project = {} AND sprint in openSprints() AND resolution = Unresolved AND statusCategory = \"To Do\""
+           " AND (assignee = currentUser() OR assignee is EMPTY) ORDER BY updated DESC").format(key)
+    return [dict(id=i["id"], title=i["title"], column=i["column"], blockedBy=[], urgent=False)
+            for i in rank_jira(jira_search(jql))]
 
 
 def jira_key(info):
@@ -329,26 +327,23 @@ def project_view(name, briefing, sessions):
     info = lookup(name)
     d = info.get("dir", "none")
     view = {"name": name, "dir": None if d == "none" else d, "board": info.get("board"), "key": info.get("key"),
-            "error": None, "next": [], "inProgress": [], "jumps": [], "lastActivityAt": None, "running": 0}
-    errors, top_pick = [], True
+            "error": None, "next": [], "jumps": [], "lastActivityAt": None, "running": 0}
+    errors = []
     if d == "none":
         errors.append("folder: " + info.get("reason", "not found"))
     try:
         if info.get("board") == "vault":
             cards = parse_board(Path(info["board-file"]).read_text(encoding="utf-8"))
             view["next"] = [dict(id=c["id"], title=c["title"], column=c["column"], goal=c["goal"],
-                                 blockedBy=blocked_by(c, cards), urgent=c["urgent"]) for c in rank_vault(cards)[:3]]
-            view["inProgress"] = [{"id": c["id"], "title": c["title"], "goal": c["goal"]}
-                                  for c in cards if c["column"] == "in progress"]
+                                 blockedBy=blocked_by(c, cards), urgent=c["urgent"]) for c in rank_vault(cards)[:MAX_TICKETS]]
         elif jira_key(info):
             view["key"] = jira_key(info)
-            nxt, view["inProgress"], top_pick = jira_board(view["key"])
-            view["next"] = nxt[:3]
+            view["next"] = jira_board(view["key"])[:MAX_TICKETS]
     except Exception as e:
         traceback.print_exc()
         errors.append(str(e))
     view["error"] = "; ".join(errors) or None
-    if view["next"] and top_pick:
+    if view["next"]:
         top = view["next"][0]["id"]
         view["jumps"].append({"key": "t", "label": "start /ticket " + top, "action": "copy", "arg": "/ticket " + top})
     view["jumps"] += briefing_jumps(name, briefing)
@@ -366,7 +361,7 @@ def sort_projects(views, order=()):
     rank = {name: i for i, name in enumerate(order)}
 
     def idle(v):
-        return not (v["next"] or v["inProgress"] or v["jumps"] or v["error"])
+        return not (v["next"] or v["jumps"] or v["error"])
     saved = sorted((v for v in views if v["name"] in rank), key=lambda v: rank[v["name"]])
     rest = sorted((v for v in views if v["name"] not in rank), key=lambda v: (idle(v), -(v["lastActivityAt"] or 0)))
     return saved + rest
