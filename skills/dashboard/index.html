@@ -130,6 +130,8 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 .extra textarea { flex: 1; resize: none; height: 96px; background: none; color: var(--text); border: 0; padding: 0;
   font: var(--fs)/1.5 var(--mono); outline: none; }
 .extra textarea::placeholder { color: var(--dim); }
+.offer { margin: 12px 15px 0; padding: 4px 0; gap: 10px; color: var(--label); cursor: pointer; }
+.offer .jk { margin-left: 0; }
 .extra-hint { padding: 0 15px; color: var(--dim); font-size: var(--fs-s); }
 
 /* ticket */
@@ -294,9 +296,9 @@ const HINTS = {
 function updateHints() {
   let h = HINTS[S.route.name].slice();
   if (S.route.name === 'ticket') {
-    if (S.extra !== null) h = [['⏎', 'start session'], ['⇧⏎', 'new line'], ['esc', 'cancel']];
+    if (S.extra !== null) h = [['⏎', 'start session'], ['⇧⏎', 'new line'], ['← unchanged / esc', 'close']];
     else if (aliveSessions()) { h[1] = ['space', 'open session']; h = h.filter(([k]) => k !== '←'); }
-    else h.push(['→', 'add input']);
+    else h.push(['→', 'edit prompt']);
   }
   if (S.route.name === 'home') {
     const p = focusedProject();
@@ -322,7 +324,7 @@ function toggleOverlay(force) {
     ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
     ['home', [['space', 'open selected ticket'], ['⏎', 'blank new session in the project'], ['t', 'new session with /ticket <selected ticket>'], ['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open to-do ticket 1–9'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
-    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: new session with /ticket <id> prefilled'], ['→', 'no live sessions: type extra input for /ticket, ⏎ starts it'], ['←', 'no live sessions: back']]],
+    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: new session with /ticket <id> prefilled'], ['→', 'no live sessions: edit the /ticket prompt, ⏎ starts it, ← (unchanged) closes'], ['←', 'no live sessions: back']]],
   ];
   const p = focusedProject();
   if (p && (p.jumps || []).length) groups.push([`jumps · ${p.name}`, p.jumps.map(j => [j.key, j.label])]);
@@ -653,9 +655,10 @@ function renderTicket() {
         ${(t.card || []).length ? `<div class="section"><div class="label">card</div><div class="text dim">${t.card.map(l => hlIds(inline(l))).join('\n')}</div></div>` : ''}
       </div></section>
       <section class="panel"><div class="label">sessions<span class="r">${S.flat.length || ''}</span></div>
-        ${S.extra === null ? '' : `<div class="extra"><span class="prompt">&gt;</span><textarea id="extra" placeholder="/ticket ${esc(r.id)} …"></textarea></div>
-        <div class="extra-hint">⏎ start /ticket ${esc(r.id)} with this text · ⇧⏎ new line · esc cancel</div>`}
-        <div class="scroll tree">${sessions || (S.extra === null ? '<div class="empty">no sessions</div>' : '')}</div></section>
+        ${S.extra !== null ? `<div class="extra"><span class="prompt">&gt;</span><textarea id="extra"></textarea></div>
+        <div class="extra-hint">⏎ start session · ⇧⏎ new line · ← (unchanged) or esc close</div>`
+          : aliveSessions() ? '' : `<div class="row offer" data-act="extra"><span class="jk">→</span><span class="t">edit prompt</span></div>`}
+        <div class="scroll tree">${sessions || (S.extra === null && aliveSessions() ? '<div class="empty">no sessions</div>' : '')}</div></section>
     </div></div>`;
   main.querySelectorAll('.scroll').forEach((x, i) => { if (keepScroll[i]) x.scrollTop = keepScroll[i]; });
   const ta = $('#extra');
@@ -675,12 +678,15 @@ async function newSession(project, text) {
   try { await api('/api/new-session', { project, text }); toast(text ? 'New session: ' + text : 'New session'); } catch (e) { fail(e); }
 }
 const aliveSessions = () => S.flat.some(f => f.s.state !== 'archived');
+const ticketPrompt = () => `/ticket ${S.route.id} `;
+function openExtra() { if (S.extra === null) S.extra = ticketPrompt(); renderTicket(); updateHints(); }
 function closeExtra() { S.extra = null; renderTicket(); updateHints(); }
 function extraKey(e, ta) {
-  if (e.key === 'Escape') { e.preventDefault(); closeExtra(); }
+  const unchanged = !ta.value.trim() || ta.value.trim() === ticketPrompt().trim();
+  if (e.key === 'Escape' || (e.key === 'ArrowLeft' && unchanged)) { e.preventDefault(); closeExtra(); }
   else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
-    newSession(S.route.project, `/ticket ${S.route.id} ${ta.value.trim()}`.trim());
+    newSession(S.route.project, ta.value.trim() || ticketPrompt().trim());
     closeExtra();
   }
 }
@@ -694,7 +700,7 @@ function ticketKey(e) {
     return true;
   }
   if (k === 'ArrowLeft' && !aliveSessions()) { back(); return true; }
-  if (k === 'ArrowRight' && !aliveSessions()) { S.extra = S.extra || ''; renderTicket(); updateHints(); return true; }
+  if (k === 'ArrowRight' && !aliveSessions()) { openExtra(); return true; }
   return false;
 }
 
@@ -813,6 +819,7 @@ document.addEventListener('click', e => {
     openTicket(el.dataset.project, el.dataset.id);
   } else if (a === 'jump') runJump(Number(el.dataset.idx), el.dataset.key);
   else if (a === 'focus') { if (Number(el.dataset.idx) !== S.focus) focusProject(Number(el.dataset.idx)); }
+  else if (a === 'extra') openExtra();
   else if (a === 'session') { S.ticketSel = Number(el.dataset.i); renderTicket(); }
 });
 window.addEventListener('hashchange', route);

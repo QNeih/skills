@@ -106,7 +106,7 @@ flowchart TD
 | ticket | `↑` `↓` / `j` `k` | move session selection |
 | | `space` | open the selected session in the app; no sessions yet: new session with `/ticket <id>` prefilled |
 | | `←` | back, while the ticket has no live sessions |
-| | `→` | while the ticket has no live sessions: type extra input, `⏎` starts `/ticket <id> <input>`, `esc` cancels |
+| | `→` | while the ticket has no live sessions: edit the prompt (prefilled `/ticket <id> `), `⏎` starts it, `←` while unchanged or `esc` closes |
 
 ## Install
 
