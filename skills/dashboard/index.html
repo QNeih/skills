@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard</title>
+<style>
+:root {
+  --bg: #0b0d10; --panel: #0e1217; --line: #1f2630; --text: #c9d1d9; --head: #e6edf3;
+  --label: #8b98a5; --dim: #6b7681; --accent: #4fd1c5; --sel: #121b22;
+  --run: #3fb950; --wait: #d29922; --arch: #3a434d; --err: #e5534b;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: hidden; background: var(--bg); color: var(--text);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; }
+::selection { background: #1d3a3a; }
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+a { color: var(--accent); }
+.mono { font-family: var(--mono); }
+#app { display: grid; grid-template-rows: 36px 1fr 30px; height: 100vh; }
+
+/* bars */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 14px;
+  border-bottom: 0.5px solid var(--line); font: 12px var(--mono); color: var(--label); min-width: 0; }
+.crumbs { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.crumbs a { color: var(--label); text-decoration: none; cursor: pointer; }
+.crumbs a:hover { color: var(--head); }
+.crumbs .sep { color: var(--arch); margin: 0 7px; }
+.crumbs .cur { color: var(--head); }
+.crumbs .id { color: var(--accent); }
+.meta { display: flex; gap: 16px; white-space: nowrap; align-items: center; }
+.meta .run { display: inline-flex; align-items: center; gap: 6px; }
+.bottom { display: flex; align-items: center; gap: 18px; padding: 0 14px; border-top: 0.5px solid var(--line);
+  font: 11px var(--mono); color: var(--label); white-space: nowrap; overflow: hidden; }
+kbd { font: inherit; color: var(--accent); margin-right: 5px; }
+
+main { min-height: 0; padding: 12px; overflow: hidden; }
+.screen { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+
+/* panels */
+.panel { background: var(--panel); border: 0.5px solid var(--line); border-radius: 6px; display: flex;
+  flex-direction: column; min-height: 0; min-width: 0; }
+.panel.focused { border-color: #2e3a47; }
+.label { font: 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--label);
+  padding: 12px 12px 7px; display: flex; gap: 8px; align-items: baseline; }
+.label .r { margin-left: auto; letter-spacing: 0; text-transform: none; color: var(--dim); }
+.panel.focused > .label:first-child .pname { color: var(--accent); }
+.scroll { overflow: auto; min-height: 0; flex: 1; padding-bottom: 8px; }
+.empty { padding: 3px 12px; color: var(--dim); font-size: 12px; }
+.errtext { padding: 4px 12px; color: var(--err); font: 12px var(--mono); white-space: pre-wrap; word-break: break-word; }
+
+.row { display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 10px; border-left: 2px solid transparent;
+  transition: background-color 100ms, border-color 100ms; cursor: pointer; min-width: 0; }
+.row:hover { background: #10161c; }
+.row.sel { background: var(--sel); border-left-color: var(--accent); }
+.row .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .k { font: 11px var(--mono); color: var(--accent); width: 10px; flex: none; }
+.row .k.off { color: var(--arch); }
+.id { font-family: var(--mono); font-size: 12px; color: var(--accent); flex: none; }
+.tag { font: 11px var(--mono); color: var(--label); flex: none; white-space: nowrap; }
+.tag.block { color: var(--wait); }
+.tag.urgent { color: var(--err); }
+.tag.prog { color: var(--run); }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; background: var(--arch); }
+.dot.running { background: var(--run); } .dot.waiting { background: var(--wait); }
+.dot.archived { background: var(--arch); } .dot.error, .dot.sentry { background: var(--err); }
+.dot.jira { background: var(--label); } .dot.dependabot { background: var(--wait); }
+.dot.note { background: transparent; border: 1px solid var(--label); }
+.line { display: flex; gap: 8px; align-items: baseline; padding: 3px 12px; font-size: 12.5px; min-width: 0; }
+.line .dot { transform: translateY(-1px); }
+.line .tx { flex: 1; min-width: 0; word-break: break-word; }
+.line .n { font: 11px var(--mono); color: var(--accent); flex: none; }
+.line code, .md code { font: 12px var(--mono); background: #151b22; border-radius: 3px; padding: 0 4px; }
+.sub { padding: 2px 12px 4px 30px; color: var(--label); font-size: 12px; }
+.section + .section { border-top: 0.5px solid var(--line); margin-top: 6px; }
+.status { padding: 4px 12px; color: var(--label); font: 12px var(--mono); }
+
+/* home */
+.today { flex: none; max-height: 28vh; }
+.today .scroll { padding-bottom: 6px; }
+.cols { flex: 1; display: grid; gap: 12px; min-height: 0; }
+.page { font: 11px var(--mono); color: var(--dim); }
+.jump .k { width: auto; min-width: 10px; }
+.jump .arg { font: 11px var(--mono); color: var(--dim); max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jump.armed { background: #1f1a10; border-left-color: var(--wait); }
+
+/* ticket */
+.head { flex: none; display: flex; align-items: baseline; gap: 12px; padding: 2px 2px 0; min-width: 0; }
+.head .id { font-size: 15px; }
+.head h1 { font-size: 16px; font-weight: 600; color: var(--head); margin: 0; flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.head .tag { font-size: 12px; }
+.btn { font: 11px var(--mono); color: var(--label); background: none; border: 0.5px solid var(--line); border-radius: 4px;
+  padding: 3px 8px; cursor: pointer; flex: none; }
+.btn:hover { color: var(--head); border-color: #2e3a47; }
+.btn kbd { margin-right: 4px; }
+.two { flex: 1; display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 12px; min-height: 0; }
+.step { display: flex; align-items: center; gap: 10px; padding: 4px 12px; color: var(--label); }
+.step .dot { width: 8px; height: 8px; }
+.step.done { color: var(--dim); } .step.done .dot { background: var(--arch); }
+.step.now { color: var(--head); } .step.now .dot { background: var(--accent); }
+.step.next .dot, .step.todo .dot { background: transparent; border: 1px solid var(--arch); }
+.step.next .dot { border-color: var(--label); }
+.step .cur { font: 11px var(--mono); color: var(--accent); }
+.text { padding: 2px 12px 4px; white-space: pre-wrap; word-break: break-word; font-size: 12.5px; }
+.text.dim { color: var(--label); }
+.tree .conn { font-family: var(--mono); color: var(--arch); white-space: pre; flex: none; }
+.tree .st { font: 11px var(--mono); color: var(--label); flex: none; }
+.tree .when { font: 11px var(--mono); color: var(--dim); flex: none; width: 56px; text-align: right; }
+.tree .summary { padding: 2px 12px 6px 0; color: var(--label); font-size: 12px; white-space: pre-wrap; }
+
+/* session */
+.chat { flex: 1; overflow: auto; padding: 16px 18px; min-height: 0; }
+.msg { margin: 10px 0; max-width: 78ch; }
+.msg.user { margin-left: auto; display: flex; justify-content: flex-end; }
+.bubble { background: #12202a; border: 0.5px solid #1d3340; color: var(--head); border-radius: 8px; padding: 8px 12px;
+  white-space: pre-wrap; word-break: break-word; max-width: 78ch; }
+.md p { margin: 0 0 8px; } .md p:last-child { margin-bottom: 0; }
+.md p.h { color: var(--head); font-weight: 600; }
+.md ul, .md ol { margin: 0 0 8px; padding-left: 20px; }
+.md pre { background: #0a0d11; border: 0.5px solid var(--line); border-radius: 5px; padding: 8px 10px; overflow: auto; margin: 0 0 8px; }
+.md pre code { background: none; padding: 0; font-size: 12px; }
+.tool { font: 11.5px var(--mono); color: var(--dim); padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reply { flex: none; display: flex; }
+.reply textarea { flex: 1; resize: none; height: 64px; background: var(--panel); color: var(--text); border: 0.5px solid var(--line);
+  border-radius: 6px; padding: 9px 12px; font: 13px/1.45 -apple-system, BlinkMacSystemFont, sans-serif; outline: none; }
+.reply textarea:focus { border-color: var(--accent); }
+.reply textarea::placeholder { color: var(--dim); }
+
+/* start */
+#app.start { grid-template-rows: 1fr 30px; }
+#app.start .top { display: none; }
+.screen.start { align-items: center; justify-content: center; gap: 0; }
+.clock { font-weight: 200; color: var(--head); font-size: min(18vw, 22vh); line-height: 1; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }
+.clock .sec { font: 300 min(3vw, 4vh) var(--mono); color: var(--label); margin-left: .6em; letter-spacing: 0; }
+.date { font-size: min(2.6vw, 3.6vh); color: var(--text); margin-top: 1.4vh; font-weight: 300; }
+.weather { margin-top: 4vh; display: flex; flex-direction: column; align-items: center; gap: 3.2vh; width: min(980px, 92vw); }
+.wnow { display: flex; align-items: center; gap: 22px; }
+.wnow .ico { width: 64px; height: 64px; color: var(--text); }
+.wnow .temp { font-size: 56px; font-weight: 200; color: var(--head); line-height: 1; font-variant-numeric: tabular-nums; }
+.wnow .cond { color: var(--head); font-size: 16px; }
+.wnow .place { font: 11px var(--mono); color: var(--label); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 4px; }
+.wsmall { font: 12px var(--mono); color: var(--label); display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
+.wsmall b { color: var(--text); font-weight: 400; }
+.hours { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); width: 100%; border: 0.5px solid var(--line);
+  border-radius: 6px; background: var(--panel); padding: 10px 4px; }
+.hours > div, .days > div { display: flex; flex-direction: column; align-items: center; gap: 5px; font: 12px var(--mono); color: var(--label); }
+.hours .ico, .days .ico { width: 22px; height: 22px; color: var(--text); }
+.hours .tv, .days .tv { color: var(--head); }
+.hours .pp { color: var(--dim); font-size: 11px; min-height: 1em; }
+.days { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 70%; }
+.days .lo { color: var(--dim); }
+.ico { display: inline-block; flex: none; }
+
+/* toast + overlay */
+#toast { position: fixed; right: 16px; bottom: 42px; max-width: 520px; background: var(--panel); border: 0.5px solid #2e3a47;
+  border-radius: 6px; padding: 8px 12px; font: 12px var(--mono); color: var(--head); white-space: pre-wrap; word-break: break-word;
+  display: none; z-index: 20; }
+#toast.err { border-color: var(--err); color: #f0a8a4; }
+#toast.show { display: block; }
+#overlay { position: fixed; inset: 0; background: rgba(5, 7, 9, .78); display: none; align-items: center; justify-content: center; z-index: 10; }
+#overlay.show { display: flex; }
+#overlay .panel { width: min(760px, 92vw); max-height: 86vh; }
+.keys { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; padding: 0 0 12px; overflow: auto; }
+.keys .row { cursor: default; padding: 3px 12px; }
+.keys .row:hover { background: none; }
+.keys kbd { display: inline-block; min-width: 108px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top"><div class="crumbs" id="crumbs"></div><div class="meta" id="meta"></div></header>
+  <main id="main"></main>
+  <footer class="bottom" id="hints"></footer>
+</div>
+<div id="toast"></div>
+<div id="overlay"></div>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const PAGE = 3;
+
+const S = {
+  route: { name: 'home' }, gen: 0, timer: null, overlay: false, armed: null,
+  briefing: null, briefingErr: null, projects: null, projectsErr: null, focus: 0, homeSel: 0,
+  ticket: null, ticketErr: null, ticketSel: 0, flat: [],
+  session: null, sessionErr: null, sessionSig: '',
+  states: {}, // sessionId -> state, from every ticket/session response seen
+};
+
+/* ---------- api ---------- */
+async function api(path, body) {
+  const opt = body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+  let res;
+  try { res = await fetch(path, opt); } catch (e) { throw new Error(`${path}: ${e.message}`); }
+  const txt = await res.text();
+  let data = null;
+  if (txt) {
+    try { data = JSON.parse(txt); }
+    catch { throw new Error(res.ok ? `${path}: response is not JSON` : `${res.status} ${txt}`); }
+  }
+  if (!res.ok) throw new Error(data && data.error ? data.error : `${path}: ${res.status} ${res.statusText}`);
+  return data;
+}
+
+/* ---------- formatting ---------- */
+function relTime(v) {
+  if (v === null || v === undefined || v === '') return '';
+  let t = typeof v === 'number' ? (v < 1e12 ? v * 1000 : v) : Date.parse(v);
+  if (isNaN(t)) return '';
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 60) return 'now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+// Inline markdown on raw text: every segment is HTML-escaped before any tag is added.
+function inline(s) {
+  return String(s ?? '').split(/(`[^`\n]+`)/).map((seg, i) => i % 2
+    ? `<code>${esc(seg.slice(1, -1))}</code>`
+    : esc(seg)
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  ).join('');
+}
+// Colour ticket ids in text outside of tags.
+const hlIds = html => html.split(/(<[^>]+>)/).map(p => p.startsWith('<') ? p
+  : p.replace(/\b([A-Z][A-Z0-9]+-\d+)\b/g, '<span class="id">$1</span>')).join('');
+function md(src) {
+  const out = [], lines = String(src ?? '').replace(/\r\n?/g, '\n').split('\n');
+  let para = [], list = null, i = 0;
+  const flushPara = () => { if (para.length) { out.push(`<p>${inline(para.join('\n')).replace(/\n/g, '<br>')}</p>`); para = []; } };
+  const flushList = () => { if (list) { out.push(`<${list.type}>${list.items.map(x => `<li>${inline(x)}</li>`).join('')}</${list.type}>`); list = null; } };
+  while (i < lines.length) {
+    const l = lines[i];
+    if (/^\s*```/.test(l)) {
+      flushPara(); flushList();
+      const code = []; i++;
+      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) code.push(lines[i++]);
+      i++;
+      out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`);
+      continue;
+    }
+    const ul = l.match(/^\s*[-*+]\s+(.*)$/), ol = l.match(/^\s*\d+[.)]\s+(.*)$/);
+    if (ul || ol) {
+      flushPara();
+      const type = ul ? 'ul' : 'ol';
+      if (list && list.type !== type) flushList();
+      if (!list) list = { type, items: [] };
+      list.items.push((ul || ol)[1]); i++; continue;
+    }
+    if (!l.trim()) { flushPara(); flushList(); i++; continue; }
+    if (list && /^\s{2,}\S/.test(l)) { list.items[list.items.length - 1] += ' ' + l.trim(); i++; continue; }
+    const h = l.match(/^#{1,6}\s+(.*)$/);
+    if (h) { flushPara(); flushList(); out.push(`<p class="h">${inline(h[1])}</p>`); i++; continue; }
+    flushList(); para.push(l); i++;
+  }
+  flushPara(); flushList();
+  return out.join('');
+}
+const dotLine = (kind, text) => {
+  if (kind === 'note') {
+    const m = String(text).match(/^#?(\d+)[.):]?\s+([\s\S]*)$/);
+    if (m) return `<div class="line"><span class="n">#${esc(m[1])}</span><span class="tx">${hlIds(inline(m[2]))}</span></div>`;
+  }
+  return `<div class="line"><span class="dot ${esc(kind)}"></span><span class="tx">${hlIds(inline(text))}</span></div>`;
+};
+
+/* ---------- chrome: crumbs, clock, hints, toast, overlay ---------- */
+function setCrumbs(parts) {
+  $('#crumbs').innerHTML = parts.map((p, i) => {
+    const last = i === parts.length - 1;
+    const cls = (p.id ? 'id ' : '') + (last ? 'cur' : '');
+    return (i ? '<span class="sep">/</span>' : '') +
+      (last ? `<span class="${cls}">${esc(p.text)}</span>` : `<a class="${cls}" href="${esc(p.href)}">${esc(p.text)}</a>`);
+  }).join('');
+}
+function updateMeta() {
+  const d = new Date();
+  const date = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const running = (S.projects || []).reduce((n, p) => n + (p.running || 0), 0);
+  $('#meta').innerHTML = `<span>${esc(date)}</span><span>${esc(time)}</span>` +
+    `<span class="run"><span class="dot ${running ? 'running' : 'archived'}"></span>${running} running</span>`;
+}
+const HINTS = {
+  start: [['any key', 'briefing']],
+  home: [['↑↓', 'select'], ['⏎', 'open'], ['tab', 'project'], ['⇧← →', 'move project'], ['[ ]', 'page'], ['1–3', 'next ticket'], ['r', 'refresh briefing'], ['s', 'start']],
+  ticket: [['↑↓', 'select'], ['⏎', 'open session'], ['o', 'open in app'], ['esc', 'back']],
+  session: [['i', 'reply'], ['↑↓', 'scroll'], ['o', 'open in app'], ['esc', 'back']],
+  reply: [['⏎', 'send'], ['⇧⏎', 'new line'], ['esc', 'leave box']],
+};
+function updateHints() {
+  const typing = document.activeElement && document.activeElement.id === 'reply';
+  let h = typing ? HINTS.reply : HINTS[S.route.name].slice();
+  if (!typing && S.route.name === 'home') {
+    const p = focusedProject();
+    for (const j of (p && p.jumps) || []) h.push([j.key, j.label]);
+  }
+  if (S.route.name !== 'start') h = h.concat([['?', 'keys']]);
+  $('#hints').innerHTML = h.map(([k, l]) => `<span><kbd>${esc(k)}</kbd>${esc(l)}</span>`).join('');
+}
+let toastTimer;
+function toast(msg, isErr) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'show' + (isErr ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = ''; }, isErr ? 8000 : 3000);
+}
+const fail = e => toast(e.message || String(e), true);
+function toggleOverlay(force) {
+  S.overlay = force === undefined ? !S.overlay : force;
+  const o = $('#overlay');
+  if (!S.overlay) { o.className = ''; return; }
+  const groups = [
+    ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection'], ['⏎', 'open']]],
+    ['start', [['any key or click', 'go to briefing (home)']]],
+    ['home', [['s', 'back to start screen'],['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–3', 'open next ticket'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
+    ['ticket', [['⏎', 'open session'], ['o', 'open session in Claude app']]],
+    ['session', [['i / /', 'focus reply box'], ['⏎ (in box)', 'copy reply, open in app'], ['esc (in box)', 'leave box'], ['↑↓ / j k', 'scroll chat'], ['o', 'open in Claude app']]],
+  ];
+  const p = focusedProject();
+  if (p && (p.jumps || []).length) groups.push([`jumps · ${p.name}`, p.jumps.map(j => [j.key, j.label])]);
+  o.innerHTML = `<div class="panel"><div class="label">Keys</div><div class="keys">${groups.map(([g, ks]) =>
+    `<div><div class="label">${esc(g)}</div>${ks.map(([k, l]) => `<div class="row"><kbd>${esc(k)}</kbd><span class="t">${esc(l)}</span></div>`).join('')}</div>`
+  ).join('')}</div></div>`;
+  o.className = 'show';
+}
+
+/* ---------- routing ---------- */
+function parseHash() {
+  if (location.hash === '' || location.hash === '#' || location.hash === '#/start') return { name: 'start' };
+  const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
+  if (parts[0] === 'ticket' && parts.length >= 3) return { name: 'ticket', project: parts[1], id: parts.slice(2).join('/') };
+  if (parts[0] === 'session' && parts[1]) return { name: 'session', id: parts[1] };
+  return { name: 'home' };
+}
+const ticketHash = (project, id) => `#/ticket/${encodeURIComponent(project)}/${encodeURIComponent(id)}`;
+const sessionHash = id => `#/session/${encodeURIComponent(id)}`;
+function go(h) { if (location.hash === h) route(); else location.hash = h; }
+function ticketCtx() {
+  try { return JSON.parse(sessionStorage.getItem('dash.ticket') || 'null'); } catch { return null; }
+}
+function back() {
+  const r = S.route;
+  if (r.name === 'ticket') go('#/');
+  else if (r.name === 'session') {
+    const c = ticketCtx();
+    go(c && (c.sessionIds || []).includes(r.id) ? ticketHash(c.project, c.id) : '#/');
+  }
+}
+function route() {
+  clearTimeout(S.timer);
+  clearTimeout(S.wTimer);
+  S.gen++;
+  S.armed = null;
+  S.route = parseHash();
+  const r = S.route;
+  $('#app').classList.toggle('start', r.name === 'start');
+  if (r.name === 'start') { renderStart(); loadWeather(); loadHome(); }
+  else if (r.name === 'home') { setCrumbs([{ text: 'home' }]); renderHome(); loadHome(); }
+  else if (r.name === 'ticket') {
+    setCrumbs([{ text: 'home', href: '#/' }, { text: r.id, id: true }]);
+    if (!S.ticket || S.ticket.id !== r.id) { S.ticket = null; S.ticketSel = 0; }
+    S.ticketErr = null; renderTicket(); loadTicket();
+  } else {
+    S.session = null; S.sessionErr = null; S.sessionSig = '';
+    renderSession(); loadSession();
+  }
+  updateHints();
+}
+
+/* ---------- home ---------- */
+const focusedProject = () => (S.projects || [])[S.focus];
+const pageStart = () => Math.floor(S.focus / PAGE) * PAGE;
+function homeItems(p) {
+  if (!p) return [];
+  const next = (p.next || []).slice(0, 3);
+  const nextIds = new Set(next.map(t => t.id));
+  const prog = (p.inProgress || []).filter(t => !nextIds.has(t.id)).map(t => ({ ...t, prog: true }));
+  const progIds = new Set((p.inProgress || []).map(t => t.id));
+  return [...prog, ...next.map((t, i) => ({ ...t, num: i + 1, prog: progIds.has(t.id) }))];
+}
+// Home data is global: fetched on the start screen too, so home is ready when Quinn gets there.
+function loadHome() { loadProjects(); loadBriefing(S.gen); }
+async function loadProjects() {
+  try { S.projects = (await api('/api/projects')) || []; S.projectsErr = null; }
+  catch (e) { S.projectsErr = e.message; }
+  clampHome(); renderHome();
+  if (S.route.name === 'home') updateHints();
+}
+async function loadBriefing(gen) {
+  try { S.briefing = await api('/api/briefing'); S.briefingErr = null; }
+  catch (e) { S.briefingErr = e.message; }
+  renderHome();
+  if (gen !== S.gen) return; // a newer screen owns the poll timer
+  clearTimeout(S.timer);
+  if (S.briefing && S.briefing.status === 'running') S.timer = setTimeout(() => loadBriefing(gen), 3000);
+}
+function clampHome() {
+  const n = (S.projects || []).length;
+  S.focus = n ? Math.min(Math.max(S.focus, 0), n - 1) : 0;
+  const m = homeItems(focusedProject()).length;
+  S.homeSel = m ? Math.min(Math.max(S.homeSel, 0), m - 1) : 0;
+}
+function renderHome() {
+  if (S.route.name !== 'home') return;
+  const main = $('#main');
+  if (!main.querySelector('.screen.home')) {
+    main.innerHTML = `<div class="screen home"><section class="panel today"><div class="label">Today<span class="r" id="today-meta"></span></div>
+      <div class="scroll" id="today"></div></section><div class="cols" id="cols"></div></div>`;
+  }
+  // today strip
+  const b = S.briefing, h = [];
+  if (S.briefingErr) h.push(`<div class="errtext">${esc(S.briefingErr)}</div>`);
+  if (b && b.status === 'running') h.push(`<div class="status">gathering briefing…</div>`);
+  if (b && b.status === 'error') h.push(`<div class="errtext">${esc(b.error || 'briefing failed')}</div>`);
+  const today = (b && b.today) || [];
+  for (const t of today) {
+    const m = String(t).match(/^#?(\d+)[.):]\s+/);
+    h.push(dotLine(m ? 'note' : (/error|fail/i.test(t) ? 'error' : 'other'), t));
+  }
+  if (b && b.status !== 'running' && !today.length && b.status !== 'error') h.push(`<div class="empty">nothing for today</div>`);
+  if (!b && !S.briefingErr) h.push(`<div class="status">loading…</div>`);
+  $('#today').innerHTML = h.join('');
+  const hd = (b && b.header) || {};
+  $('#today-meta').textContent = [hd.since ? `since ${hd.since}` : '', b && b.generatedAt ? `gathered ${relTime(b.generatedAt)}` : ''].filter(Boolean).join(' · ');
+
+  // project columns
+  const cols = $('#cols');
+  if (S.projectsErr) { cols.style.gridTemplateColumns = '1fr'; cols.innerHTML = `<section class="panel"><div class="errtext">${esc(S.projectsErr)}</div></section>`; return; }
+  if (!S.projects) { cols.style.gridTemplateColumns = '1fr'; cols.innerHTML = `<section class="panel"><div class="status">loading projects…</div></section>`; return; }
+  if (!S.projects.length) { cols.style.gridTemplateColumns = '1fr'; cols.innerHTML = `<section class="panel"><div class="empty">no projects</div></section>`; return; }
+  const start = pageStart(), visible = S.projects.slice(start, start + PAGE);
+  const pages = Math.ceil(S.projects.length / PAGE);
+  cols.style.gridTemplateColumns = `repeat(${PAGE}, minmax(0, 1fr))`;
+  const bLines = {};
+  for (const bp of (b && b.projects) || []) bLines[bp.name] = bp.lines || [];
+  cols.innerHTML = visible.map((p, vi) => projectColumn(p, start + vi, bLines[p.name] || [], vi === 0 && pages > 1 ? `${start / PAGE + 1}/${pages}` : '')).join('');
+  const sel = cols.querySelector('.panel.focused .row.sel');
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+function projectColumn(p, idx, lines, pageInfo) {
+  const focused = idx === S.focus;
+  const items = homeItems(p);
+  const row = (t, i) => {
+    const tags = [];
+    if (t.prog && t.num) tags.push('<span class="tag prog">in progress</span>');
+    if ((t.blockedBy || []).length) tags.push(`<span class="tag block">blocked by ${esc(t.blockedBy.join(', '))}</span>`);
+    if (t.urgent) tags.push('<span class="tag urgent">urgent</span>');
+    return `<div class="row${focused && i === S.homeSel ? ' sel' : ''}" data-act="ticket" data-project="${esc(p.name)}" data-id="${esc(t.id)}">
+      <span class="k${focused ? '' : ' off'}">${t.num ? t.num : ''}</span>${t.prog && !t.num ? '<span class="dot running"></span>' : ''}<span class="id">${esc(t.id)}</span>
+      <span class="t" title="${esc(t.title)}">${esc(t.title)}</span>${tags.join('')}</div>`;
+  };
+  const progItems = items.filter(t => !t.num), nextItems = items.filter(t => t.num);
+  const todo = lines.filter(l => ['jira', 'sentry', 'dependabot', 'note', 'error'].includes(l.kind));
+  const jumps = p.jumps || [];
+  return `<section class="panel${focused ? ' focused' : ''}" data-act="focus" data-idx="${idx}">
+    <div class="label"><span class="pname">${esc(p.name)}</span>${p.key ? `<span>· ${esc(p.key)}</span>` : ''}
+      <span class="r">${pageInfo ? `<span class="page">${pageInfo}</span> ` : ''}${esc(relTime(p.lastActivityAt))}</span></div>
+    <div class="scroll">
+      ${p.error ? `<div class="errtext">${esc(p.error)}</div>` : ''}
+      ${progItems.length ? `<div class="section"><div class="label">In progress</div>${progItems.map(t => row(t, items.indexOf(t))).join('')}</div>` : ''}
+      <div class="section"><div class="label">Next</div>${nextItems.length ? nextItems.map(t => row(t, items.indexOf(t))).join('') : '<div class="empty">no next tickets</div>'}</div>
+      ${todo.length ? `<div class="section"><div class="label">To-do</div>${todo.map(l => dotLine(l.kind, l.text)).join('')}</div>` : ''}
+      ${jumps.length ? `<div class="section"><div class="label">Jumps</div>${jumps.map(j =>
+        `<div class="row jump${S.armed && S.armed.idx === idx && S.armed.key === j.key ? ' armed' : ''}" data-act="jump" data-idx="${idx}" data-key="${esc(j.key)}">
+          <span class="k${focused ? '' : ' off'}">${esc(j.key)}</span><span class="t">${esc(j.label)}</span>
+          ${j.arg !== undefined && j.arg !== null && j.action === 'copy' ? `<span class="arg" title="${esc(j.arg)}">${esc(j.arg)}</span>` : ''}</div>`).join('')}</div>` : ''}
+    </div></section>`;
+}
+function focusProject(idx) {
+  if (!S.projects || !S.projects.length) return;
+  S.focus = idx; S.homeSel = 0; S.armed = null;
+  clampHome(); renderHome(); updateHints();
+}
+function cycleProject(dir) {
+  const n = (S.projects || []).length;
+  if (!n) return;
+  const start = pageStart(), count = Math.min(PAGE, n - start);
+  focusProject(start + ((S.focus - start + dir + count) % count));
+}
+function pageProjects(dir) {
+  const n = (S.projects || []).length;
+  const pages = Math.ceil(n / PAGE);
+  if (pages < 2) return;
+  const p = (Math.floor(S.focus / PAGE) + dir + pages) % pages;
+  focusProject(p * PAGE);
+}
+// Swap the focused project with its neighbour in the full list and save the order; revert on failure.
+async function moveProject(dir) {
+  const list = S.projects || [], from = S.focus, to = from + dir;
+  if (to < 0 || to >= list.length) return;
+  const before = list.slice();
+  [list[from], list[to]] = [list[to], list[from]];
+  S.focus = to; S.armed = null;
+  renderHome();
+  try {
+    await api('/api/order', { order: list.map(p => p.name) });
+  } catch (e) {
+    S.projects = before;
+    S.focus = before.indexOf(list[to]);
+    renderHome(); updateHints();
+    fail(e);
+  }
+}
+function openTicket(project, id) { go(ticketHash(project, id)); }
+async function refreshBriefing() {
+  try {
+    await api('/api/briefing/refresh', {});
+    toast('Refreshing briefing');
+    if (S.route.name === 'home') { clearTimeout(S.timer); loadBriefing(S.gen); }
+  } catch (e) { fail(e); }
+}
+async function runJump(idx, key) {
+  const p = (S.projects || [])[idx];
+  const j = p && (p.jumps || []).find(x => x.key === key);
+  if (!j) return false;
+  try {
+    if (j.action === 'copy') {
+      await api('/api/copy', { text: j.arg });
+      toast(`Copied: ${j.arg}`);
+    } else if (j.action === 'note-done') {
+      const now = Date.now();
+      if (!(S.armed && S.armed.idx === idx && S.armed.key === key && now < S.armed.until)) {
+        S.armed = { idx, key, until: now + 2000 };
+        toast(`Press ${key} again to mark "${j.label}" done`);
+        renderHome();
+        setTimeout(() => { if (S.armed && S.armed.until <= Date.now()) { S.armed = null; renderHome(); } }, 2050);
+        return true;
+      }
+      S.armed = null; renderHome();
+      const n = /^\d+$/.test(String(j.arg)) ? Number(j.arg) : j.arg;
+      await api('/api/note-done', { n });
+      toast(`Done: ${j.label}`);
+      loadHome();
+    } else {
+      throw new Error(`unknown jump action: ${j.action}`);
+    }
+  } catch (e) { fail(e); }
+  return true;
+}
+function homeKey(e) {
+  const k = e.key;
+  const items = homeItems(focusedProject());
+  if (k === 'ArrowDown' || k === 'j') { S.homeSel = Math.min(S.homeSel + 1, Math.max(items.length - 1, 0)); renderHome(); return true; }
+  if (k === 'ArrowUp' || k === 'k') { S.homeSel = Math.max(S.homeSel - 1, 0); renderHome(); return true; }
+  if (k === 'Enter') { const t = items[S.homeSel]; if (t) openTicket(focusedProject().name, t.id); return true; }
+  if ((e.shiftKey && k === 'ArrowLeft') || k === 'H') { moveProject(-1); return true; }
+  if ((e.shiftKey && k === 'ArrowRight') || k === 'L') { moveProject(1); return true; }
+  if (k === 'Tab') { cycleProject(e.shiftKey ? -1 : 1); return true; }
+  if (k === 'p') { cycleProject(1); return true; }
+  if (k === ']') { pageProjects(1); return true; }
+  if (k === '[') { pageProjects(-1); return true; }
+  if (/^[1-3]$/.test(k)) { const t = items.find(x => x.num === Number(k)); if (t) openTicket(focusedProject().name, t.id); return true; }
+  if (k === 'r') { refreshBriefing(); return true; }
+  if (k === 's') { go('#/start'); return true; }
+  const p = focusedProject();
+  if (p && (p.jumps || []).some(j => j.key === k)) { runJump(S.focus, k); return true; }
+  return false;
+}
+
+/* ---------- ticket ---------- */
+function flatten(list, depth = 0, prefix = '', out = []) {
+  (list || []).forEach((s, i) => {
+    const last = i === list.length - 1;
+    out.push({ s, conn: depth ? prefix + '└─ ' : '' });
+    if ((s.children || []).length) flatten(s.children, depth + 1, depth ? prefix + (last ? '   ' : '│  ') : '', out);
+  });
+  return out;
+}
+async function loadTicket() {
+  const gen = S.gen, r = S.route;
+  try {
+    const t = await api(`/api/ticket?project=${encodeURIComponent(r.project)}&id=${encodeURIComponent(r.id)}`);
+    if (gen !== S.gen) return;
+    const prevId = S.flat[S.ticketSel] && S.flat[S.ticketSel].s.sessionId;
+    S.ticket = t; S.ticketErr = null;
+    S.flat = flatten(t.sessions || []);
+    for (const f of S.flat) S.states[f.s.sessionId] = f.s.state;
+    const c = ticketCtx();
+    const want = prevId || (c && c.last);
+    const at = S.flat.findIndex(f => f.s.sessionId === want);
+    S.ticketSel = at >= 0 ? at : Math.min(S.ticketSel, Math.max(S.flat.length - 1, 0));
+    updateMeta();
+  } catch (e) {
+    if (gen !== S.gen) return;
+    S.ticketErr = e.message;
+  }
+  renderTicket();
+}
+function renderTicket() {
+  if (S.route.name !== 'ticket') return;
+  const main = $('#main'), t = S.ticket, r = S.route;
+  if (!t) {
+    main.innerHTML = `<div class="screen"><div class="panel">${S.ticketErr ? `<div class="errtext">${esc(S.ticketErr)}</div>` : '<div class="status">loading…</div>'}</div></div>`;
+    return;
+  }
+  const sc = t.scratch || {};
+  const keepScroll = [...main.querySelectorAll('.scroll')].map(x => x.scrollTop);
+  const wf = (t.workflow || []).map(w => `<div class="step ${esc(w.state)}"><span class="dot"></span><span>${esc(w.step)}</span>${w.state === 'now' ? '<span class="cur">current</span>' : ''}</div>`).join('');
+  const issues = (t.issues || []).map(i => `<div class="line"><span class="n">#${esc(i.n)}</span><span class="tx">${esc(i.title)}</span>
+    <span class="tag">${esc(i.status || '')}</span>${(i.blockedBy || []).length ? `<span class="tag block">blocked by ${esc([].concat(i.blockedBy).map(x => '#' + x).join(', '))}</span>` : ''}</div>`).join('');
+  const sel = S.flat[S.ticketSel];
+  const sessions = S.flat.map((f, i) => {
+    const s = f.s;
+    return `<div class="row${i === S.ticketSel ? ' sel' : ''}" data-act="session" data-i="${i}">
+      <span class="conn">${esc(f.conn)}</span><span class="dot ${esc(s.state)}"></span>
+      <span class="t" title="${esc(s.title || s.name)}">${esc(s.title || s.name || s.sessionId)}</span>
+      <span class="st">${esc(s.state)}</span><span class="when">${esc(relTime(s.lastActivityAt))}</span></div>` +
+      (i === S.ticketSel && s.summary ? `<div class="summary" style="padding-left:${38 + f.conn.length * 7}px">${esc(s.summary)}</div>` : '');
+  }).join('');
+  main.innerHTML = `<div class="screen">
+    <div class="head"><span class="id">${esc(t.id || r.id)}</span><h1 title="${esc(t.title)}">${esc(t.title)}</h1>
+      ${sc.branch ? `<span class="tag">${esc(sc.branch)}</span>` : ''}
+      ${sc.status ? `<span class="tag prog">${esc(sc.status)}</span>` : ''}
+      ${t.column ? `<span class="tag">${esc(t.column)}</span>` : ''}
+      <button class="btn" data-act="open-app"><kbd>o</kbd>open in app</button></div>
+    ${S.ticketErr ? `<div class="errtext">${esc(S.ticketErr)}</div>` : ''}
+    <div class="two">
+      <section class="panel"><div class="scroll">
+        <div class="section"><div class="label">Workflow</div>${wf || '<div class="empty">no workflow</div>'}</div>
+        ${sc.next ? `<div class="section"><div class="label">Next</div><div class="text">${hlIds(inline(sc.next))}</div></div>` : ''}
+        ${issues ? `<div class="section"><div class="label">Build issues</div>${issues}</div>` : ''}
+        ${t.handoff ? `<div class="section"><div class="label">Handoff</div><div class="text dim">${esc(t.handoff)}</div></div>` : ''}
+        ${(t.card || []).length ? `<div class="section"><div class="label">Card</div><div class="text dim">${t.card.map(l => hlIds(inline(l))).join('\n')}</div></div>` : ''}
+      </div></section>
+      <section class="panel"><div class="label">Sessions<span class="r">${S.flat.length || ''}</span></div>
+        <div class="scroll tree">${sessions || '<div class="empty">no sessions</div>'}</div></section>
+    </div></div>`;
+  main.querySelectorAll('.scroll').forEach((x, i) => { if (keepScroll[i]) x.scrollTop = keepScroll[i]; });
+  const selEl = main.querySelector('.tree .row.sel');
+  if (selEl) selEl.scrollIntoView({ block: 'nearest' });
+}
+function openSession(i) {
+  const f = S.flat[i];
+  if (!f) return;
+  const r = S.route;
+  sessionStorage.setItem('dash.ticket', JSON.stringify({ project: r.project, id: r.id, last: f.s.sessionId, sessionIds: S.flat.map(x => x.s.sessionId) }));
+  go(sessionHash(f.s.sessionId));
+}
+async function openInApp(sessionId) {
+  if (!sessionId) { toast('No session selected', true); return; }
+  try { await api('/api/open', { sessionId }); toast('Opened in the Claude app'); } catch (e) { fail(e); }
+}
+function ticketKey(e) {
+  const k = e.key;
+  if (k === 'ArrowDown' || k === 'j') { S.ticketSel = Math.min(S.ticketSel + 1, Math.max(S.flat.length - 1, 0)); renderTicket(); return true; }
+  if (k === 'ArrowUp' || k === 'k') { S.ticketSel = Math.max(S.ticketSel - 1, 0); renderTicket(); return true; }
+  if (k === 'Enter') { openSession(S.ticketSel); return true; }
+  if (k === 'o') { const f = S.flat[S.ticketSel]; openInApp(f && f.s.sessionId); return true; }
+  return false;
+}
+
+/* ---------- session ---------- */
+function sessionCrumbs(title) {
+  const c = ticketCtx(), r = S.route;
+  const parts = [{ text: 'home', href: '#/' }];
+  if (c && (c.sessionIds || []).includes(r.id)) parts.push({ text: c.id, id: true, href: ticketHash(c.project, c.id) });
+  parts.push({ text: title });
+  setCrumbs(parts);
+}
+async function loadSession() {
+  const gen = S.gen, id = S.route.id;
+  try {
+    const s = await api(`/api/session?id=${encodeURIComponent(id)}`);
+    if (gen !== S.gen) return;
+    S.session = s; S.sessionErr = null;
+    S.states[s.sessionId || id] = s.state;
+    updateMeta();
+  } catch (e) {
+    if (gen !== S.gen) return;
+    S.sessionErr = e.message;
+  }
+  renderSession();
+  if (S.session && S.session.state === 'running') S.timer = setTimeout(loadSession, 3000);
+}
+function renderSession() {
+  if (S.route.name !== 'session') return;
+  const main = $('#main'), s = S.session;
+  if (!main.querySelector('.screen.session')) {
+    main.innerHTML = `<div class="screen session"><div class="head" id="s-head"></div><div id="s-err"></div>
+      <section class="panel" style="flex:1"><div class="chat" id="chat"></div></section>
+      <div class="reply"><textarea id="reply" placeholder="Reply — i to focus, ⏎ to copy it and open the session in the Claude app"></textarea></div></div>`;
+    const ta = $('#reply');
+    ta.addEventListener('focus', updateHints);
+    ta.addEventListener('blur', updateHints);
+  }
+  $('#s-err').innerHTML = S.sessionErr ? `<div class="errtext">${esc(S.sessionErr)}</div>` : '';
+  const title = s ? (s.title || s.sessionId) : S.route.id;
+  sessionCrumbs(title);
+  if (!s) { $('#chat').innerHTML = S.sessionErr ? '' : '<div class="status">loading…</div>'; return; }
+  $('#s-head').innerHTML = `<span class="dot ${esc(s.state)}" style="align-self:center"></span><h1 title="${esc(title)}">${esc(title)}</h1>
+    <span class="tag">${esc(s.state)}</span>${s.branch ? `<span class="tag">${esc(s.branch)}</span>` : ''}
+    ${s.cwd ? `<span class="tag" title="${esc(s.cwd)}">${esc(String(s.cwd).split('/').slice(-2).join('/'))}</span>` : ''}
+    <button class="btn" data-act="open-app"><kbd>o</kbd>open in app</button>`;
+  const msgs = s.messages || [];
+  const last = msgs[msgs.length - 1];
+  const sig = `${msgs.length}|${last ? last.ts + '|' + String(last.text).length : ''}`;
+  if (sig === S.sessionSig) return;
+  const chat = $('#chat');
+  const first = !S.sessionSig;
+  const atBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 60;
+  S.sessionSig = sig;
+  chat.innerHTML = msgs.map(m => {
+    const when = m.ts ? esc(new Date(typeof m.ts === 'number' && m.ts < 1e12 ? m.ts * 1000 : m.ts).toLocaleString('en-GB')) : '';
+    if (m.role === 'user') return `<div class="msg user" title="${when}"><div class="bubble">${esc(m.text)}</div></div>`;
+    if (m.role === 'tool') return `<div class="tool" title="${esc(m.text)}">▸ ${esc(String(m.text).split('\n')[0])}</div>`;
+    return `<div class="msg md" title="${when}">${md(m.text)}</div>`;
+  }).join('') || (s.summary ? `<div class="text dim">${esc(s.summary)}</div>` : '<div class="empty">no messages</div>');
+  if (first || atBottom) chat.scrollTop = chat.scrollHeight;
+}
+async function sendReply() {
+  const ta = $('#reply'), text = ta.value.trim();
+  if (!text) return;
+  const id = (S.session && S.session.sessionId) || S.route.id;
+  try {
+    await api('/api/reply', { sessionId: id, text });
+    ta.value = '';
+    ta.blur();
+    toast('Copied — paste it in the Claude app');
+  } catch (e) { fail(e); }
+}
+function sessionKey(e) {
+  const k = e.key, chat = $('#chat');
+  if (k === 'ArrowDown' || k === 'j') { chat.scrollBy(0, 80); return true; }
+  if (k === 'ArrowUp' || k === 'k') { chat.scrollBy(0, -80); return true; }
+  if (k === 'i' || k === '/') { $('#reply').focus(); return true; }
+  if (k === 'o') { openInApp((S.session && S.session.sessionId) || S.route.id); return true; }
+  return false;
+}
+
+/* ---------- start ---------- */
+const CLOUD = 'M7.5 18h9a3.5 3.5 0 0 0 .4-6.98A5 5 0 0 0 7.2 10.1 4 4 0 0 0 7.5 18z';
+const SUN_RAYS = [0, 45, 90, 135, 180, 225, 270, 315].map(a => {
+  const r = a * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+  return `M${(12 + 6.5 * c).toFixed(2)} ${(12 + 6.5 * s).toFixed(2)}L${(12 + 8.5 * c).toFixed(2)} ${(12 + 8.5 * s).toFixed(2)}`;
+}).join('');
+const ICONS = {
+  sun: `<circle cx="12" cy="12" r="4"/><path d="${SUN_RAYS}"/>`,
+  moon: '<path d="M15.5 4.5a7.5 7.5 0 1 0 4 12.5 6 6 0 0 1-4-12.5z"/>',
+  partSun: '<g transform="translate(-3.5 -3.5) scale(.7)"><circle cx="12" cy="12" r="4"/><path d="' + SUN_RAYS + '"/></g><path d="' + CLOUD + '" transform="translate(1.5 1)" fill="var(--panel)"/>',
+  partMoon: '<path d="M8 2.5a5 5 0 1 0 3 8.5 4 4 0 0 1-3-8.5z"/><path d="' + CLOUD + '" transform="translate(1.5 1)" fill="var(--panel)"/>',
+  cloud: `<path d="${CLOUD}"/>`,
+  fog: '<path d="M4 9h16M6 13h12M4 17h16"/>',
+  drizzle: `<path d="${CLOUD}" transform="translate(0 -4)"/><path d="M10 17.5v1.5M14 17.5v1.5M12 20.5v1"/>`,
+  rain: `<path d="${CLOUD}" transform="translate(0 -4)"/><path d="M9 17l-1 3.5M13 17l-1 3.5M17 17l-1 3.5"/>`,
+  snow: `<path d="${CLOUD}" transform="translate(0 -4)"/><g fill="currentColor" stroke="none"><circle cx="9" cy="18.5" r="1"/><circle cx="13" cy="20.5" r="1"/><circle cx="16" cy="18" r="1"/></g>`,
+  thunder: `<path d="${CLOUD}" transform="translate(0 -4)"/><path d="M13 15.5l-2.5 3.5h3l-2 3.5"/>`,
+};
+function wIcon(code, isDay = true) {
+  const c = Number(code);
+  let k = 'cloud';
+  if (c === 0) k = isDay ? 'sun' : 'moon';
+  else if (c === 1 || c === 2) k = isDay ? 'partSun' : 'partMoon';
+  else if (c === 3) k = 'cloud';
+  else if (c === 45 || c === 48) k = 'fog';
+  else if (c >= 51 && c <= 57) k = 'drizzle';
+  else if ((c >= 61 && c <= 67) || (c >= 80 && c <= 82)) k = 'rain';
+  else if ((c >= 71 && c <= 77) || c === 85 || c === 86) k = 'snow';
+  else if (c >= 95) k = 'thunder';
+  return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>`;
+}
+const hhmm = v => {
+  const m = String(v ?? '').match(/(\d{2}:\d{2})/);
+  if (m) return m[1];
+  const d = new Date(v);
+  return isNaN(d) ? '' : d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+};
+const deg = v => v === null || v === undefined || v === '' ? '–' : `${Math.round(Number(v))}°`;
+function tickClock() {
+  const hm = $('#hm');
+  if (!hm) return;
+  const d = new Date();
+  hm.textContent = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  $('#ss').textContent = String(d.getSeconds()).padStart(2, '0');
+  $('#date').textContent = d.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+function renderStart() {
+  if (S.route.name !== 'start') return;
+  const main = $('#main');
+  if (!main.querySelector('.screen.start')) {
+    main.innerHTML = `<div class="screen start"><div class="clock"><span id="hm"></span><span class="sec" id="ss"></span></div>
+      <div class="date" id="date"></div><div class="weather" id="weather"></div></div>`;
+    tickClock();
+  }
+  const el = $('#weather'), w = S.weather;
+  if (S.weatherErr) { el.innerHTML = `<div class="errtext">${esc(S.weatherErr)}</div>`; return; }
+  if (!w) { el.innerHTML = '<div class="status">loading weather…</div>'; return; }
+  const cur = w.current || {}, td = w.today || {};
+  const sr = hhmm(td.sunrise), ss = hhmm(td.sunset);
+  const night = t => { const h = hhmm(t); return sr && ss && h ? (h < sr || h >= ss) : false; };
+  const small = [
+    `gefühlt <b>${deg(cur.apparentTemp)}</b>`,
+    `<b>${deg(td.min)}</b> / <b>${deg(td.max)}</b>`,
+    cur.windKmh !== undefined ? `Wind <b>${Math.round(cur.windKmh)} km/h</b>` : '',
+    td.precipProbMax !== undefined ? `Regen <b>${Math.round(td.precipProbMax)}%</b>` : '',
+    sr || ss ? `↑ <b>${esc(sr)}</b>  ↓ <b>${esc(ss)}</b>` : '',
+  ].filter(Boolean);
+  const hours = (w.hours || []).slice(0, 12).map(h => `<div><span>${esc(hhmm(h.time).slice(0, 2))}</span>${wIcon(h.code, !night(h.time))}
+    <span class="tv">${deg(h.temp)}</span><span class="pp">${h.precipProb ? esc(Math.round(h.precipProb)) + '%' : ''}</span></div>`).join('');
+  const days = (w.daily || []).slice(0, 4).map((d, i) => {
+    const name = i === 0 && String(d.date).slice(0, 10) === new Date().toLocaleDateString('sv-SE') ? 'Heute'
+      : new Date(String(d.date).slice(0, 10) + 'T12:00').toLocaleDateString('de-DE', { weekday: 'short' }).replace('.', '');
+    return `<div><span>${esc(name)}</span>${wIcon(d.code)}<span><span class="tv">${deg(d.max)}</span> <span class="lo">${deg(d.min)}</span></span></div>`;
+  }).join('');
+  el.innerHTML = `<div class="wnow">${wIcon(cur.code, cur.isDay !== false && cur.isDay !== 0)}<span class="temp">${deg(cur.temp)}</span>
+      <div><div class="place">${esc(w.place || '')}</div><div class="cond">${esc(cur.text || '')}</div></div></div>
+    <div class="wsmall">${small.map(s => `<span>${s}</span>`).join('')}</div>
+    ${hours ? `<div class="hours">${hours}</div>` : ''}
+    ${days ? `<div class="days">${days}</div>` : ''}`;
+}
+async function loadWeather() {
+  const gen = S.gen;
+  try { S.weather = await api('/api/weather'); S.weatherErr = null; }
+  catch (e) { S.weatherErr = e.message; }
+  if (gen !== S.gen) return;
+  renderStart();
+  S.wTimer = setTimeout(loadWeather, 10 * 60 * 1000);
+}
+/* ---------- input ---------- */
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (S.route.name === 'start') { e.preventDefault(); go('#/'); return; }
+  const t = e.target;
+  if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT')) {
+    if (e.key === 'Escape') { e.preventDefault(); t.blur(); }
+    else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && t.id === 'reply') { e.preventDefault(); sendReply(); }
+    return;
+  }
+  if (e.key === '?') { e.preventDefault(); toggleOverlay(); return; }
+  if (S.overlay) {
+    if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); toggleOverlay(false); }
+    return;
+  }
+  if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); back(); return; }
+  const handler = { home: homeKey, ticket: ticketKey, session: sessionKey }[S.route.name];
+  if (handler(e)) e.preventDefault();
+});
+document.addEventListener('click', e => {
+  if (S.route.name === 'start') { go('#/'); return; }
+  if (S.overlay) { if (!e.target.closest('#overlay .panel')) toggleOverlay(false); return; }
+  const el = e.target.closest('[data-act]');
+  if (!el || e.target.closest('a[href^="http"]')) return;
+  const a = el.dataset.act;
+  if (a === 'ticket') {
+    S.focus = Number(el.closest('[data-idx]').dataset.idx);
+    S.homeSel = Math.max(0, homeItems(focusedProject()).findIndex(t => t.id === el.dataset.id));
+    openTicket(el.dataset.project, el.dataset.id);
+  } else if (a === 'jump') runJump(Number(el.dataset.idx), el.dataset.key);
+  else if (a === 'focus') { if (Number(el.dataset.idx) !== S.focus) focusProject(Number(el.dataset.idx)); }
+  else if (a === 'session') openSession(Number(el.dataset.i));
+  else if (a === 'open-app') {
+    if (S.route.name === 'ticket') { const f = S.flat[S.ticketSel]; openInApp(f && f.s.sessionId); }
+    else openInApp((S.session && S.session.sessionId) || S.route.id);
+  }
+});
+// Buttons must not keep focus: Enter/space would then trigger them instead of the screen's keys.
+document.addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); });
+window.addEventListener('hashchange', route);
+updateMeta();
+setInterval(updateMeta, 10000);
+setInterval(tickClock, 1000);
+route();
+</script>
+</body>
+</html>

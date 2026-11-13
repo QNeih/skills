@@ -4,6 +4,7 @@ My Claude Code skills. Per ticket I type two commands, `/ticket` and `/send`;
 everything in between runs on its own and stops only where I have to decide.
 
     /briefing     what's new or waiting on me, across all projects
+    /dashboard    full-screen, keyboard-driven: next tickets, ticket workflow, session tree, chats
     /ticket KEY   claim the ticket, pick a route (fix, grill, build, wayfinder), start it
     /build        spec → tickets → test-first build in subagents → review
     /send         lint, commit, push, open the PR, move the board card
@@ -67,6 +68,7 @@ flowchart TD
 | | Skill | What it does | Uses |
 | --- | --- | --- | --- |
 | **Daily** | `briefing` | One whole-day briefing across every project: what I did last workday, what's next, Jira changes, new Sentry errors and Dependabot PRs, mail and Teams messages waiting on me, today's meetings. | vault, Jira, Sentry, GitHub, Microsoft 365 |
+| | `dashboard` | Full-screen local web app: clock and Köln weather, then the next tickets, briefing to-dos and jumps of up to 3 projects (order saved), each ticket's workflow and session tree, and each session's chat. Keyboard-driven, no model calls. | vault, Claude app sessions, Jira, Sentry, GitHub, Open-Meteo |
 | | `note` | Saves a to-do for the briefing, tagged with the project I'm in. | vault |
 | **Ticket flow** | `ticket` | Claims a ticket on the project's board (Jira, an Obsidian Kanban board, or any tracker with a connector), cuts its branch, imports it, and starts the route that works on it. | board (vault, Jira, other), repo |
 | | `build` | Runs a multi-session feature in one session: spec, tickets, test-first build in subagents, code review. | repo |
