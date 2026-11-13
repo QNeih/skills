@@ -93,7 +93,9 @@ gh pr create --base <base> --assignee @me [--label <label>] --title "<title>" --
 - Title: `<ref>: <gist of the change>`; no ticket → the gist alone.
 - Body: `## Summary` bullets from `ticket.md` and the commit subjects, then one link line in the tracker's syntax: Jira → `Jira: <link>` (the `board:` link; without `ticket.md`, `https://<site>/browse/<ref>`, site from `getAccessibleAtlassianResources`); Azure Boards → the ref alone (`AB#1234`), which links it; another tracker → the item's link; vault board or no ticket → no link line.
 
-**Done when:** you hold the URL of an `OPEN` PR for `<branch>`, or the reason there is none.
+**Merge on send**: a `CLAUDE.md` rule says to merge this repo's PRs on send, and the PR isn't a draft → `gh pr merge <url> --squash --delete-branch`. It fails → stop and show the output; the board move and cleanup don't run.
+
+**Done when:** you hold the URL of an `OPEN` PR for `<branch>` (or, merged on send, a `MERGED` one), or the reason there is none.
 
 ## 7. Board
 
@@ -115,8 +117,8 @@ Runs after a successful push, even if the PR step failed; without git, right aft
 
 ## 8. Clean up
 
-- **Git**: runs only when step 6 ended with an `OPEN` PR, even if step 7 failed. Otherwise skip and say why.
-  1. `git rev-parse HEAD` differs from `git rev-parse @{u}` → stop: the remote doesn't hold every local commit.
+- **Git**: runs only when step 6 ended with an `OPEN` PR or one it merged, even if step 7 failed. Otherwise skip and say why.
+  1. `git rev-parse HEAD` differs from `git rev-parse @{u}` → stop: the remote doesn't hold every local commit. Merged on send → skip this check (`--delete-branch` removed the upstream); `git fetch origin` instead, so `origin/<base>` has the merge.
   2. Leave `<branch>`. Linked worktree (`git rev-parse --git-dir` differs from `git rev-parse --git-common-dir`) → `git switch --detach origin/<base>`, since `<base>` is usually checked out in the main checkout. Otherwise `git switch <base>`, then `git pull --ff-only`. Switch fails → stop and show the output.
   3. `git branch -D <branch>` (`-D` because the PR isn't merged yet; the commits are on `origin/<branch>`).
   4. Leftover session branches: `git for-each-ref --format='%(refname:short) %(worktreepath)' 'refs/heads/claude/*'`. For each one with no worktree path and no output from `git rev-list -1 <name> --not --remotes` (every commit is on `origin`) → `git branch -D <name>`. The others stay; name them in the report.
@@ -130,7 +132,7 @@ Then, with a ticket, delete its files (untracked, so `rm -rf`): its `<dir>/.scra
 ## 9. Report
 
 - commits, one subject each (lint commit included)
-- PR URL, new or reused
+- PR URL, new or reused, and whether it was merged on send
 - board state of the card or item
 - deleted branches, current branch or detached `HEAD`, removed paths
 - session branches kept and why; fast-forwarded branches
