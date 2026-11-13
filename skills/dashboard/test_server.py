@@ -101,22 +101,83 @@ class PullRequests(unittest.TestCase):
         self.assertEqual(server.with_pr_steps(steps, []), steps)
 
 
-class NewSession(unittest.TestCase):
-    def test_command_becomes_request(self):
-        self.assertEqual(server.as_request("/work SKL-15"), "Run /work SKL-15")
-        self.assertEqual(server.as_request("hello"), "hello")
+class FakeClaude:
+    """Stands in for the claude CLI: records each call with its folder and answers from a queue;
+    the last reply repeats."""
 
-    def test_url(self):
-        self.assertEqual(server.new_session_url(""), "claude://code/new")
-        self.assertEqual(server.new_session_url("hi there"), "claude://code/new?q=hi+there")
+    def __init__(self, *replies):
+        self.calls, self.replies = [], list(replies)
+
+    def __call__(self, args, cwd=None):
+        self.calls.append((list(args), cwd))
+        return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
 
 
-class BackgroundSession(unittest.TestCase):
-    def test_name_and_id(self):
-        self.assertEqual(server.bg_session_name("skills", "fix the clock\nmore"), "skills: fix the clock")
-        self.assertEqual(len(server.bg_session_name("p", "x" * 80)), len("p: ") + 48)
-        out = "Starting background service…\nbackgrounded · 36e71ce8 · skills: hi\n  claude agents  list sessions"
-        self.assertEqual(server.BG_ID.search(out).group(1), "36e71ce8")
+class BackgroundStart(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = self.tmp.name
+        saved = server.run_claude, server.lookup, server.START_WAIT
+        self.addCleanup(lambda: (setattr(server, "run_claude", saved[0]), setattr(server, "lookup", saved[1]),
+                                 setattr(server, "START_WAIT", saved[2])))
+        server.START_WAIT = 0.3
+        server.lookup = lambda name: {"dir": self.dir} if name == "skills" else {"dir": "none"}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def listed(self, *sids):
+        return 0, json.dumps([agent(sid, self.dir, "x", 1) for sid in sids])
+
+    def test_starts_in_the_project_folder_with_the_text_verbatim(self):
+        server.run_claude = fake = FakeClaude((0, "Starting background service…\nbackgrounded · 36e71ce8 · skills: /work SKL-1\n"),
+                                          self.listed("11111111-0000", "36e71ce8-c057-46bc"))
+        got = server.post_bg_session({"project": "skills", "text": "/work SKL-1\n"})
+        self.assertEqual((got["id"], got["sessionId"]), ("36e71ce8", "36e71ce8-c057-46bc"))
+        self.assertEqual(fake.calls[0], (["--bg", "--permission-mode", "auto", "-n", "skills: /work SKL-1", "/work SKL-1"], self.dir))
+
+    def test_waits_for_a_started_session_to_appear_in_the_list(self):
+        server.run_claude = fake = FakeClaude((0, "backgrounded · 36e71ce8 · x\n"), self.listed("11111111-0000"),
+                                              self.listed("11111111-0000"), self.listed("36e71ce8-c057-46bc"))
+        got = server.post_bg_session({"project": "skills", "text": "hi"})
+        self.assertEqual(got["sessionId"], "36e71ce8-c057-46bc")
+        self.assertEqual([a[0] for a, _ in fake.calls], ["--bg", "agents", "agents", "agents"])
+
+    def test_a_started_session_that_never_appears_is_an_error_naming_its_short_id(self):
+        server.run_claude = FakeClaude((0, "backgrounded · 36e71ce8 · x\n"), self.listed("11111111-0000"))
+        with self.assertRaises(server.ApiError) as e:
+            server.post_bg_session({"project": "skills", "text": "hi"})
+        self.assertIn("started", str(e.exception))
+        self.assertIn("36e71ce8", str(e.exception))
+
+    def test_name_is_the_project_and_the_first_line_cut_to_48(self):
+        server.run_claude = fake = FakeClaude((0, "backgrounded · aaaaaaa1 · x\n"), self.listed("aaaaaaa1-0"),
+                                          (0, "backgrounded · aaaaaaa2 · x\n"), self.listed("aaaaaaa2-0"))
+        server.post_bg_session({"project": "skills", "text": "fix the clock\nmore detail"})
+        server.post_bg_session({"project": "skills", "text": "x" * 80})
+        self.assertEqual(fake.calls[0][0][4], "skills: fix the clock")
+        self.assertEqual(fake.calls[2][0][4], "skills: " + "x" * 47 + "…")
+
+    def test_cli_failure_is_an_api_error_with_its_output(self):
+        server.run_claude = FakeClaude((1, "error: not logged in\n"))
+        with self.assertRaises(server.ApiError) as e:
+            server.post_bg_session({"project": "skills", "text": "hi"})
+        self.assertIn("error: not logged in", str(e.exception))
+        server.run_claude = FakeClaude((0, "something unexpected\n"))
+        with self.assertRaises(server.ApiError) as e:
+            server.post_bg_session({"project": "skills", "text": "hi"})
+        self.assertIn("something unexpected", str(e.exception))
+
+    def test_unknown_project_starts_nothing(self):
+        server.run_claude = fake = FakeClaude()
+        with self.assertRaises(server.ApiError) as e:
+            server.post_bg_session({"project": "nope", "text": "hi"})
+        self.assertEqual(e.exception.status, 404)
+        self.assertEqual(fake.calls, [])
+
+    def test_app_link_start_is_gone(self):
+        self.assertNotIn("/api/new-session", server.POSTS)
+        self.assertIn("/api/open", server.POSTS)
 
 
 class Fixture(unittest.TestCase):
@@ -180,7 +241,7 @@ class TicketSessions(Fixture):
         self.session("local_3", title="A-2 old", isArchived=True)
         self.session("local_4", title="A-3 other", lines=[user("go")])
         states = server.ticket_states("A-2", self.project, server.load_sessions(self.sessions), self.transcripts)
-        self.assertEqual(states, {"running": 1, "waiting": 1, "archived": 1})
+        self.assertEqual(states, {"running": 1, "waiting": 1, "blocked": 0, "archived": 1})
 
     def test_word_boundary(self):
         self.assertTrue(server.mentions("Grill BGH-2 x", "BGH-2"))
@@ -192,6 +253,477 @@ class TicketSessions(Fixture):
         self.assertFalse(server.ticket_prompt_matches("/work OBO-2", "BGH-2"))
         self.assertTrue(server.ticket_prompt_matches("/ticket BGH-2", "BGH-2"))  # sessions from before the rename
         self.assertFalse(server.ticket_prompt_matches("/ticket fix BGH-2 login", "BGH-2"))
+
+
+def agent(sid, cwd, name, started, **fields):
+    """One entry of `claude agents --json --all` as Claude Code 2.1.323 prints it."""
+    a = {"pid": 31544, "id": sid[:8], "cwd": cwd, "kind": "background", "startedAt": started,
+         "sessionId": sid, "name": name, "status": "idle", "state": "done"}
+    a.update(fields)
+    return {k: v for k, v in a.items() if v is not None}
+
+
+class BackgroundFixture(Fixture):
+    """A fake CLI whose `agents --json --all` lists self.agents, transcripts for them, and a one-ticket vault board."""
+
+    def setUp(self):
+        super().setUp()
+        saved = server.run_claude, server.lookup, server.SESSIONS_DIR, server.TRANSCRIPTS_DIR
+        self.addCleanup(lambda: (setattr(server, "run_claude", saved[0]), setattr(server, "lookup", saved[1]),
+                                 setattr(server, "SESSIONS_DIR", saved[2]), setattr(server, "TRANSCRIPTS_DIR", saved[3])))
+        server.SESSIONS_DIR, server.TRANSCRIPTS_DIR = self.sessions, self.transcripts
+        board = Path(self.tmp.name, "board.md")
+        board.write_text("## In progress\n\n- [ ] **A-2 · Do it**\n")
+        server.lookup = lambda name: {"dir": self.project, "board": "vault", "board-file": str(board), "key": "A"}
+        self.agents = []
+        server.run_claude = self.fake_cli
+
+    def fake_cli(self, args, cwd=None):
+        if args == ["agents", "--json", "--all"]:
+            return 0, json.dumps(self.agents)
+        raise AssertionError("unexpected claude call: {}".format(args))
+
+    def bg(self, sid, name, started, cwd=None, lines=None, **fields):
+        cwd = cwd or self.project
+        self.agents.append(agent(sid, cwd, name, started, **fields))
+        if lines is not None:
+            t = self.transcripts / server.re.sub(r"[^A-Za-z0-9]", "-", cwd) / (sid + ".jsonl")
+            t.parent.mkdir(parents=True, exist_ok=True)
+            t.write_text("".join(json.dumps(l) + "\n" for l in lines))
+            return t
+
+
+class BackgroundSessions(BackgroundFixture):
+    """Background sessions come from `claude agents --json --all` and join a ticket by the same rules as app sessions."""
+
+    def test_ticket_view_lists_matching_background_sessions_after_app_sessions(self):
+        self.session("local_1", title="A-2 app")
+        self.bg("bbbbbbbb-2", "skills: /work 2", 300, lines=[user("/work 2")])
+        self.bg("aaaaaaaa-1", "skills: fix A-2 login", 200)
+        self.bg("cccccccc-3", "skills: go on", 100, lines=[dict(user("go"), gitBranch="feature/A-2")])
+        self.bg("dddddddd-4", "skills: A-2 elsewhere", 50, cwd="/elsewhere")
+        self.bg("eeeeeeee-5", "skills: other", 60, lines=[user("/work 23")])
+        self.agents.append(dict(agent("ffffffff-6", self.project, "A-2 interactive", 10), kind="interactive"))
+        tree = server.ticket_view("p", "A-2")["sessions"]
+        self.assertEqual([(n["kind"], n["sessionId"]) for n in tree], [
+            ("app", "local_1"), ("background", "cccccccc-3"), ("background", "aaaaaaaa-1"), ("background", "bbbbbbbb-2")])
+        b = tree[2]
+        self.assertEqual((b["id"], b["title"], b["children"], b["prs"], b["servers"]),
+                         ("aaaaaaaa", "skills: fix A-2 login", [], [], []))
+        self.assertEqual(b["lastActivityAt"], 200)  # no transcript yet: its start time
+        t = self.transcripts / server.re.sub(r"[^A-Za-z0-9]", "-", self.project) / "bbbbbbbb-2.jsonl"
+        self.assertEqual(tree[3]["lastActivityAt"], int(t.stat().st_mtime * 1000))
+
+    def test_states_from_the_cli(self):
+        self.bg("aaaaaaaa-1", "A-2 busy", 1, status="busy", state="running")
+        self.bg("aaaaaaaa-2", "A-2 idle", 2, status="idle", state="done")
+        self.bg("aaaaaaaa-3", "A-2 question", 3, status="waiting", waitingFor="input needed", state="blocked")
+        self.bg("aaaaaaaa-4", "A-2 blocked busy", 4, status="busy", state="blocked")
+        self.bg("aaaaaaaa-5", "A-2 waiting", 5, status="waiting", state="running")
+        self.bg("aaaaaaaa-6", "A-2 exited", 6, pid=None, status=None, state="done")
+        tree = server.ticket_view("p", "A-2")["sessions"]
+        self.assertEqual([(n["title"], n["state"]) for n in tree], [
+            ("A-2 busy", "running"), ("A-2 idle", "waiting"), ("A-2 question", "blocked"),
+            ("A-2 blocked busy", "blocked"), ("A-2 waiting", "blocked"), ("A-2 exited", "waiting")])
+        self.assertEqual([n["summary"] for n in tree],
+                         ["", "", "needs you: input needed", "needs you", "needs you", ""])
+
+    def test_session_endpoint_returns_brief_and_chat(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100, status="busy", state="running",
+                lines=[user("fix it"), assistant([{"type": "text", "text": "On it."}])])
+        got = server.GETS["/api/session"]({"id": "aaaaaaaa-1"})
+        self.assertEqual((got["sessionId"], got["id"], got["kind"], got["title"], got["state"]),
+                         ("aaaaaaaa-1", "aaaaaaaa", "background", "skills: fix it", "running"))
+        self.assertEqual([(e["role"], e["text"]) for e in got["chat"]], [("user", "fix it"), ("assistant", "On it.")])
+
+    def test_session_endpoint_without_transcript_has_an_empty_chat(self):
+        self.bg("aaaaaaaa-1", "skills: just started", 100, status="busy", state="running")
+        self.assertEqual(server.GETS["/api/session"]({"id": "aaaaaaaa-1"})["chat"], [])
+
+    def test_session_endpoint_unknown_id_is_404(self):
+        with self.assertRaises(server.ApiError) as e:
+            server.GETS["/api/session"]({"id": "nope"})
+        self.assertEqual(e.exception.status, 404)
+        with self.assertRaises(server.ApiError) as e:
+            server.GETS["/api/session"]({})
+        self.assertEqual(e.exception.status, 400)
+
+    def test_home_row_counts_include_background_sessions(self):
+        self.session("local_1", title="A-2 app running", lines=[user("go")])
+        self.session("local_2", title="A-2 app archived", isArchived=True)
+        self.bg("aaaaaaaa-1", "A-2 busy", 1, status="busy", state="running")
+        self.bg("aaaaaaaa-2", "A-2 idle", 2)
+        self.bg("aaaaaaaa-3", "A-2 question", 3, status="waiting", waitingFor="input needed", state="blocked")
+        self.bg("aaaaaaaa-4", "no ticket", 4, status="busy", state="running")
+        sessions = server.all_sessions()
+        view = server.project_view("p", {"status": "running"}, sessions)
+        self.assertEqual(view["next"][0]["sessionCounts"], {"running": 2, "waiting": 1, "blocked": 1, "archived": 1})
+        self.assertEqual((view["running"], view["background"]), (3, 2))
+
+
+class TicketlessSessions(BackgroundFixture):
+    """Home lists a project's background sessions that belong to no ticket on its board under the prompt box."""
+
+    def test_background_sessions_matching_no_board_ticket_newest_first(self):
+        Path(self.tmp.name, "board.md").write_text(
+            "## In progress\n\n- [ ] **A-2 · Do it**\n\n## Done\n\n- [x] **A-1 · Did it**\n")
+        self.session("local_1", title="app, no ticket")
+        self.bg("aaaaaaaa-1", "skills: what is X?", 100, status="busy", state="running")
+        self.bg("bbbbbbbb-2", "skills: /work 2", 200, lines=[user("/work 2")])
+        self.bg("cccccccc-3", "skills: A-1 follow-up", 300)
+        self.bg("dddddddd-4", "skills: elsewhere", 400, cwd="/elsewhere")
+        self.bg("eeeeeeee-5", "skills: /ticket add a clock", 500, cwd=self.project + "/.claude/worktrees/x",
+                lines=[user("/ticket add a clock")])
+        sessions = server.all_sessions()
+        got = server.project_view("p", {"status": "running"}, sessions)["ticketless"]
+        self.assertEqual([(s["sessionId"], s["id"], s["state"]) for s in got],
+                         [("eeeeeeee-5", "eeeeeeee", "waiting"), ("aaaaaaaa-1", "aaaaaaaa", "running")])
+        self.assertEqual(got[1]["lastActivityAt"], 100)
+
+    def ticketless(self):
+        sessions = server.all_sessions()
+        return [s["sessionId"] for s in server.project_view("p", {"status": "running"}, sessions)["ticketless"]]
+
+    def test_a_session_naming_any_id_of_the_project_key_has_a_ticket_even_off_the_board(self):
+        self.bg("aaaaaaaa-1", "skills: A-99 follow-up", 100)
+        self.bg("bbbbbbbb-2", "skills: go on", 200, lines=[dict(user("go on"), gitBranch="feature/A-50")])
+        self.bg("cccccccc-3", "skills: start", 300, lines=[user("/work a-77")])
+        self.bg("dddddddd-4", "skills: B-3 is another project's", 400)
+        self.bg("eeeeeeee-5", "skills: AA-3 neither", 500, lines=[user("/work B-3")])
+        self.assertEqual(self.ticketless(), ["eeeeeeee-5", "dddddddd-4"])
+
+    def test_an_unreadable_board_still_tells_ticket_sessions_apart(self):
+        Path(self.tmp.name, "board.md").unlink()
+        self.bg("aaaaaaaa-1", "skills: A-2 work", 100)
+        self.bg("bbbbbbbb-2", "skills: what is X?", 200)
+        self.assertEqual(self.ticketless(), ["bbbbbbbb-2"])
+
+    def test_jira_sessions_of_tickets_outside_the_sprint_view_have_a_ticket(self):
+        saved = server.jira_board
+        self.addCleanup(lambda: setattr(server, "jira_board", saved))
+        server.jira_board = lambda key: [dict(id="A-2", title="Do it", column="In Progress", blockedBy=[],
+                                              urgent=False, active=True)]
+        server.lookup = lambda name: {"dir": self.project, "board": "jira-candidate", "key": "A"}
+        self.bg("aaaaaaaa-1", "skills: A-1 done ticket", 100)
+        self.bg("bbbbbbbb-2", "skills: A-40 someone else's", 200)
+        self.bg("cccccccc-3", "skills: what is X?", 300)
+        self.assertEqual(self.ticketless(), ["cccccccc-3"])
+
+    def test_no_folder_lists_none(self):
+        server.lookup = lambda name: {"dir": "none", "reason": "gone"}
+        self.bg("aaaaaaaa-1", "skills: hi", 100)
+        view = server.project_view("p", {"status": "running"}, server.background_sessions())
+        self.assertEqual(view["ticketless"], [])
+
+
+class FollowUp(BackgroundFixture):
+    """POST /api/session/send: stop the session, then resume it with the text, keeping its id."""
+
+    def setUp(self):
+        super().setUp()
+        self.calls = []
+        # Like the real CLI: `claude stop` returns while the process still shuts down, and a resume
+        # while it runs starts a copy with a new id. A stopped process is gone after `exit_after` checks.
+        self.alive, self.stopping, self.exit_after, self.fork, self.colour = set(), {}, 1, False, False
+        saved = server.process_alive, server.STOP_WAIT
+        self.addCleanup(lambda: (setattr(server, "process_alive", saved[0]), setattr(server, "STOP_WAIT", saved[1])))
+        server.process_alive, server.STOP_WAIT = self.process_alive, 2
+
+    def process_alive(self, pid):
+        if pid in self.alive and self.stopping.get(pid, 0) > 0:
+            self.stopping[pid] -= 1
+            if not self.stopping[pid]:
+                self.alive.discard(pid)
+            return True
+        return pid in self.alive
+
+    def bg(self, sid, name, started, **fields):
+        out = super().bg(sid, name, started, **fields)
+        if self.agents[-1].get("pid"):
+            self.alive.add(self.agents[-1]["pid"])
+        return out
+
+    def fake_cli(self, args, cwd=None):
+        if args == ["agents", "--json", "--all"]:
+            return 0, json.dumps(self.agents)
+        self.calls.append((args, cwd))
+        a = next((a for a in self.agents if a["id"] in args or a["sessionId"] in args), None)
+        if args[0] == "logs":
+            return 0, "\x1b[2J\x1b[H Pick one\r\n\x1b[2C1. Red\r\n\x1b[2C2. Blue\r\n\r\n"
+        if args[0] == "stop":
+            self.stopping = {a["pid"]: self.exit_after}
+            return 0, "stopped {}\n".format(args[1])
+        if args[:2] == ["--bg", "--resume"]:
+            if self.fork or a.get("pid") in self.alive:
+                return 0, ("note: session {0} is already running in the background, so this started a copy as bbbbbbbb. "
+                           "`claude attach {0}` opens the original.\nbackgrounded · bbbbbbbb\n"
+                           "  claude agents             list sessions\n").format(a["id"])
+            if self.colour:  # what the CLI prints when its environment asks for colour
+                return 0, "backgrounded · \x1b[36m{}\x1b[39m · \x1b[1m{}\x1b[22m\n".format(a["id"], a["name"])
+            return 0, "Starting background service…\nbackgrounded · {} · {}\n  claude agents  list sessions\n".format(
+                a["id"], a["name"])
+        raise AssertionError("unexpected claude call: {}".format(args))
+
+    def send(self, sid, text):
+        return server.POSTS["/api/session/send"]({"sessionId": sid, "text": text})
+
+    def test_a_waiting_session_is_stopped_then_resumed_in_its_folder(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100, status="idle", state="done", cwd="/work/here")
+        got = self.send("aaaaaaaa-1", "now the tests\n")
+        self.assertEqual(self.calls, [(["stop", "aaaaaaaa"], None),
+                                      (["--bg", "--resume", "aaaaaaaa-1", "now the tests"], "/work/here")])
+        self.assertEqual(got, {"ok": True, "id": "aaaaaaaa"})
+
+    def test_an_exited_session_is_resumed_without_a_stop(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100, pid=None, status=None, state="done")
+        self.send("aaaaaaaa-1", "go on")
+        self.assertEqual([a[:2] for a, _ in self.calls], [["--bg", "--resume"]])
+
+    def test_a_running_session_is_refused(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100, status="busy", state="running")
+        with self.assertRaises(server.ApiError) as e:
+            self.send("aaaaaaaa-1", "stop that")
+        self.assertEqual((e.exception.status, str(e.exception)), (409, "session is running"))
+        self.assertEqual(self.calls, [])
+
+    def test_the_resume_waits_until_the_stopped_process_has_exited(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100)
+        self.exit_after = 3
+        self.assertEqual(self.send("aaaaaaaa-1", "go on")["id"], "aaaaaaaa")
+
+    def test_a_process_that_outlives_the_wait_is_an_error_and_nothing_is_resumed(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100)
+        self.exit_after, server.STOP_WAIT = 10 ** 6, 0.3
+        with self.assertRaises(server.ApiError) as e:
+            self.send("aaaaaaaa-1", "go on")
+        self.assertIn("still running", str(e.exception))
+        self.assertEqual([a[0] for a, _ in self.calls], ["stop"])
+
+    def test_a_forked_session_is_an_error(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100, pid=None, status=None, state="done")
+        self.fork = True
+        with self.assertRaises(server.ApiError) as e:
+            self.send("aaaaaaaa-1", "go on")
+        self.assertIn("bbbbbbbb", str(e.exception))
+        self.assertIn("aaaaaaaa", str(e.exception))
+
+    def test_a_coloured_session_id_is_still_the_same_session(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100, pid=None, status=None, state="done")
+        self.colour = True
+        self.assertEqual(self.send("aaaaaaaa-1", "go on")["id"], "aaaaaaaa")
+
+    def test_an_answer_to_a_blocked_session_quotes_its_question_read_before_the_stop(self):
+        self.bg("aaaaaaaa-1", "skills: probe", 100, status="waiting", waitingFor="input needed", state="blocked")
+        self.send("aaaaaaaa-1", "Blue")
+        self.assertEqual([a[0] for a, _ in self.calls], ["logs", "stop", "--bg"])
+        self.assertEqual(self.calls[0][0], ["logs", "aaaaaaaa"])
+        self.assertEqual(self.calls[2][0][3], "Answering your question:\n Pick one\n  1. Red\n  2. Blue\n\nMy answer: Blue")
+
+    def test_session_endpoint_shows_the_screen_only_while_blocked(self):
+        self.bg("aaaaaaaa-1", "skills: probe", 100, status="waiting", waitingFor="input needed", state="blocked")
+        self.bg("aaaaaaaa-2", "skills: idle", 100)
+        self.assertEqual(server.GETS["/api/session"]({"id": "aaaaaaaa-1"})["screen"], " Pick one\n  1. Red\n  2. Blue")
+        self.assertNotIn("screen", server.GETS["/api/session"]({"id": "aaaaaaaa-2"}))
+        self.assertEqual(self.calls, [(["logs", "aaaaaaaa"], None)])
+
+
+class SessionRemoval(BackgroundFixture):
+    """Removing a background session stops its dev servers first, then the session, then `claude rm`."""
+
+    def setUp(self):
+        super().setUp()
+        f = Path(self.project, ".claude", "launch.json")
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({"configurations": [{"name": "web", "port": 5173}]}))
+        self.procs = {5173: (11, self.project)}
+        self.events, self.rm_reply = [], (0, "")
+        # Like the real CLI, `claude stop` returns while the process still shuts down: after the stop it
+        # stays alive for `exit_after` more checks.
+        self.exit_after = 0
+        saved = server.process_alive, server.STOP_WAIT
+        self.addCleanup(lambda: (setattr(server, "process_alive", saved[0]), setattr(server, "STOP_WAIT", saved[1])))
+        server.process_alive, server.STOP_WAIT = self.process_alive, 0.3
+
+    def process_alive(self, pid):
+        if not any(e[0] == "stop" for e in self.events):
+            return True
+        if self.exit_after:
+            self.exit_after -= 1
+            self.events.append(("alive", pid))
+            return True
+        return False
+
+    def listen(self, port):
+        return [self.procs[port]] if port in self.procs else []
+
+    def kill(self, pid, sig):
+        self.events.append(("kill", pid, sig))
+
+    def fake_cli(self, args, cwd=None):
+        if args[0] in ("stop", "rm"):
+            self.events.append((args[0], args[1]))
+            if args[0] == "rm" and self.rm_reply[0] == 0:
+                self.agents = [a for a in self.agents if a["id"] != args[1]]
+            return self.rm_reply if args[0] == "rm" else (0, "")
+        return super().fake_cli(args, cwd)
+
+    def remove(self, sid):
+        return server.post_session_remove({"sessionId": sid}, listen=self.listen, kill=self.kill)
+
+    def test_stops_its_servers_then_the_session_then_removes_it(self):
+        self.bg("aaaaaaaa-1", "A-2 idle", 1, status="idle")
+        self.assertEqual(self.remove("aaaaaaaa-1"), {"ok": True})
+        self.assertEqual(self.events, [("kill", 11, server.signal.SIGTERM), ("stop", "aaaaaaaa"), ("rm", "aaaaaaaa")])
+        self.assertEqual(server.background_sessions(), [])
+
+    def test_rm_waits_until_the_stopped_process_has_exited(self):
+        self.bg("aaaaaaaa-1", "A-2 idle", 1)
+        self.exit_after = 2
+        self.remove("aaaaaaaa-1")
+        self.assertEqual([e[0] for e in self.events], ["kill", "stop", "alive", "alive", "rm"])
+
+    def test_a_process_that_outlives_the_wait_is_an_error_and_nothing_is_removed(self):
+        self.bg("aaaaaaaa-1", "A-2 idle", 1)
+        self.exit_after = 10 ** 6
+        with self.assertRaises(server.ApiError) as e:
+            self.remove("aaaaaaaa-1")
+        self.assertIn("still running", str(e.exception))
+        self.assertNotIn("rm", [e[0] for e in self.events])
+
+    def test_an_exited_session_is_removed_without_stopping_it(self):
+        self.bg("aaaaaaaa-1", "A-2 exited", 1, pid=None, status=None)
+        self.remove("aaaaaaaa-1")
+        self.assertEqual(self.events, [("kill", 11, server.signal.SIGTERM), ("rm", "aaaaaaaa")])
+
+    def test_spares_a_server_another_listed_session_has(self):
+        self.bg("aaaaaaaa-1", "A-2 idle", 1)
+        self.bg("bbbbbbbb-2", "other in the same folder", 2, pid=None, status=None)
+        self.remove("aaaaaaaa-1")
+        self.assertEqual(self.events, [("stop", "aaaaaaaa"), ("rm", "aaaaaaaa")])
+
+    def test_an_archived_app_session_does_not_spare_a_server(self):
+        self.bg("aaaaaaaa-1", "A-2 idle", 1)
+        self.session("local_1", isArchived=True)
+        self.remove("aaaaaaaa-1")
+        self.assertEqual(self.events[0], ("kill", 11, server.signal.SIGTERM))
+
+    def test_rm_refusal_is_409_with_its_message_and_the_session_stays(self):
+        self.bg("aaaaaaaa-1", "A-2 idle", 1)
+        self.rm_reply = (1, "Not removed: worktree skl-22 has 2 unpushed commits\n")
+        with self.assertRaises(server.ApiError) as e:
+            self.remove("aaaaaaaa-1")
+        self.assertEqual(e.exception.status, 409)
+        self.assertIn("2 unpushed commits", str(e.exception))
+        self.assertIn("dev servers were already stopped", str(e.exception))
+        self.assertEqual([s["id"] for s in server.background_sessions()], ["aaaaaaaa"])
+
+    def test_unknown_session_is_404_and_stops_nothing(self):
+        with self.assertRaises(server.ApiError) as e:
+            self.remove("nope")
+        self.assertEqual(e.exception.status, 404)
+        self.assertEqual(self.events, [])
+        self.assertIn("/api/session/remove", server.POSTS)
+
+    def test_reaper_keeps_a_server_a_background_session_lists(self):
+        self.session("local_1", isArchived=True)
+        self.bg("aaaaaaaa-1", "same folder", 1)
+        self.assertEqual(server.reap_once(listen=self.listen, kill=self.kill), [])
+        self.agents = []
+        self.assertEqual([x["pid"] for x in server.reap_once(listen=self.listen, kill=self.kill)], [11])
+
+
+class Chat(Fixture):
+    """The session view's chat: prompts, replies and one line per tool call, read from the transcript."""
+
+    def chat(self, lines):
+        self.session("local_1", lines=lines)
+        return server.session_chat(server.transcript_path(server.load_sessions(self.sessions)[0], self.transcripts))
+
+    def test_prompts_replies_and_tool_calls_in_order(self):
+        def at(e, t):
+            return dict(e, timestamp=t)
+        got = self.chat([
+            at(user("look at the skills project"), "2026-10-16T15:28:29.958Z"),
+            at(assistant([{"type": "thinking", "thinking": "hmm"}]), "2026-10-16T15:28:31.000Z"),
+            at(assistant([{"type": "text", "text": "Locating the project."}]), "2026-10-16T15:28:32.000Z"),
+            at(assistant([{"type": "tool_use", "name": "Bash", "input": {"command": "ls -d ~/Projects/*skill*\n  cat x",
+                                                                       "description": "List"}}]), "2026-10-16T15:28:33.000Z"),
+            at(user([{"type": "tool_result", "content": "skills"}]), "2026-10-16T15:28:34.000Z"),
+            at(user("<command-message>work</command-message>\n<command-name>/work</command-name>\n"
+                    "<command-args>SKL-1</command-args>"), "2026-10-16T15:28:35.000Z"),
+        ])
+        self.assertEqual(got, [
+            {"role": "user", "text": "look at the skills project", "at": "2026-10-16T15:28:29.958Z"},
+            {"role": "assistant", "text": "Locating the project.", "at": "2026-10-16T15:28:32.000Z"},
+            {"role": "tool", "text": "Bash: ls -d ~/Projects/*skill* cat x", "at": "2026-10-16T15:28:33.000Z"},
+            {"role": "user", "text": "/work SKL-1", "at": "2026-10-16T15:28:35.000Z"},
+        ])
+
+
+    def test_side_threads_meta_and_system_lines_are_left_out(self):
+        got = self.chat([
+            user("go"),
+            dict(user("sub-agent task"), isSidechain=True),
+            dict(assistant([{"type": "text", "text": "sub-agent reply"}]), isSidechain=True),
+            dict(user("Caveat: local command output"), isMeta=True),
+            dict(type="system", subtype="compact_boundary", content="Conversation compacted", timestamp="t"),
+            user("<system-reminder>hook output</system-reminder>"),
+            assistant([{"type": "text", "text": "done"}], stop="end_turn"),
+        ])
+        self.assertEqual([(e["role"], e["text"]) for e in got], [("user", "go"), ("assistant", "done")])
+
+    def test_tool_gist_is_one_line_of_at_most_120_chars(self):
+        got = self.chat([
+            assistant([{"type": "tool_use", "name": "Read", "input": {"file_path": "/a/b.py", "limit": 5}},
+                       {"type": "tool_use", "name": "Grep", "input": {"pattern": "def x", "path": "/a"}},
+                       {"type": "tool_use", "name": "Agent", "input": {"description": "Find it", "prompt": "long"}},
+                       {"type": "tool_use", "name": "Bash", "input": {"command": "echo " + "y" * 200}},
+                       {"type": "tool_use", "name": "TodoWrite", "input": {"todos": []}}]),
+        ])
+        self.assertEqual([e["text"] for e in got][:3], ["Read: /a/b.py", "Grep: def x", "Agent: Find it"])
+        self.assertEqual(got[3]["text"], "Bash: " + ("echo " + "y" * 200)[:119] + "…")
+        self.assertEqual(got[4]["text"], "TodoWrite")
+
+    def test_reads_only_the_last_2_mb(self):
+        big = "x" * (server.CHAT_TAIL // 2)
+        got = self.chat([user("first " + big), user("second " + big), user("third")])
+        self.assertEqual([e["text"][:6] for e in got], ["second", "third"])
+
+class Screen(unittest.TestCase):
+    """render_screen turns `claude logs` output into the text of the terminal's final screen."""
+
+    def test_a_blocked_session_shows_its_question_and_options(self):
+        raw = Path(__file__).with_name("fixtures").joinpath("logs-blocked-question.ansi").read_bytes().decode("utf-8")  # bytes: CRs kept
+        lines = server.render_screen(raw).split("\n")
+        rule = "─" * 200
+        start = lines.index(" ☐ Color")
+        self.assertEqual(lines[start - 1], rule)
+        self.assertEqual(lines[start:start + 13], [
+            " ☐ Color",
+            "",
+            "Red or blue?",
+            "",
+            "❯ 1. Red",
+            "     Pick red.",
+            "  2. Blue",
+            "     Pick blue.",
+            "  3. Type something.",
+            rule,
+            "  4. Chat about this",
+            "",
+            "Enter to select · ↑/↓ to navigate · Esc to cancel"])
+        self.assertEqual(lines[0], "")  # the header starts one row down
+        self.assertIn("Claude Code", lines[1])
+        self.assertEqual(lines[-1], "─" * 192 + " probe ─")  # trailing blank rows trimmed
+        self.assertEqual(len(lines), 50)
+        self.assertNotIn("\x1b", "".join(lines))
+        self.assertNotIn("Creating…", "".join(lines))  # overwritten spinner text is gone
+
+    def test_moves_and_erases(self):
+        raw = "abcdef\x1b[3D\x1b[KX\r\n\x1b[2;4Hyz\x1b[1A\x1b[2Cq\x1b[1G\x1b[1B\x1b[31m!\x1b[0m\x1b7\x1b[5;1H\x1b8?\n\n\n"
+        self.assertEqual(server.render_screen(raw), "abcX   q\n!? yz")
+        self.assertEqual(server.render_screen("old\x1b[2J\x1b[Hnew"), "new")
+        self.assertEqual(server.render_screen("one\r\ntwo\r\nthree\x1b[2;1H\x1b[J"), "one")
 
 
 class Transcript(Fixture):
@@ -315,83 +847,96 @@ class Weather(unittest.TestCase):
         self.assertEqual(w["fetchedAt"], 123)
 
 
-def preview_start(**inp):
-    return assistant([{"type": "tool_use", "id": "t", "name": "mcp__Claude_Browser__preview_start", "input": inp}])
-
-
 class Servers(Fixture):
-    """Servers a session started with preview_start: listed while their port answers from the
-    session's folder, stopped once the session is archived."""
+    """A session's servers are its folder's launch.json entries whose port something listens on
+    from inside the session's folder; they are stopped once the session is archived."""
 
     def setUp(self):
         super().setUp()
         self.wt = self.project + "/.claude/worktrees/x"
-        launch = Path(self.wt, ".claude", "launch.json")
-        launch.parent.mkdir(parents=True)
-        launch.write_text(json.dumps({"version": "0.0.1", "configurations": [
-            {"name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 5173}]}))
+        self.launch(self.wt, {"name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 5173},
+                    {"name": "api", "port": 4780, "url": "http://localhost:4780/docs"})
         self.procs = {}  # port -> (pid, cwd)
+
+    def launch(self, cwd, *configs):
+        f = Path(cwd, ".claude", "launch.json")
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({"version": "0.0.1", "configurations": list(configs)}))
 
     def listen(self, port):
         return [self.procs[port]] if port in self.procs else []
 
-    def test_starts_from_transcript(self):
-        s = self.session("local_1", cwd=self.wt, lines=[
-            user("go"), preview_start(name="web"), preview_start(url="http://127.0.0.1:4780/"), preview_start(url="https://example.com/"),
-            preview_start(name="web"), preview_start(name="gone")])
-        path = server.transcript_path(s, self.transcripts)
-        self.assertEqual(server.transcript_facts(path)["servers"],
-                         [{"name": "web"}, {"url": "http://127.0.0.1:4780/"}, {"url": "https://example.com/"}, {"name": "gone"}])
-
-    def test_listed_only_while_running_in_the_session_folder(self):
-        s = self.session("local_1", cwd=self.wt, lines=[
-            preview_start(name="web"), preview_start(url="http://localhost:4780/"), preview_start(url="https://example.com/"), preview_start(name="gone")])
-        self.procs = {5173: (11, self.wt + "/web"), 4780: (12, self.project)}  # 4780 runs from the main checkout
-        got = server.session_servers(s, self.transcripts, listen=self.listen)
-        self.assertEqual([(x["name"], x["url"], x.get("pid")) for x in got if "error" not in x],
-                         [("web", "http://localhost:5173/", 11)])
-        self.assertEqual([x["name"] for x in got if "error" in x], ["gone"])
+    def test_listed_while_a_launch_port_listens_from_the_session_folder(self):
+        s = self.session("local_1", cwd=self.wt)
+        self.procs = {5173: (11, self.wt + "/web"), 4780: (12, self.wt)}
+        self.assertEqual(server.session_servers(s, listen=self.listen), [
+            {"name": "web", "url": "http://localhost:5173/", "port": 5173, "pid": 11},
+            {"name": "api", "url": "http://localhost:4780/docs", "port": 4780, "pid": 12}])
         self.procs = {}
-        self.assertEqual([x for x in server.session_servers(s, self.transcripts, listen=self.listen) if "error" not in x], [])
+        self.assertEqual(server.session_servers(s, listen=self.listen), [])
 
-    def test_main_checkout_session_does_not_own_worktree_servers(self):
-        s = self.session("local_1", lines=[preview_start(url="http://localhost:5173/")])
+    def test_listener_from_another_folder_is_not_listed(self):
+        s = self.session("local_1", cwd=self.wt)
+        self.procs = {5173: (11, self.project), 4780: (12, self.project + "/.claude/worktrees/xy")}
+        self.assertEqual(server.session_servers(s, listen=self.listen), [])
+
+    def test_main_checkout_session_does_not_own_nested_worktree_servers(self):
+        self.launch(self.project, {"name": "web", "port": 5173})
+        s = self.session("local_1")
         self.procs = {5173: (11, self.wt)}
-        self.assertEqual(server.session_servers(s, self.transcripts, listen=self.listen), [])
+        self.assertEqual(server.session_servers(s, listen=self.listen), [])
 
     def test_never_lists_the_dashboard_itself(self):
-        s = self.session("local_1", lines=[preview_start(url="http://127.0.0.1:4777/")])
-        self.procs = {4777: (server.os.getpid(), self.project)}
-        self.assertEqual(server.session_servers(s, self.transcripts, listen=self.listen), [])
+        s = self.session("local_1", cwd=self.wt)
+        self.procs = {4780: (server.os.getpid(), self.wt)}
+        self.assertEqual(server.session_servers(s, listen=self.listen), [])
+
+    def test_no_launch_json_means_no_servers(self):
+        s = self.session("local_1")
+        self.procs = {5173: (11, self.project)}
+        self.assertEqual(server.session_servers(s, listen=self.listen), [])
+
+    def test_broken_launch_json_gives_an_error_row(self):
+        f = Path(self.wt, ".claude", "launch.json")
+        s = self.session("local_1", cwd=self.wt)
+        f.write_text("[1]")
+        got = server.session_servers(s, listen=self.listen)
+        self.assertEqual(len(got), 1)
+        self.assertIn("not a list", got[0]["error"])
+        f.write_text("{")
+        self.assertIn(str(f), server.session_servers(s, listen=self.listen)[0]["error"])
+
+    def test_entry_without_a_port_gives_an_error_row(self):
+        self.launch(self.wt, {"name": "web"}, {"name": "api", "port": 4780})
+        s = self.session("local_1", cwd=self.wt)
+        self.procs = {4780: (12, self.wt)}
+        got = server.session_servers(s, listen=self.listen)
+        self.assertEqual(got[0]["name"], "web")
+        self.assertIn("no port", got[0]["error"])
+        self.assertEqual(got[1]["pid"], 12)
 
     def test_reap_stops_archived_unless_a_live_session_shares_it(self):
         other = self.project + "/.claude/worktrees/y"
-        self.session("local_1", cwd=self.wt, isArchived=True, lines=[preview_start(name="web")])
-        self.session("local_2", cwd=other, isArchived=True, lines=[preview_start(url="http://localhost:6000/")])
-        self.session("local_3", cwd=other, lines=[preview_start(url="http://localhost:6000/")])
+        self.launch(other, {"name": "app", "port": 6000})
+        self.session("local_1", cwd=self.wt, isArchived=True)
+        self.session("local_2", cwd=other, isArchived=True)
+        self.session("local_3", cwd=other)
         self.procs = {5173: (11, self.wt), 6000: (12, other)}
         killed = []
-        stopped = server.reap_servers(server.load_sessions(self.sessions), self.transcripts, listen=self.listen,
+        stopped = server.reap_servers(server.load_sessions(self.sessions), listen=self.listen,
                                       kill=lambda pid, sig: killed.append(pid))
         self.assertEqual(killed, [11])
         self.assertEqual([x["url"] for x in stopped], ["http://localhost:5173/"])
 
-    def test_broken_launch_json_hides_only_named_servers(self):
-        Path(self.wt, ".claude", "launch.json").write_text("[1]")
-        s = self.session("local_1", cwd=self.wt, lines=[preview_start(name="web"), preview_start(url="http://localhost:4780/")])
-        self.procs = {4780: (12, self.wt)}
-        got = server.session_servers(s, self.transcripts, listen=self.listen)
-        self.assertIn("not a list", got[0]["error"])
-        self.assertEqual(got[1]["url"], "http://localhost:4780/")
-
     def test_picks_the_owned_listener_and_reports_lsof_failure(self):
-        s = self.session("local_1", cwd=self.wt, lines=[preview_start(name="web")])
-        got = server.session_servers(s, self.transcripts, listen=lambda p: [(7, "/elsewhere"), (8, self.wt)])
+        self.launch(self.wt, {"name": "web", "port": 5173})
+        s = self.session("local_1", cwd=self.wt)
+        got = server.session_servers(s, listen=lambda p: [(7, "/elsewhere"), (8, self.wt)])
         self.assertEqual(got[0]["pid"], 8)
 
         def broken(port):
             raise RuntimeError("lsof broke")
-        self.assertEqual(server.session_servers(s, self.transcripts, listen=broken), [{"name": "web", "error": "lsof broke"}])
+        self.assertEqual(server.session_servers(s, listen=broken), [{"name": "web", "error": "lsof broke"}])
 
     def test_local_url(self):
         self.assertEqual(server.local_port("http://localhost:5173/x"), 5173)

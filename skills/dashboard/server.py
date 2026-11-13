@@ -335,11 +335,14 @@ def briefing_jumps(name, briefing):
     return jumps
 
 
-def project_view(name, briefing, sessions, agents=()):
+def project_view(name, briefing, sessions):
+    """sessions: app and background sessions together. `ticketless`: the project's background
+    sessions that name no ticket of the project's key (has_ticket), newest first."""
     info = lookup(name)
     d = info.get("dir", "none")
     view = {"name": name, "dir": None if d == "none" else d, "board": info.get("board"), "key": info.get("key"),
-            "error": None, "next": [], "jumps": [], "lastActivityAt": None, "running": 0, "background": 0}
+            "error": None, "next": [], "jumps": [], "lastActivityAt": None, "running": 0, "background": 0,
+            "ticketless": []}
     errors = []
     if d == "none":
         errors.append("folder: " + info.get("reason", "not found"))
@@ -362,9 +365,11 @@ def project_view(name, briefing, sessions, agents=()):
         acts = [s.get("lastActivityAt") or 0 for s in mine]
         view["lastActivityAt"] = max(acts) if acts else None
         view["running"] = sum(1 for s in mine if session_state(s) == "running")
-        view["background"] = sum(1 for a in agents if a.get("status") == "busy" and in_dir(a, view["dir"]))
+        view["background"] = sum(1 for s in mine if s.get("kind") == "background" and session_state(s) == "running")
         for t in view["next"]:
             t["sessionCounts"] = ticket_states(t["id"], view["dir"], mine)
+        loose = [s for s in mine if s.get("kind") == "background" and not has_ticket(s, view["key"])]
+        view["ticketless"] = [session_brief(s) for s in sorted(loose, key=lambda s: -(s.get("startedAt") or 0))]
     return view
 
 
@@ -403,9 +408,9 @@ def save_order(body):
 
 
 def projects_view():
-    briefing, sessions, agents = BRIEFING.get(), load_sessions(), background_agents()
+    briefing, sessions = BRIEFING.get(), all_sessions()
     with ThreadPoolExecutor() as pool:  # lookups and acli are slow; run the projects side by side
-        views = list(pool.map(lambda n: project_view(n, briefing, sessions, agents), active_projects()))
+        views = list(pool.map(lambda n: project_view(n, briefing, sessions), active_projects()))
     return sort_projects(views, read_order())
 
 
@@ -415,6 +420,36 @@ def load_sessions(root=None):
     out = []
     for f in sorted(Path(root or SESSIONS_DIR).glob("*/*/local_*.json")):
         out.append(json.loads(f.read_text(encoding="utf-8")))
+    return out
+
+
+def all_sessions():
+    """App and background sessions together; runs `claude agents` once."""
+    return load_sessions() + background_sessions()
+
+
+def find_background(sid, sessions):
+    """The background session with this sessionId among `sessions`; 404 when missing."""
+    s = next((s for s in sessions if s.get("kind") == "background" and s["sessionId"] == sid), None)
+    if not s:
+        raise ApiError(404, "no background session " + str(sid))
+    return s
+
+
+def background_sessions(transcripts=None):
+    """The background sessions (`claude --bg`), live and exited, from `claude agents --json --all`,
+    shaped like app sessions so the same matching applies: sessionId, cliSessionId (the transcript's
+    name), cwd, title (its name), lastActivityAt (transcript mtime, else startedAt), plus kind,
+    the short id and the CLI's entry as `agent`."""
+    out = []
+    for a in json.loads(claude_ok(["agents", "--json", "--all"])):
+        if a.get("kind") != "background":
+            continue
+        s = {"kind": "background", "id": a["id"], "sessionId": a["sessionId"], "cliSessionId": a["sessionId"],
+             "cwd": a.get("cwd"), "title": a.get("name"), "startedAt": a.get("startedAt"), "agent": a}
+        path = transcript_path(s, transcripts)
+        s["lastActivityAt"] = int(path.stat().st_mtime * 1000) if path else a.get("startedAt")
+        out.append(s)
     return out
 
 
@@ -479,37 +514,165 @@ def user_text(content):
 _facts_cache = {}
 
 
-PREVIEW_START = "mcp__Claude_Browser__preview_start"
-
-
 def transcript_facts(path):
-    """First real user prompt, every git branch the transcript recorded (a worktree session
-    starts on claude/<name>; /work then cuts feature/<id> there), and the input (`name` or `url`)
-    of every preview_start call, deduplicated. Cached per file version."""
+    """First real user prompt and every git branch the transcript recorded (a worktree session
+    starts on claude/<name>; /work then cuts feature/<id> there). Cached per file version."""
     st = path.stat()
     key = (str(path), st.st_mtime_ns, st.st_size)
     if key not in _facts_cache:
-        first, branches, servers = None, set(), []
+        first, branches = None, set()
         for e in read_lines(path):
             if e.get("gitBranch"):
                 branches.add(e["gitBranch"])
             if first is None and e.get("type") == "user" and not e.get("isSidechain") and not e.get("isMeta"):
                 first = user_text((e.get("message") or {}).get("content"))
-            if e.get("type") == "assistant":
-                for b in (e.get("message") or {}).get("content") or []:
-                    if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == PREVIEW_START:
-                        start = {k: v for k, v in (b.get("input") or {}).items() if k in ("name", "url")}
-                        if start and start not in servers:
-                            servers.append(start)
-        _facts_cache[key] = {"firstPrompt": first, "branches": sorted(branches), "servers": servers}
+        _facts_cache[key] = {"firstPrompt": first, "branches": sorted(branches)}
     return _facts_cache[key]
+
+
+CHAT_TAIL = 2 * 1024 * 1024  # bytes of transcript the session view reads
+GIST_KEYS = ("command", "file_path", "pattern", "url", "query", "skill", "description", "prompt")
+GIST_MAX = 120
+
+
+def tool_gist(block):
+    """`Name: <first of command, file path, pattern, … in its input>` on one line, the input cut to 120 chars."""
+    inp = block.get("input") or {}
+    gist = next((inp[k] for k in GIST_KEYS if isinstance(inp.get(k), str) and inp[k].strip()), "")
+    gist = " ".join(gist.split())
+    if len(gist) > GIST_MAX:
+        gist = gist[:GIST_MAX - 1] + "…"
+    return block.get("name", "?") + (": " + gist if gist else "")
+
+
+def session_chat(path):
+    """The main thread of a transcript (its last 2 MB) as [{role, text, at}]: user prompts (user_text
+    rules), assistant text blocks, and one `tool` entry per tool call. Thinking, tool results,
+    side threads, meta and system lines are left out."""
+    out = []
+    for e in read_lines(path, tail_bytes=CHAT_TAIL):
+        if e.get("type") not in ("user", "assistant") or e.get("isSidechain") or e.get("isMeta"):
+            continue
+        content, at = (e.get("message") or {}).get("content"), e.get("timestamp")
+        if e["type"] == "user":
+            text = user_text(content)
+            if text:
+                out.append({"role": "user", "text": text, "at": at})
+            continue
+        for b in content if isinstance(content, list) else []:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "text" and (b.get("text") or "").strip():
+                out.append({"role": "assistant", "text": b["text"].strip(), "at": at})
+            elif b.get("type") == "tool_use":
+                out.append({"role": "tool", "text": tool_gist(b), "at": at})
+    return out
+
+
+ESCAPE_RE = re.compile(r"\x1b(?:\[([0-9;?<>=]*)[ -/]*([@-~])|\][^\x07\x1b]*(?:\x07|\x1b\\)|([78])|[@-_])")
+
+
+def render_screen(raw):
+    """The text of the terminal's final screen after `claude logs` output: a grid that follows
+    cursor position (H, f), relative moves (A, B, C, D, G, E, F), erase (K, J), save and restore
+    (ESC 7/8), CR, LF, BS and tab. Colours and other sequences are ignored. Every code point takes
+    one cell. Lines lose trailing spaces; trailing blank lines are trimmed."""
+    grid, row, col, saved = [], 0, 0, (0, 0)
+
+    def line(r):
+        while len(grid) <= r:
+            grid.append([])
+        return grid[r]
+
+    def put(ch):
+        nonlocal col
+        cells = line(row)
+        if len(cells) < col:
+            cells.extend(" " * (col - len(cells)))
+        if col < len(cells):
+            cells[col] = ch
+        else:
+            cells.append(ch)
+        col += 1
+
+    pos = 0
+    for m in ESCAPE_RE.finditer(raw + "\x1b@"):  # the sentinel flushes the text after the last escape
+        for ch in raw[pos:m.start()]:
+            if ch == "\r":
+                col = 0
+            elif ch == "\n":
+                row += 1
+            elif ch == "\b":
+                col = max(col - 1, 0)
+            elif ch == "\t":
+                col = col // 8 * 8 + 8
+            elif ch >= " ":
+                put(ch)
+        pos = m.end()
+        params, cmd = m.group(1), m.group(2)
+        if m.group(3) == "7":
+            saved = (row, col)
+        elif m.group(3) == "8":
+            row, col = saved
+        if not cmd or params[:1] in ("?", "<", ">", "="):  # private modes (cursor shown, paste mode, …)
+            continue
+        nums = [int(n) if n else 0 for n in params.split(";")]
+        n = max(nums[0], 1)
+        if cmd in "Hf":
+            row, col = max(nums[0], 1) - 1, max(nums[1] if len(nums) > 1 else 1, 1) - 1
+        elif cmd == "A":
+            row = max(row - n, 0)
+        elif cmd == "B":
+            row += n
+        elif cmd == "C":
+            col += n
+        elif cmd == "D":
+            col = max(col - n, 0)
+        elif cmd == "G":
+            col = n - 1
+        elif cmd == "E":
+            row, col = row + n, 0
+        elif cmd == "F":
+            row, col = max(row - n, 0), 0
+        elif cmd == "K":
+            cells = line(row)
+            if nums[0] == 0:
+                del cells[col:]
+            elif nums[0] == 1:
+                cells[:col + 1] = " " * min(col + 1, len(cells))
+            else:
+                cells.clear()
+        elif cmd == "J":
+            if nums[0] == 0:
+                del line(row)[col:]
+                del grid[row + 1:]
+            elif nums[0] == 1:
+                for r in range(row):
+                    line(r).clear()
+                line(row)[:col + 1] = " " * min(col + 1, len(line(row)))
+            else:
+                grid.clear()
+    lines = ["".join(cells).rstrip() for cells in grid]
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines)
 
 
 END_REASONS = {"end_turn", "stop_sequence", "max_tokens", "refusal"}
 
 
+def background_state(agent):
+    """A background session's state from its `claude agents` entry: blocked when it waits on a
+    question or permission (state blocked, or status waiting), running while busy, else waiting
+    (idle, or the process exited)."""
+    if agent.get("state") == "blocked" or agent.get("status") == "waiting":
+        return "blocked"
+    return "running" if agent.get("status") == "busy" else "waiting"
+
+
 def session_state(session, transcripts=None, now=None):
-    """archived: isArchived.
+    """Background sessions: background_state. App sessions:
+    archived: isArchived.
     running: the transcript changed in the last 10 minutes and its last main-thread user/assistant
       line is not a finished turn (an assistant line with stop_reason end_turn etc.), nor an
       interrupt marker. So a tool call in flight or a tool result waiting for the model is running.
@@ -517,6 +680,8 @@ def session_state(session, transcripts=None, now=None):
     waiting: everything else; an idle unarchived session waits on Quinn.
     The app's own fields (lastTurnEdgeAt, postTurnSummary) only change at turn edges and lag
     behind, so they can't tell a running turn from a finished one."""
+    if session.get("kind") == "background":
+        return background_state(session["agent"])
     if session.get("isArchived"):
         return "archived"
     path = transcript_path(session, transcripts)
@@ -538,6 +703,10 @@ def session_state(session, transcripts=None, now=None):
 
 
 def session_summary(s):
+    if s.get("kind") == "background":
+        if background_state(s["agent"]) != "blocked":
+            return ""
+        return "needs you" + (": " + s["agent"]["waitingFor"] if s["agent"].get("waitingFor") else "")
     pts, wrap = s.get("postTurnSummary") or {}, s.get("turnWrapUp") or {}
     if pts.get("needs_action"):
         return "needs you: " + pts["needs_action"]
@@ -545,12 +714,18 @@ def session_summary(s):
 
 
 def session_brief(s, transcripts=None):
-    return {"sessionId": s["sessionId"], "title": s.get("title"), "name": (s.get("spawnedFrom") or {}).get("name"),
-            "state": session_state(s, transcripts), "lastActivityAt": s.get("lastActivityAt"),
-            "summary": session_summary(s), "link": LINK.format(s["sessionId"]),
-            "servers": [] if s.get("isArchived") else [{k: x[k] for k in ("name", "url", "error") if k in x}
-                                                       for x in session_servers(s, transcripts)],
-            "prs": [p["url"] for p in s.get("prs") or [] if p.get("url")]}
+    brief = {"sessionId": s["sessionId"], "kind": s.get("kind", "app"), "title": s.get("title"),
+             "name": (s.get("spawnedFrom") or {}).get("name"),
+             "state": session_state(s, transcripts), "lastActivityAt": s.get("lastActivityAt"),
+             "summary": session_summary(s),
+             "servers": [] if s.get("isArchived") else [{k: x[k] for k in ("name", "url", "error") if k in x}
+                                                        for x in session_servers(s)],
+             "prs": [p["url"] for p in s.get("prs") or [] if p.get("url")]}
+    if brief["kind"] == "background":
+        brief["id"] = s["id"]
+    else:
+        brief["link"] = LINK.format(s["sessionId"])
+    return brief
 
 
 def mentions(text, ticket_id):
@@ -587,10 +762,28 @@ def matched_sessions(ticket_id, project_dir, sessions, transcripts=None):
     return matched
 
 
+def has_ticket(session, key):
+    """A background session names a ticket of the project's key, on the board or not (done, another
+    sprint, another assignee): its name, first prompt or a recorded branch mentions <key>-<n>, or
+    its first prompt is `/work <n>`. Without a key no session has a ticket."""
+    if not key:
+        return False
+    id_re = re.compile(r"(?<![A-Za-z0-9])" + re.escape(key) + r"-\d+", re.I)
+    texts = [session.get("title")]
+    path = transcript_path(session)
+    if path:
+        facts = transcript_facts(path)
+        if re.match(r"/(?:work|ticket)\s+\d+\b", facts["firstPrompt"] or ""):
+            return True
+        texts += [facts["firstPrompt"]] + facts["branches"]
+    return any(t and id_re.search(t) for t in texts)
+
+
 def ticket_states(ticket_id, project_dir, sessions, transcripts=None):
-    """How many of the ticket's sessions are running, waiting and archived (the home row's marks)."""
+    """How many of the ticket's sessions (app and background) are running, waiting, blocked and
+    archived (the home row's marks)."""
     ids = matched_sessions(ticket_id, project_dir, sessions, transcripts)
-    counts = {"running": 0, "waiting": 0, "archived": 0}
+    counts = {"running": 0, "waiting": 0, "blocked": 0, "archived": 0}
     for s in sessions:
         if s["sessionId"] in ids:
             counts[session_state(s, transcripts)] += 1
@@ -598,7 +791,8 @@ def ticket_states(ticket_id, project_dir, sessions, transcripts=None):
 
 
 def ticket_sessions(ticket_id, project_dir, sessions, transcripts=None):
-    """Sessions of the project for the ticket (matched_sessions), each with its spawnedFrom descendants nested."""
+    """Sessions of the project for the ticket (matched_sessions), each with its spawnedFrom descendants
+    nested. App sessions first by creation, then background sessions (they have no spawnedFrom) by start."""
     matched = matched_sessions(ticket_id, project_dir, sessions, transcripts)
     by_id = {s["sessionId"]: s for s in sessions}
     kids = {}
@@ -623,15 +817,15 @@ def ticket_sessions(ticket_id, project_dir, sessions, transcripts=None):
         return False
 
     roots = sorted((by_id[i] for i in matched if not ancestor_matched(by_id[i])),
-                   key=lambda s: s.get("createdAt") or 0)
+                   key=lambda s: (s.get("kind") == "background", s.get("startedAt") or s.get("createdAt") or 0))
     return [node(s, set()) for s in roots]
 
 
 # --- servers ---------------------------------------------------------------------------------
-# A session keeps the dev servers it started with preview_start until it is archived; then the
-# dashboard stops them (reaper thread). A server counts for a session only while something listens
-# on its port from inside the session's folder, so another worktree's server on a reused port and
-# this dashboard itself are never listed or stopped.
+# A session's dev servers are its folder's .claude/launch.json entries whose port something listens
+# on from inside that folder, however the server was started (preview_start or Bash). They run until
+# the session is archived; then the dashboard stops them (reaper thread). Another worktree's server
+# on a reused port and this dashboard itself are never listed or stopped.
 
 REAP_EVERY = 30  # seconds
 
@@ -680,46 +874,36 @@ def owns(session_cwd, proc_cwd):
 
 
 def launch_configs(cwd):
-    """Configurations of the folder's .claude/launch.json by name; raises ValueError when the file
-    isn't the {"configurations": [{name, port, ...}]} shape."""
+    """Configurations of the folder's .claude/launch.json in file order ([] without the file);
+    raises ValueError when the file isn't the {"configurations": [{name, port, ...}]} shape."""
     f = Path(cwd, ".claude", "launch.json")
     if not f.is_file():
-        return {}
+        return []
     data = json.loads(f.read_text(encoding="utf-8"))
     configs = data.get("configurations") if isinstance(data, dict) else None
     if not isinstance(configs, list) or not all(isinstance(c, dict) for c in configs):
         raise ValueError("configurations is not a list of objects")
-    return {c.get("name"): c for c in configs}
+    return configs
 
 
-def session_servers(session, transcripts=None, listen=listeners):
-    """Running servers the session started: {name, url, port, pid}, plus {name, error} for one
-    that can't be checked (its launch.json entry is missing or broken, or lsof failed)."""
-    path, cwd = transcript_path(session, transcripts), session.get("cwd")
-    if not path or not cwd:
+def session_servers(session, *, listen=listeners):
+    """The session folder's launch.json servers that something listens on from inside that folder:
+    {name, url, port, pid}, plus {name, error} for one that can't be checked (a broken
+    launch.json, an entry without a port, or lsof failed). However the server was started."""
+    cwd = session.get("cwd")
+    if not cwd:
         return []
-    out, ports, configs = [], set(), None
     launch = "{}/.claude/launch.json".format(cwd)
-    for start in transcript_facts(path)["servers"]:
-        if "name" in start:
-            if configs is None:
-                try:
-                    configs = launch_configs(cwd)
-                except (OSError, ValueError) as e:
-                    configs = e
-            if isinstance(configs, Exception):
-                out.append({"name": start["name"], "error": "{}: {}".format(launch, configs)})
-                continue
-            c = configs.get(start["name"])
-            if not c or not isinstance(c.get("port"), int):
-                out.append({"name": start["name"], "error": "no port for it in " + launch})
-                continue
-            name, port, url = start["name"], c["port"], c.get("url") or "http://localhost:{}/".format(c["port"])
-        else:
-            port = local_port(start["url"])
-            if port is None:
-                continue  # an outside site, not a dev server
-            name, url = urllib.parse.urlparse(start["url"]).netloc, start["url"]
+    try:
+        configs = launch_configs(cwd)
+    except (OSError, ValueError) as e:
+        return [{"name": "launch.json", "error": "{}: {}".format(launch, e)}]
+    out, ports = [], set()
+    for c in configs:
+        name, port = c.get("name") or "?", c.get("port")
+        if not isinstance(port, int) or isinstance(port, bool):
+            out.append({"name": name, "error": "no port for it in " + launch})
+            continue
         if port in ports:
             continue
         ports.add(port)
@@ -730,15 +914,32 @@ def session_servers(session, transcripts=None, listen=listeners):
             continue
         pid = next((p for p, d in procs if p != os.getpid() and owns(cwd, d)), None)
         if pid:
-            out.append({"name": name, "url": url, "port": port, "pid": pid})
+            out.append({"name": name, "url": c.get("url") or "http://localhost:{}/".format(port), "port": port, "pid": pid})
     return out
 
 
-def reap_servers(sessions, transcripts=None, listen=listeners, kill=os.kill):
+def servers_by_session(sessions, listen):
+    """[(session, its servers)] for every session, asking lsof once per port."""
+    ports = {}  # many sessions share a folder
+
+    def listen_once(port):
+        if port not in ports:
+            ports[port] = listen(port)
+        return ports[port]
+    return [(s, session_servers(s, listen=listen_once)) for s in sessions]
+
+
+def held_pids(found, but=None):
+    """Pids of servers that an unarchived app session or a listed background session (other than
+    `but`) has: those keep running."""
+    return {x["pid"] for s, xs in found if s is not but and not s.get("isArchived") for x in xs if "pid" in x}
+
+
+def reap_servers(sessions, *, listen=listeners, kill=os.kill):
     """Stops (SIGTERM) the running servers of archived sessions, except one an unarchived session
     also lists. Returns the stopped servers."""
-    found = [(s, session_servers(s, transcripts, listen)) for s in sessions]
-    keep = {x["pid"] for s, xs in found if not s.get("isArchived") for x in xs if "pid" in x}
+    found = servers_by_session(sessions, listen)
+    keep = held_pids(found)
     stopped = []
     for s, xs in found:
         if not s.get("isArchived"):
@@ -751,10 +952,16 @@ def reap_servers(sessions, transcripts=None, listen=listeners, kill=os.kill):
     return stopped
 
 
+def reap_once(*, listen=listeners, kill=os.kill):
+    """One reaper pass over app and background sessions, so a background session in the same
+    folder as an archived app session keeps their shared server."""
+    return reap_servers(all_sessions(), listen=listen, kill=kill)
+
+
 def reaper():
     while True:
         try:
-            for x in reap_servers(load_sessions()):
+            for x in reap_once():
                 print("stopped server {} ({}, pid {}) of archived session {}".format(
                     x["name"], x["url"], x["pid"], x["sessionId"]), file=sys.stderr)
         except Exception:
@@ -965,7 +1172,7 @@ def ticket_view(project, ticket_id):
                    "next": field(text, "Next:")}
         issues = read_issues(folders[0].parent)
     handoff = Path(d, ".handoffs", "HANDOFF-{}.md".format(ticket_id))
-    sessions = ticket_sessions(ticket_id, d, load_sessions())
+    sessions = ticket_sessions(ticket_id, d, all_sessions())
     prs = [pr_status(u) for u in ticket_pr_urls(lines, sessions, (scratch or {}).get("branch"), d)]
     return {"id": ticket_id, "title": title, "column": column, "goal": card_goal(lines[1:]), "card": lines,
             "scratch": scratch,
@@ -1122,18 +1329,22 @@ def get_ticket(q):
     return ticket_view(project, tid)
 
 
-def as_request(text):
-    """The app swaps a leading `/` in link-prefilled text for a look-alike so a link can't run a
-    command, so a command gets a word in front: `/work SKL-15` → `Run /work SKL-15`."""
-    return "Run " + text.strip() if text.strip().startswith("/") else text
+def session_screen(s):
+    """The terminal screen of a live background session (its question while blocked)."""
+    return render_screen(claude_ok(["logs", s["id"]]))
 
 
-def new_session_url(text):
-    """claude://code/new?q=…: the new Code session screen, the text prefilled (none → a blank
-    prompt). No `folder`: the app marks any link that names one as external and asks to trust
-    the folder every time, so the session opens in the folder the app used last. A link can't
-    pick the sidebar group."""
-    return "claude://code/new" + ("?" + urllib.parse.urlencode({"q": as_request(text)}) if text else "")
+def get_session(q):
+    """A background session's brief plus its chat, for the session view; plus its terminal screen while blocked."""
+    sid = q.get("id")
+    if not sid:
+        raise ApiError(400, "id is required")
+    s = find_background(sid, background_sessions())
+    path = transcript_path(s)
+    view = dict(session_brief(s), chat=session_chat(path) if path else [])
+    if view["state"] == "blocked":
+        view["screen"] = session_screen(s)
+    return view
 
 
 def post_open(body):
@@ -1165,14 +1376,6 @@ def post_open_url(body):
     return {"ok": True}
 
 
-def post_new_session(body):
-    """Opens the Claude app's new Code session screen; Quinn presses Enter there."""
-    code, out = run(["open", new_session_url(body.get("text") or "")])
-    if code != 0:
-        raise ApiError(500, "open: " + out.strip())
-    return {"ok": True}
-
-
 def claude_cli():
     path = shutil.which("claude") or str(HOME / ".local/bin/claude")
     if not Path(path).is_file():
@@ -1180,15 +1383,56 @@ def claude_cli():
     return path
 
 
-def background_agents():
-    """The background sessions `claude --bg` started, from `claude agents --json`."""
-    code, out = run([claude_cli(), "agents", "--json"])
+def run_claude(args, cwd=None):
+    """The CLI gateway: runs `claude <args>` in cwd and returns (exit code, output). Every `claude`
+    call goes through here, so tests replace this one function."""
+    return run([claude_cli()] + list(args), cwd=cwd)
+
+
+def claude_ok(args, cwd=None):
+    """Runs `claude <args>`; a non-zero exit is an API error carrying the CLI's output."""
+    code, out = run_claude(args, cwd=cwd)
     if code != 0:
-        raise ApiError(500, "claude agents: " + out.strip())
-    return [a for a in json.loads(out) if a.get("kind") == "background"]
+        raise ApiError(500, "claude {}: {}".format(args[0], out.strip()))
+    return out
 
 
-BG_ID = re.compile(r"backgrounded · (\S+) ·")
+BG_ID = re.compile(r"backgrounded · (\S+)")  # `· <name>` follows unless the session has none
+
+
+def printed_id(out):
+    """The short id `claude --bg` printed, or None. The CLI colours it when its environment asks
+    for colour (the app's preview servers do), so escape sequences are dropped first."""
+    m = BG_ID.search(ESCAPE_RE.sub("", out))
+    return m.group(1) if m else None
+STOP_WAIT = 15  # seconds a stopped session's process gets to exit
+START_WAIT = 5  # seconds a started session gets to show up in `claude agents`
+
+
+def process_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def stop_session(s):
+    """`claude stop` while the session's process lives (an exited one has no pid, and stop refuses
+    it), then waits until the process is gone: stop returns while it still shuts down, and a
+    resume or rm before then acts on a live session."""
+    pid = s["agent"].get("pid")
+    if not pid:
+        return
+    claude_ok(["stop", s["id"]])
+    deadline = time.time() + STOP_WAIT
+    while process_alive(pid):
+        if time.time() > deadline:
+            raise ApiError(500, "session {} is still running {} s after claude stop (pid {})".format(
+                s["id"], STOP_WAIT, pid))
+        time.sleep(0.1)
 
 
 def bg_session_name(project, text):
@@ -1198,19 +1442,73 @@ def bg_session_name(project, text):
 
 def post_bg_session(body):
     """Starts a background session (`claude --bg`) in the project's folder with the text as its
-    first prompt. No claude:// link, so the app shows no confirmation and stays in the background."""
+    first prompt. No claude:// link, so the app shows no confirmation and stays in the background.
+    Returns its short id and, from the CLI's session list, its sessionId (the session view's key)."""
     project, text = need(body, "project", "text")
     if not text.strip():
         raise ApiError(400, "text is empty")
     d = lookup(project).get("dir", "none")
     if d == "none" or not Path(d).is_dir():
         raise ApiError(404, "no folder for project " + project)
-    code, out = run([claude_cli(), "--bg", "--permission-mode", "auto", "-n", bg_session_name(project, text),
-                     text.strip()], cwd=d)
-    m = BG_ID.search(out)
-    if code != 0 or not m:
-        raise ApiError(500, "claude --bg: " + out.strip())
-    return {"ok": True, "id": m.group(1)}
+    out = claude_ok(["--bg", "--permission-mode", "auto", "-n", bg_session_name(project, text), text.strip()], cwd=d)
+    short = printed_id(out)
+    if not short:
+        raise ApiError(500, "claude --bg printed no session id: " + out.strip())
+    # `claude agents` may not list a just-started session yet.
+    deadline = time.time() + START_WAIT
+    while True:
+        s = next((s for s in background_sessions() if s["id"] == short), None)
+        if s:
+            return {"ok": True, "id": s["id"], "sessionId": s["sessionId"]}
+        if time.time() > deadline:
+            raise ApiError(500, "background session {} was started but is not in `claude agents` after {} s".format(
+                short, START_WAIT))
+        time.sleep(0.1)
+
+
+def post_session_send(body):
+    """Sends a follow-up to a background session that isn't running: `claude stop` (when its process
+    is alive), then `claude --bg --resume <sessionId> <text>` in its folder. Resuming a stopped
+    session keeps its id; resuming a live one would fork a new session, so a different id is an error."""
+    sid, text = need(body, "sessionId", "text")
+    text = text.strip()
+    if not text:
+        raise ApiError(400, "text is empty")
+    s = find_background(sid, background_sessions())
+    state = background_state(s["agent"])
+    if state == "running":
+        raise ApiError(409, "session is running")
+    if state == "blocked":  # stopping drops the unanswered question, so read it first
+        text = "Answering your question:\n{}\n\nMy answer: {}".format(session_screen(s), text)
+    stop_session(s)  # a resume while its process lives would fork
+    out = claude_ok(["--bg", "--resume", sid, text], cwd=s["cwd"])
+    short = printed_id(out)
+    if not short:
+        raise ApiError(500, "claude --bg --resume printed no session id: " + out.strip())
+    if short != s["id"]:
+        raise ApiError(500, "claude forked session {} into a new session {} instead of resuming it".format(
+            s["id"], short))
+    return {"ok": True, "id": short}
+
+
+def post_session_remove(body, *, listen=listeners, kill=os.kill):
+    """Removes a background session: SIGTERMs its dev servers (sparing one another listed session
+    also has), then stop_session, then `claude rm`. A refusal from rm (unpushed or uncommitted
+    work) is a 409 with its message; the session stays listed, its dev servers already stopped."""
+    sid = need(body, "sessionId")[0]
+    sessions = all_sessions()
+    s = find_background(sid, sessions)
+    found = servers_by_session(sessions, listen)
+    keep = held_pids(found, but=s)
+    for x in next(xs for o, xs in found if o is s):
+        if "pid" in x and x["pid"] not in keep:
+            kill(x["pid"], signal.SIGTERM)
+    stop_session(s)
+    code, out = run_claude(["rm", s["id"]])
+    if code != 0:
+        raise ApiError(409, "claude rm refused, so the session stays (its dev servers were already stopped): "
+                       + out.strip())
+    return {"ok": True}
 
 
 def post_copy(body):
@@ -1221,10 +1519,11 @@ def post_copy(body):
 
 
 GETS = {"/api/briefing": lambda q: BRIEFING.get(), "/api/projects": lambda q: projects_view(),
-        "/api/ticket": get_ticket, "/api/weather": lambda q: weather(),
+        "/api/ticket": get_ticket, "/api/session": get_session, "/api/weather": lambda q: weather(),
         "/api/order": lambda q: {"order": read_order()}}
-POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/open-url": post_open_url, "/api/new-session": post_new_session,
-         "/api/bg-session": post_bg_session,
+POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/open-url": post_open_url,
+         "/api/bg-session": post_bg_session, "/api/session/send": post_session_send,
+         "/api/session/remove": post_session_remove,
          "/api/copy": post_copy, "/api/note-done": lambda b: note_done(need(b, "n")[0]),
          "/api/order": save_order}
 
