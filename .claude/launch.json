@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "dashboard", "runtimeExecutable": "python3", "runtimeArgs": ["skills/dashboard/server.py", "--port", "4780"], "port": 4780 }
+  ]
+}

@@ -151,6 +151,10 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 .text.dim { color: var(--label); }
 .tree .conn { color: var(--arch); white-space: pre; flex: none; }
 .tree .row { gap: 8px; }
+.tree .srv .glyph { color: var(--clay); flex: none; }
+.tree .srv .name { color: var(--head); flex: none; }
+.tree .srv .t { color: var(--label); }
+.tree .srv.err .t { color: var(--err); }
 .tree .st { font-size: var(--fs-s); color: var(--label); flex: none; }
 .tree .when { font-size: var(--fs-s); color: var(--dim); flex: none; width: 8ch; text-align: right; }
 .tree .summary { padding: 2px 15px 8px 0; color: var(--label); font-size: var(--fs-s); white-space: pre-wrap; display: flex; gap: .6em; }
@@ -304,7 +308,11 @@ function updateHints() {
   let h = HINTS[S.route.name].slice();
   if (S.route.name === 'ticket') {
     if (S.extra !== null) h = [['⏎', 'start session'], ['⇧⏎', 'new line'], ['← unchanged / esc', 'close']];
-    else if (aliveSessions()) { h[1] = ['space', 'open session']; h = h.filter(([k]) => k !== '←'); }
+    else if (aliveSessions()) {
+      const f = S.flat[S.ticketSel];
+      h[1] = f && f.srv ? ['→ / space', 'open server in Chrome'] : ['space', 'open session'];
+      h = h.filter(([k]) => k !== '←');
+    }
     else h.push(['→', 'edit prompt']);
   }
   if (S.route.name === 'home') {
@@ -331,7 +339,7 @@ function toggleOverlay(force) {
     ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
     ['home', [['space', 'open selected ticket'], ['⏎', 'prompt box: new session in the project with your text'], ['t', 'new session with /work <selected ticket>'], ['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open ticket 1–9 (in progress first, then to do)'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
-    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: new session with /work <id> prefilled'], ['→', 'no live sessions: edit the /work prompt, ⏎ starts it, ← (unchanged) closes'], ['←', 'no live sessions: back']]],
+    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: new session with /work <id> prefilled'], ['→ / space / click', 'on a server row: open it in a new tab of your normal Chrome'], ['→', 'no live sessions: edit the /work prompt, ⏎ starts it, ← (unchanged) closes'], ['←', 'no live sessions: back']]],
   ];
   const p = focusedProject();
   if (p && (p.jumps || []).length) groups.push([`jumps · ${p.name}`, p.jumps.map(j => [j.key, j.label])]);
@@ -611,19 +619,23 @@ function flatten(list, depth = 0, prefix = '', out = []) {
   (list || []).forEach((s, i) => {
     const last = i === list.length - 1;
     out.push({ s, conn: depth ? prefix + '└─ ' : '' });
-    if ((s.children || []).length) flatten(s.children, depth + 1, depth ? prefix + (last ? '   ' : '│  ') : '', out);
+    // Servers sit right under the session that started them, indented like its children.
+    const inner = depth ? prefix + (last ? '   ' : '│  ') : '';
+    (s.servers || []).forEach(srv => out.push({ srv, conn: inner + '   ' }));
+    if ((s.children || []).length) flatten(s.children, depth + 1, inner, out);
   });
   return out;
 }
+const flatKey = f => f && (f.srv ? 'srv ' + (f.srv.url || f.srv.name) : f.s.sessionId);
 async function loadTicket() {
   const gen = S.gen, r = S.route;
   try {
     const t = await api(`/api/ticket?project=${encodeURIComponent(r.project)}&id=${encodeURIComponent(r.id)}`);
     if (gen !== S.gen) return;
-    const prevId = S.flat[S.ticketSel] && S.flat[S.ticketSel].s.sessionId;
+    const prevId = flatKey(S.flat[S.ticketSel]);
     S.ticket = t; S.ticketErr = null;
     S.flat = flatten(t.sessions || []);
-    const at = S.flat.findIndex(f => f.s.sessionId === prevId);
+    const at = S.flat.findIndex(f => flatKey(f) === prevId);
     S.ticketSel = at >= 0 ? at : Math.min(S.ticketSel, Math.max(S.flat.length - 1, 0));
     updateHints();
     updateMeta();
@@ -658,6 +670,12 @@ function renderTicket() {
   }).join('');
   const sel = S.flat[S.ticketSel];
   const sessions = S.flat.map((f, i) => {
+    if (f.srv) {
+      const v = f.srv;
+      return `<div class="row srv${i === S.ticketSel ? ' sel' : ''}${v.error ? ' err' : ''}" data-act="session" data-i="${i}">
+        <span class="conn">${esc(f.conn)}</span><span class="glyph">▸</span><span class="name">${esc(v.name)}</span>
+        <span class="t">${esc(v.error || v.url)}</span>${i === S.ticketSel && !v.error ? '<span class="jk">→</span>' : ''}</div>`;
+    }
     const s = f.s;
     return `<div class="row${i === S.ticketSel ? ' sel' : ''}" data-act="session" data-i="${i}">
       <span class="conn">${esc(f.conn)}</span><span class="dot ${esc(s.state)}"></span>
@@ -682,7 +700,7 @@ function renderTicket() {
         ${t.handoff ? `<div class="section"><div class="label">handoff</div><div class="text dim">${esc(t.handoff)}</div></div>` : ''}
         ${(t.card || []).length ? `<div class="section"><div class="label">card</div><div class="text dim">${t.card.map(l => hlIds(inline(l))).join('\n')}</div></div>` : ''}
       </div></section>
-      <section class="panel"><div class="label">sessions<span class="r">${S.flat.length || ''}</span></div>
+      <section class="panel"><div class="label">sessions<span class="r">${S.flat.filter(f => f.s).length || ''}</span></div>
         ${S.extra !== null ? `<div class="extra"><span class="prompt">&gt;</span><textarea id="extra"></textarea></div>
         <div class="extra-hint">⏎ start session · ⇧⏎ new line · ← (unchanged) or esc close</div>`
           : aliveSessions() ? '' : `<div class="row offer" data-act="extra"><span class="jk">→</span><span class="t">edit prompt</span></div>`}
@@ -697,6 +715,11 @@ function renderTicket() {
   }
   const selEl = main.querySelector('.tree .row.sel');
   if (selEl) selEl.scrollIntoView({ block: 'nearest' });
+  updateHints();
+}
+async function openServer(srv) {
+  if (srv.error) { toast(srv.error); return; }
+  try { await api('/api/open-url', { url: srv.url }); toast('Opened ' + srv.url + ' in Chrome'); } catch (e) { fail(e); }
 }
 async function openInApp(sessionId) {
   try { await api('/api/open', { sessionId }); toast('Opened in the Claude app'); } catch (e) { fail(e); }
@@ -705,7 +728,7 @@ async function openInApp(sessionId) {
 async function newSession(project, text) {
   try { await api('/api/new-session', { project, text }); toast(text ? 'New session: ' + text : 'New session'); } catch (e) { fail(e); }
 }
-const aliveSessions = () => S.flat.some(f => f.s.state !== 'archived');
+const aliveSessions = () => S.flat.some(f => f.s && f.s.state !== 'archived');
 const ticketPrompt = () => `/work ${S.route.id} `;
 function openExtra() { if (S.extra === null) S.extra = ticketPrompt(); renderTicket(); updateHints(); }
 function closeExtra() { S.extra = null; renderTicket(); updateHints(); }
@@ -722,8 +745,9 @@ function ticketKey(e) {
   const k = e.key;
   if (k === 'ArrowDown' || k === 'j') { S.ticketSel = Math.min(S.ticketSel + 1, Math.max(S.flat.length - 1, 0)); renderTicket(); return true; }
   if (k === 'ArrowUp' || k === 'k') { S.ticketSel = Math.max(S.ticketSel - 1, 0); renderTicket(); return true; }
+  const f = S.flat[S.ticketSel];
+  if (f && f.srv && (k === ' ' || k === 'ArrowRight')) { openServer(f.srv); return true; }
   if (k === ' ') {
-    const f = S.flat[S.ticketSel];
     if (f) openInApp(f.s.sessionId); else newSession(S.route.project, '/work ' + S.route.id);
     return true;
   }
@@ -850,7 +874,11 @@ document.addEventListener('click', e => {
   } else if (a === 'jump') runJump(Number(el.dataset.idx), el.dataset.key);
   else if (a === 'focus') { if (Number(el.dataset.idx) !== S.focus) focusProject(Number(el.dataset.idx)); }
   else if (a === 'extra') openExtra();
-  else if (a === 'session') { S.ticketSel = Number(el.dataset.i); renderTicket(); }
+  else if (a === 'session') {
+    S.ticketSel = Number(el.dataset.i); renderTicket();
+    const f = S.flat[S.ticketSel];
+    if (f && f.srv) openServer(f.srv);
+  }
 });
 window.addEventListener('hashchange', route);
 updateMeta();
