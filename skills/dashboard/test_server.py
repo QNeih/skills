@@ -302,6 +302,26 @@ class BackgroundSessions(Fixture):
         self.assertEqual([n["summary"] for n in tree],
                          ["", "", "needs you: input needed", "needs you", "needs you", ""])
 
+    def test_session_endpoint_returns_brief_and_chat(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100, status="busy", state="running",
+                lines=[user("fix it"), assistant([{"type": "text", "text": "On it."}])])
+        got = server.GETS["/api/session"]({"id": "aaaaaaaa-1"})
+        self.assertEqual((got["sessionId"], got["id"], got["kind"], got["title"], got["state"]),
+                         ("aaaaaaaa-1", "aaaaaaaa", "background", "skills: fix it", "running"))
+        self.assertEqual([(e["role"], e["text"]) for e in got["chat"]], [("user", "fix it"), ("assistant", "On it.")])
+
+    def test_session_endpoint_without_transcript_has_an_empty_chat(self):
+        self.bg("aaaaaaaa-1", "skills: just started", 100, status="busy", state="running")
+        self.assertEqual(server.GETS["/api/session"]({"id": "aaaaaaaa-1"})["chat"], [])
+
+    def test_session_endpoint_unknown_id_is_404(self):
+        with self.assertRaises(server.ApiError) as e:
+            server.GETS["/api/session"]({"id": "nope"})
+        self.assertEqual(e.exception.status, 404)
+        with self.assertRaises(server.ApiError) as e:
+            server.GETS["/api/session"]({})
+        self.assertEqual(e.exception.status, 400)
+
     def test_home_row_counts_include_background_sessions(self):
         self.session("local_1", title="A-2 app running", lines=[user("go")])
         self.session("local_2", title="A-2 app archived", isArchived=True)
@@ -314,6 +334,63 @@ class BackgroundSessions(Fixture):
         self.assertEqual(view["next"][0]["sessionCounts"], {"running": 2, "waiting": 1, "blocked": 1, "archived": 1})
         self.assertEqual((view["running"], view["background"]), (3, 2))
 
+
+class Chat(Fixture):
+    """The session view's chat: prompts, replies and one line per tool call, read from the transcript."""
+
+    def chat(self, lines):
+        self.session("local_1", lines=lines)
+        return server.session_chat(server.transcript_path(server.load_sessions(self.sessions)[0], self.transcripts))
+
+    def test_prompts_replies_and_tool_calls_in_order(self):
+        def at(e, t):
+            return dict(e, timestamp=t)
+        got = self.chat([
+            at(user("look at the skills project"), "2026-10-16T15:28:29.958Z"),
+            at(assistant([{"type": "thinking", "thinking": "hmm"}]), "2026-10-16T15:28:31.000Z"),
+            at(assistant([{"type": "text", "text": "Locating the project."}]), "2026-10-16T15:28:32.000Z"),
+            at(assistant([{"type": "tool_use", "name": "Bash", "input": {"command": "ls -d ~/Projects/*skill*\n  cat x",
+                                                                       "description": "List"}}]), "2026-10-16T15:28:33.000Z"),
+            at(user([{"type": "tool_result", "content": "skills"}]), "2026-10-16T15:28:34.000Z"),
+            at(user("<command-message>work</command-message>\n<command-name>/work</command-name>\n"
+                    "<command-args>SKL-1</command-args>"), "2026-10-16T15:28:35.000Z"),
+        ])
+        self.assertEqual(got, [
+            {"role": "user", "text": "look at the skills project", "at": "2026-10-16T15:28:29.958Z"},
+            {"role": "assistant", "text": "Locating the project.", "at": "2026-10-16T15:28:32.000Z"},
+            {"role": "tool", "text": "Bash: ls -d ~/Projects/*skill* cat x", "at": "2026-10-16T15:28:33.000Z"},
+            {"role": "user", "text": "/work SKL-1", "at": "2026-10-16T15:28:35.000Z"},
+        ])
+
+
+    def test_side_threads_meta_and_system_lines_are_left_out(self):
+        got = self.chat([
+            user("go"),
+            dict(user("sub-agent task"), isSidechain=True),
+            dict(assistant([{"type": "text", "text": "sub-agent reply"}]), isSidechain=True),
+            dict(user("Caveat: local command output"), isMeta=True),
+            dict(type="system", subtype="compact_boundary", content="Conversation compacted", timestamp="t"),
+            user("<system-reminder>hook output</system-reminder>"),
+            assistant([{"type": "text", "text": "done"}], stop="end_turn"),
+        ])
+        self.assertEqual([(e["role"], e["text"]) for e in got], [("user", "go"), ("assistant", "done")])
+
+    def test_tool_gist_is_one_line_of_at_most_120_chars(self):
+        got = self.chat([
+            assistant([{"type": "tool_use", "name": "Read", "input": {"file_path": "/a/b.py", "limit": 5}},
+                       {"type": "tool_use", "name": "Grep", "input": {"pattern": "def x", "path": "/a"}},
+                       {"type": "tool_use", "name": "Agent", "input": {"description": "Find it", "prompt": "long"}},
+                       {"type": "tool_use", "name": "Bash", "input": {"command": "echo " + "y" * 200}},
+                       {"type": "tool_use", "name": "TodoWrite", "input": {"todos": []}}]),
+        ])
+        self.assertEqual([e["text"] for e in got][:3], ["Read: /a/b.py", "Grep: def x", "Agent: Find it"])
+        self.assertEqual(got[3]["text"], "Bash: " + ("echo " + "y" * 200)[:119] + "…")
+        self.assertEqual(got[4]["text"], "TodoWrite")
+
+    def test_reads_only_the_last_2_mb(self):
+        big = "x" * (server.CHAT_TAIL // 2)
+        got = self.chat([user("first " + big), user("second " + big), user("third")])
+        self.assertEqual([e["text"][:6] for e in got], ["second", "third"])
 
 class Transcript(Fixture):
     def test_fallback_glob(self):

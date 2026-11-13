@@ -159,6 +159,19 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 .tree .summary { padding: 2px 15px 8px 0; color: var(--label); font-size: var(--fs-s); white-space: pre-wrap; display: flex; gap: .6em; }
 .tree .summary::before { content: '\23BF'; color: var(--dim); flex: none; }
 
+/* session */
+.screen.session > .panel { flex: 1; }
+.head .st { font-size: var(--fs-s); color: var(--label); flex: none; }
+.chat { padding: 8px 0 14px; }
+.msg { display: flex; gap: var(--gap); padding: 4px 15px 4px calc(var(--c1) - 2px); min-width: 0; }
+.msg .g { flex: none; width: 1.1em; text-align: center; color: var(--dim); }
+.msg .tx { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; }
+.msg.user { margin-top: 10px; }
+.msg.user .g { color: var(--clay); }
+.msg.user .tx { color: var(--head); }
+.msg.tool { padding-top: 1px; padding-bottom: 1px; font-size: var(--fs-s); color: var(--label); }
+.msg.tool .tx { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msg.tool .g { color: var(--run); }
 
 /* start */
 #app.start { grid-template-rows: 1fr; }
@@ -306,6 +319,7 @@ const HINTS = {
   start: [],
   home: [['↑↓', 'select'], ['→', 'next command'], ['⏎', 'edit next command'], ['space / 1–9', 'open'], ['tab', 'project'], ['⇧↑↓', 'move project'], ['b', 'bg session'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
   ticket: [['↑↓', 'select'], ['space', 'new /work bg session'], ['⏎', 'edit next command'], ['tab', 'project'], ['esc', 'back'], ['←', 'back']],
+  session: [['↑↓', 'scroll'], ['← / esc', 'back'], ['tab', 'project']],
 };
 function updateHints() {
   let h = HINTS[S.route.name].slice();
@@ -313,7 +327,8 @@ function updateHints() {
     if (S.extra !== null) h = [['⏎', 'start session'], ['⇧⏎', 'new line'], ['tab', 'project (keeps text)'], ['← unchanged / esc', 'close']];
     else if (aliveSessions()) {
       const f = S.flat[S.ticketSel];
-      h[1] = f && f.srv && !f.srv.error ? ['→ / space', 'open server in Chrome'] : ['space', 'open session'];
+      h[1] = f && f.srv && !f.srv.error ? ['→ / space', 'open server in Chrome']
+        : f && f.s && f.s.kind === 'background' ? ['→ / space', 'open session'] : ['space', 'open in app'];
       h = h.filter(([k]) => k !== '←');
     }
     else h.push(['→', 'edit prompt']);
@@ -342,7 +357,8 @@ function toggleOverlay(force) {
     ['everywhere', [['?', 'toggle this list'], ['tab / ⇧tab', 'next / previous project: its last screen, unsent text kept'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
     ['home', [['space / 1–9', 'open the selected / numbered ticket (in progress first, then to do)'], ['→', 'background session with the ticket\'s next command: /work <id>, then /send'], ['⏎', 'ticket view with the next command in its prompt box; ⏎ again starts it in the background'], ['b', 'prompt box: start a background session (claude --bg) in the project with your text'], ['⇧↑ / ⇧↓', 'move project up / down in the rail'], ['s', 'background session: fix new Sentry errors'], ['d', 'background session: Dependabot review'], ['c', 'clock screen'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
-    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected app session in the app; no sessions yet: background session with /work <id>'], ['⏎', 'prompt box with the next command; ⏎ again starts a background session with it'], ['→ / space / click', 'on a server row: open it in a new tab of your normal Chrome'], ['→', 'no live sessions: prompt box'], ['←', 'no live sessions: back']]],
+    ['ticket', [['↑↓ / j k', 'select session'], ['→ / space', 'on a background session: open its session view'], ['space', 'open the selected app session in the app; no sessions yet: background session with /work <id>'], ['⏎', 'prompt box with the next command; ⏎ again starts a background session with it'], ['→ / space / click', 'on a server row: open it in a new tab of your normal Chrome'], ['→', 'no live sessions: prompt box'], ['←', 'no live sessions: back']]],
+    ['session', [['↑↓ / j k', 'scroll the chat'], ['← / esc', 'back to the ticket view']]],
   ];
   const p = focusedProject();
   if (p && (p.jumps || []).length) groups.push([`jumps · ${p.name}`, p.jumps.map(j => [j.key, j.label])]);
@@ -360,14 +376,22 @@ function parseHash() {
     const project = parts[1], id = parts.slice(2).join('/');
     return { name: 'ticket', project, id, hash: ticketHash(project, id) };
   }
+  // #/session/<project>/<ticket>/<sessionId>; without a ticket, ← goes back to home.
+  if (parts[0] === 'session' && parts.length >= 3) {
+    const project = parts[1], sid = parts[parts.length - 1], ticket = parts.slice(2, -1).join('/') || null;
+    return { name: 'session', project, ticket, sid, hash: sessionHash(project, ticket, sid) };
+  }
   return { name: 'home' };
 }
 const ticketHash = (project, id) => `#/ticket/${encodeURIComponent(project)}/${encodeURIComponent(id)}`;
+const sessionHash = (project, ticket, sid) =>
+  `#/session/${encodeURIComponent(project)}/${ticket ? encodeURIComponent(ticket) + '/' : ''}${encodeURIComponent(sid)}`;
 // Routes at once: waiting for hashchange lets keys pressed in between act on the old screen.
 function go(h) { if (location.hash !== h) history.pushState(null, '', h); route(); }
 function back() {
   const r = S.route;
   if (r.name === 'ticket') go('#/');
+  else if (r.name === 'session') go(r.ticket ? ticketHash(r.project, r.ticket) : '#/');
 }
 function route() {
   clearTimeout(S.timer);
@@ -398,11 +422,18 @@ function route() {
     S.extraInit = S.extra;
     S.ticketErr = null; renderTicket(); loadTicket();
   }
+  else if (r.name === 'session') {
+    S.last[r.project] = r.hash;
+    syncFocus();
+    if (!S.session || S.session.sessionId !== r.sid) S.session = null;
+    S.sessionErr = null;
+    sessionCrumbs(); renderSession(); loadSession();
+  }
   updateHints();
 }
 // The ticket view's project is the focused one, so the rail and tab start from it.
 function syncFocus() {
-  if (S.route.name !== 'ticket' || !S.projects) return;
+  if (!['ticket', 'session'].includes(S.route.name) || !S.projects) return;
   const i = S.projects.findIndex(p => p.name === S.route.project);
   if (i >= 0) S.focus = i;
 }
@@ -820,14 +851,70 @@ function ticketKey(e) {
   if (k === 'ArrowUp' || k === 'k') { S.ticketSel = Math.max(S.ticketSel - 1, 0); renderTicket(); return true; }
   const f = S.flat[S.ticketSel];
   if (f && f.srv && (k === ' ' || k === 'ArrowRight')) { openServer(f.srv); return true; }
+  if (f && f.s.kind === 'background' && (k === ' ' || k === 'ArrowRight')) {
+    go(sessionHash(S.route.project, S.route.id, f.s.sessionId)); return true;
+  }
   if (k === ' ') {
-    if (f && f.s.kind === 'background') toast(`Background session ${f.s.id}: the dashboard can't open it yet`);
-    else if (f) openInApp(f.s.sessionId); else startSession(S.route.project, '/work ' + S.route.id);
+    if (f) openInApp(f.s.sessionId); else startSession(S.route.project, '/work ' + S.route.id);
     return true;
   }
   if (k === 'ArrowLeft' && !aliveSessions()) { back(); return true; }
   if (k === 'ArrowRight' && !aliveSessions()) { openExtra(); return true; }
   if (k === 'Enter') { openExtra(); return true; }
+  return false;
+}
+
+/* ---------- session ---------- */
+function sessionCrumbs() {
+  const r = S.route, s = S.session;
+  const ticket = r.ticket ? [{ text: r.ticket, id: true, href: ticketHash(r.project, r.ticket) }] : [];
+  setCrumbs([{ text: 'home', href: '#/' }, ...ticket, { text: (s && s.title) || r.sid.slice(0, 8) }]);
+}
+// Live: re-read every 2 s while the view is open.
+async function loadSession() {
+  const gen = S.gen, r = S.route;
+  try {
+    const s = await api(`/api/session?id=${encodeURIComponent(r.sid)}`);
+    if (gen !== S.gen) return;
+    S.session = s; S.sessionErr = null;
+    sessionCrumbs();
+  } catch (e) {
+    if (gen !== S.gen) return;
+    S.sessionErr = e.message;
+  }
+  renderSession();
+  if (gen === S.gen && S.route.name === 'session') { clearTimeout(S.timer); S.timer = setTimeout(loadSession, 2000); }
+}
+const CHAT_GLYPH = { user: '&gt;', assistant: '✻', tool: '⏺' };
+function renderSession() {
+  if (S.route.name !== 'session') return;
+  ensureFrame(); renderRail();
+  const content = $('#content'), r = S.route, s = S.session;
+  if (!content.querySelector(`.screen.session[data-sid="${CSS.escape(r.sid)}"]`)) {
+    content.innerHTML = `<div class="screen session" data-sid="${esc(r.sid)}"><div class="head" id="s-head"></div>
+      <div class="errtext" id="s-err" hidden></div><section class="panel"><div class="scroll chat" id="chat"></div></section></div>`;
+    S.chatHtml = null;
+  }
+  $('#s-head').innerHTML = s ? `<span class="dot ${esc(s.state)}"></span><h1 title="${esc(s.title)}">${esc(s.title || s.sessionId)}</h1>
+    ${s.id ? `<span class="tag">bg ${esc(s.id)}</span>` : ''}<span class="st">${esc(s.state === 'blocked' ? 'needs you' : s.state)}</span>` : '';
+  const err = $('#s-err');
+  err.hidden = !S.sessionErr; err.textContent = S.sessionErr || '';
+  const html = !s ? (S.sessionErr ? '' : '<div class="status">loading…</div>')
+    : !s.chat.length ? '<div class="empty">no messages yet</div>'
+    : s.chat.map(m => `<div class="msg ${esc(m.role)}"><span class="g">${CHAT_GLYPH[m.role] || ''}</span>` +
+        `<span class="tx"${m.role === 'tool' ? ` title="${esc(m.text)}"` : ''}>${esc(m.text)}</span></div>`).join('');
+  if (html === S.chatHtml) return;
+  // Opens at the newest message; later updates follow it only while the chat is already at the bottom.
+  const box = $('#chat');
+  const atBottom = S.chatHtml === null || box.scrollHeight - box.scrollTop - box.clientHeight < 8;
+  box.innerHTML = html; S.chatHtml = html;
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+function sessionKey(e) {
+  const k = e.key, box = $('#chat');
+  if (k === 'ArrowLeft') { back(); return true; }
+  if (box && (k === 'ArrowDown' || k === 'j')) { box.scrollBy(0, 60); return true; }
+  if (box && (k === 'ArrowUp' || k === 'k')) { box.scrollBy(0, -60); return true; }
   return false;
 }
 
@@ -939,7 +1026,7 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); back(); return; }
-  const handler = { home: homeKey, ticket: ticketKey }[S.route.name];
+  const handler = { home: homeKey, ticket: ticketKey, session: sessionKey }[S.route.name];
   if (handler(e)) e.preventDefault();
 });
 document.addEventListener('click', e => {

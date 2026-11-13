@@ -513,6 +513,45 @@ def transcript_facts(path):
     return _facts_cache[key]
 
 
+CHAT_TAIL = 2 * 1024 * 1024  # bytes of transcript the session view reads
+GIST_KEYS = ("command", "file_path", "pattern", "url", "query", "skill", "description", "prompt")
+GIST_MAX = 120
+
+
+def tool_gist(block):
+    """`Name: <first of command, file path, pattern, … in its input>` on one line, the input cut to 120 chars."""
+    inp = block.get("input") or {}
+    gist = next((inp[k] for k in GIST_KEYS if isinstance(inp.get(k), str) and inp[k].strip()), "")
+    gist = " ".join(gist.split())
+    if len(gist) > GIST_MAX:
+        gist = gist[:GIST_MAX - 1] + "…"
+    return block.get("name", "?") + (": " + gist if gist else "")
+
+
+def session_chat(path):
+    """The main thread of a transcript (its last 2 MB) as [{role, text, at}]: user prompts (user_text
+    rules), assistant text blocks, and one `tool` entry per tool call. Thinking, tool results,
+    side threads, meta and system lines are left out."""
+    out = []
+    for e in read_lines(path, tail_bytes=CHAT_TAIL):
+        if e.get("type") not in ("user", "assistant") or e.get("isSidechain") or e.get("isMeta"):
+            continue
+        content, at = (e.get("message") or {}).get("content"), e.get("timestamp")
+        if e["type"] == "user":
+            text = user_text(content)
+            if text:
+                out.append({"role": "user", "text": text, "at": at})
+            continue
+        for b in content if isinstance(content, list) else []:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "text" and (b.get("text") or "").strip():
+                out.append({"role": "assistant", "text": b["text"].strip(), "at": at})
+            elif b.get("type") == "tool_use":
+                out.append({"role": "tool", "text": tool_gist(b), "at": at})
+    return out
+
+
 END_REASONS = {"end_turn", "stop_sequence", "max_tokens", "refusal"}
 
 
@@ -1150,6 +1189,18 @@ def get_ticket(q):
     return ticket_view(project, tid)
 
 
+def get_session(q):
+    """A background session's brief plus its chat, for the session view."""
+    sid = q.get("id")
+    if not sid:
+        raise ApiError(400, "id is required")
+    s = next((s for s in background_sessions() if s["sessionId"] == sid), None)
+    if not s:
+        raise ApiError(404, "no background session " + sid)
+    path = transcript_path(s)
+    return dict(session_brief(s), chat=session_chat(path) if path else [])
+
+
 def post_open(body):
     session_id = need(body, "sessionId")[0]
     if not any(s["sessionId"] == session_id for s in load_sessions()):
@@ -1232,7 +1283,7 @@ def post_copy(body):
 
 
 GETS = {"/api/briefing": lambda q: BRIEFING.get(), "/api/projects": lambda q: projects_view(),
-        "/api/ticket": get_ticket, "/api/weather": lambda q: weather(),
+        "/api/ticket": get_ticket, "/api/session": get_session, "/api/weather": lambda q: weather(),
         "/api/order": lambda q: {"order": read_order()}}
 POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/open-url": post_open_url,
          "/api/bg-session": post_bg_session,
