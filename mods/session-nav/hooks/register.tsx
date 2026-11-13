@@ -85,8 +85,9 @@ export const register: Register = on => {
     return (
       <Box flexDirection="row" justifyContent="space-between" width="100%">
         <Box gap={1}>
-          {/* autoFocus: when the bar takes the keyboard, the ring starts here, so Enter opens the dashboard. */}
-          <Button key="dashboard" label="▦ dashboard" autoFocus onPress={() => { void $.process.run(DASHBOARD) }} />
+          {/* Tab from the prompt never reaches the bar, so 0 in an empty prompt presses this; autoFocus
+              starts the ring here when the bar does take the keyboard. */}
+          <Button key="dashboard" label="▦ dashboard" hotkey="0" autoFocus onPress={() => { void $.process.run(DASHBOARD) }} />
           {parent?.link ? <Button key={parent.sessionId} label={`← ${name.get(parent.sessionId)}`} onPress={open(parent)} /> : null}
         </Box>
         <Box gap={1}>
