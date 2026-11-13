@@ -212,6 +212,40 @@ vault_next() {
 # need <cli> <source> <name>: a missing CLI is one line with its fix
 need() { command -v "$1" >/dev/null || { echo "error: $2: $1 not installed — install the $3 ($1)"; return 1; }; }
 
+# --- Vault board: a card outside Done whose `PR <github url>` line is merged moves to the end of Done, ticked.
+# Catches PRs opened without /send (which moves the card itself). ---
+vault_merged() {
+  local id url st ids=
+  while IFS=$'\t' read -r id url; do
+    need gh Board "GitHub CLI" || return
+    st=$(gh pr view "$url" --json state -q .state 2>&1) || { echo "error: Board: $(head -1 <<<"$st") — gh auth login"; continue; }
+    [ "$st" = MERGED ] || continue
+    grep -qiE '^## +done[[:space:]]*$' "$1" || { echo "error: Board: no Done column on $1"; return; }
+    ids+="$id"$'\n'; echo "moved: $id to Done (PR #${url##*/} merged)"
+  done < <(awk '/^## / { c = tolower(substr($0, 4)); sub(/[ \t]+$/, "", c); out = c == "done"; id = ""; next }
+      /^- \[[ x]\] / { id = ""; if (!out && match($0, /\*\*[A-Z][A-Z0-9]*-[0-9]+ /)) id = substr($0, RSTART + 2, RLENGTH - 3); next }
+      id != "" && /^\tPR https:\/\/github\.com\// { print id "\t" substr($0, 5); id = "" }' "$1")
+  [ -n "$ids" ] || return 0
+  IDS=$ids perl -0777 -i -pe '
+    my %want = map { $_ => 1 } split /\n/, $ENV{IDS};
+    my @l = split /^/m; my (@keep, @moved, $col);
+    for (my $i = 0; $i < @l; $i++) {
+      if ($l[$i] =~ /^## +(.*?)\s*$/) { $col = lc $1 }
+      if (($col // "") ne "done" && $l[$i] =~ /^- \[[ x]\] \*\*([A-Z][A-Z0-9]*-\d+) / && $want{$1}) {
+        push @moved, $l[$i] =~ s/^- \[ \]/- [x]/r;
+        push @moved, $l[++$i] while $i + 1 < @l && $l[$i + 1] =~ /^\t/;
+        next;
+      }
+      push @keep, $l[$i];
+    }
+    my ($d) = grep { $keep[$_] =~ /^## +done\s*$/i } 0 .. $#keep;
+    my $e = $d + 1; $e++ while $e < @keep && $keep[$e] !~ /^(## |%% kanban:settings)/;
+    $e-- while $e > $d + 1 && $keep[$e - 1] =~ /^\s*$/;
+    $keep[$e - 1] .= "\n" unless $keep[$e - 1] =~ /\n$/;
+    splice @keep, $e, 0, @moved;
+    $_ = join "", @keep' "$1"
+}
+
 # --- Jira (acli): open sprint of key $1 diffed against the snapshot of the last run; Next ---
 # acli missing or logged out: one line per run, in the first section that needs Jira (a key may be commit noise)
 jira() {
@@ -317,7 +351,7 @@ while IFS=$'\t' read -r name note dir <&3; do
     fi
     board=$(sed -n 's/^board: //p' "$tmp/look.$i"); key=$(sed -n 's/^key: //p' "$tmp/look.$i")
     case "$board" in
-      vault) vault_next "$(sed -n 's/^board-file: //p' "$tmp/look.$i")" ;;
+      vault) bf=$(sed -n 's/^board-file: //p' "$tmp/look.$i"); vault_merged "$bf"; vault_next "$bf" ;;
       jira-candidate) jira "$key" ;;
       *atlassian.net*) jira "$(grep -oE '(projects|browse)/[A-Z][A-Z0-9]+' <<<"$board" | head -1 | cut -d/ -f2)" ;;
     esac

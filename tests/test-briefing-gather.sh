@@ -158,6 +158,85 @@ expect "next: goal is the first sentence" "$(section Cards "$(gather "" "$(at "2
 printf '## To do\n\n- [ ] **CRD-1 · Only card**\n\tLong text. More.\n\tZiel: Ship it\n' > "$VAULT/Projects/Cards/Cards Board.md"
 expect "next: goal line wins" "$(section Cards "$(gather "" "$(at "2026-11-09 12:00")")")" "next: CRD-1 · Only card — Ship it (to do)"
 
+# --- Board: a card outside Done whose PR is merged moves to the end of Done, ticked ---
+cat > "$FIX/stub/gh.sh" <<'SH'
+case "$*" in
+  "pr view https://github.com/acme/acme/pull/7 --json state -q .state"|"pr view https://github.com/acme/acme/pull/9 --json state -q .state") echo MERGED ;;
+  "pr view https://github.com/acme/acme/pull/8 --json state -q .state") echo OPEN ;;
+  *) echo "unexpected: $*" >&2; exit 3 ;;
+esac
+SH
+cards="$VAULT/Projects/Cards/Cards Board.md"
+settings=$'%% kanban:settings\n```\n{}\n```\n%%'
+cat > "$cards" <<MD
+## To do
+
+- [ ] **CRD-1 · Open PR**
+	PR https://github.com/acme/acme/pull/8
+- [ ] **CRD-2 · Merged from to do**
+	PR https://github.com/acme/acme/pull/7
+
+## In progress
+
+- [ ] **CRD-3 · Merged**
+	Text
+	PR https://github.com/acme/acme/pull/9
+
+
+## Done
+
+**Complete**
+- [x] **CRD-0 · Old**
+	PR https://github.com/acme/acme/pull/1
+
+
+
+
+$settings
+MD
+: > "$FIX/calls"
+s=$(section Cards "$(gather "" "$(at "2026-11-09 12:00")")")
+expect "board: merged card from to do moves" "$s" "moved: CRD-2 to Done (PR #7 merged)"
+expect "board: merged card from in progress moves" "$s" "moved: CRD-3 to Done (PR #9 merged)"
+expect "board: next reads the board after the move" "$s" "next: CRD-1 · Open PR (to do)"
+grep -q 'pull/1 ' "$FIX/calls" && fail "board: cards in Done are not checked" || pass "board: cards in Done are not checked"
+want=$(cat <<MD
+## To do
+
+- [ ] **CRD-1 · Open PR**
+	PR https://github.com/acme/acme/pull/8
+
+## In progress
+
+
+
+## Done
+
+**Complete**
+- [x] **CRD-0 · Old**
+	PR https://github.com/acme/acme/pull/1
+- [x] **CRD-2 · Merged from to do**
+	PR https://github.com/acme/acme/pull/7
+- [x] **CRD-3 · Merged**
+	Text
+	PR https://github.com/acme/acme/pull/9
+
+
+
+
+$settings
+MD
+)
+[ "$(cat "$cards")" = "$want" ] && pass "board: blocks moved, ticked, rest untouched" ||
+  { fail "board: blocks moved, ticked, rest untouched"; diff <(echo "$want") "$cards"; }
+s=$(section Cards "$(GH_FAIL="HTTP 401: Bad credentials" gather "" "$(at "2026-11-09 12:00")")")
+expect "board: gh fails → one line with the fix" "$s" "error: Board: HTTP 401: Bad credentials — gh auth login"
+printf '## To do\n\n- [ ] **CRD-4 · Merged**\n\tPR https://github.com/acme/acme/pull/7\n' > "$cards"
+s=$(section Cards "$(gather "" "$(at "2026-11-09 12:00")")")
+expect "board: no Done column → reported, card stays" "$s" "error: Board: no Done column on $cards"
+grep -q '^- \[ \] \*\*CRD-4' "$cards" && pass "board: no Done column → board untouched" || fail "board: no Done column → board untouched"
+printf '## To do\n\n- [ ] **CRD-1 · Only card**\n\tLong text. More.\n\tZiel: Ship it\n' > "$cards"
+
 # --- Folder lookup fails: one line with the reason and the fix; no folder at all stays silent (Quiet above) ---
 fixture_note Twin "repo: https://git.acme.test/acme/twin.git"
 fixture_repo "$PROJECTS_ROOT/twin-a" https://git.acme.test/acme/twin.git
