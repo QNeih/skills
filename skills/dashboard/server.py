@@ -884,17 +884,28 @@ def session_servers(session, *, listen=listeners):
     return out
 
 
-def reap_servers(sessions, *, listen=listeners, kill=os.kill):
-    """Stops (SIGTERM) the running servers of archived sessions, except one an unarchived session
-    also lists. Returns the stopped servers."""
-    ports = {}  # many sessions share a folder; ask lsof once per port per pass
+def servers_by_session(sessions, listen):
+    """[(session, its servers)] for every session, asking lsof once per port."""
+    ports = {}  # many sessions share a folder
 
     def listen_once(port):
         if port not in ports:
             ports[port] = listen(port)
         return ports[port]
-    found = [(s, session_servers(s, listen=listen_once)) for s in sessions]
-    keep = {x["pid"] for s, xs in found if not s.get("isArchived") for x in xs if "pid" in x}
+    return [(s, session_servers(s, listen=listen_once)) for s in sessions]
+
+
+def held_pids(found, but=None):
+    """Pids of servers that an unarchived app session or a listed background session (other than
+    `but`) has: those keep running."""
+    return {x["pid"] for s, xs in found if s is not but and not s.get("isArchived") for x in xs if "pid" in x}
+
+
+def reap_servers(sessions, *, listen=listeners, kill=os.kill):
+    """Stops (SIGTERM) the running servers of archived sessions, except one an unarchived session
+    also lists. Returns the stopped servers."""
+    found = servers_by_session(sessions, listen)
+    keep = held_pids(found)
     stopped = []
     for s, xs in found:
         if not s.get("isArchived"):
@@ -907,10 +918,16 @@ def reap_servers(sessions, *, listen=listeners, kill=os.kill):
     return stopped
 
 
+def reap_once(*, listen=listeners, kill=os.kill):
+    """One reaper pass over app and background sessions, so a background session in the same
+    folder as an archived app session keeps their shared server."""
+    return reap_servers(load_sessions() + background_sessions(), listen=listen, kill=kill)
+
+
 def reaper():
     while True:
         try:
-            for x in reap_servers(load_sessions()):
+            for x in reap_once():
                 print("stopped server {} ({}, pid {}) of archived session {}".format(
                     x["name"], x["url"], x["pid"], x["sessionId"]), file=sys.stderr)
         except Exception:
@@ -1422,6 +1439,28 @@ def post_session_send(body):
     return {"ok": True, "id": m.group(1)}
 
 
+def post_session_remove(body, *, listen=listeners, kill=os.kill):
+    """Removes a background session: SIGTERMs its dev servers (sparing one another listed session
+    also has), then `claude stop` while its process lives, then `claude rm`. A refusal from rm
+    (unpushed or uncommitted work) is a 409 with its message; the session stays listed."""
+    sid = need(body, "sessionId")[0]
+    sessions = load_sessions() + background_sessions()
+    s = next((x for x in sessions if x.get("kind") == "background" and x["sessionId"] == sid), None)
+    if not s:
+        raise ApiError(404, "no background session " + str(sid))
+    found = servers_by_session(sessions, listen)
+    keep = held_pids(found, but=s)
+    for x in next(xs for o, xs in found if o is s):
+        if "pid" in x and x["pid"] not in keep:
+            kill(x["pid"], signal.SIGTERM)
+    if "pid" in s["agent"]:  # exited sessions have no pid, and `claude stop` refuses them
+        claude_ok(["stop", s["id"]])
+    code, out = claude(["rm", s["id"]])
+    if code != 0:
+        raise ApiError(409, "claude rm: " + out.strip())
+    return {"ok": True}
+
+
 def post_copy(body):
     pbcopy(need(body, "text")[0])
     if body.get("app"):
@@ -1434,6 +1473,7 @@ GETS = {"/api/briefing": lambda q: BRIEFING.get(), "/api/projects": lambda q: pr
         "/api/order": lambda q: {"order": read_order()}}
 POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/open-url": post_open_url,
          "/api/bg-session": post_bg_session, "/api/session/send": post_session_send,
+         "/api/session/remove": post_session_remove,
          "/api/copy": post_copy, "/api/note-done": lambda b: note_done(need(b, "n")[0]),
          "/api/order": save_order}
 

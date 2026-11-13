@@ -242,7 +242,7 @@ def agent(sid, cwd, name, started, **fields):
 
 
 class BackgroundFixture(Fixture):
-    """Fixture plus a fake `claude agents --json --all` listing self.agents and a one-ticket vault board."""
+    """A fake CLI whose `agents --json --all` lists self.agents, transcripts for them, and a one-ticket vault board."""
 
     def setUp(self):
         super().setUp()
@@ -441,6 +441,81 @@ class FollowUp(BackgroundFixture):
         self.assertEqual(server.GETS["/api/session"]({"id": "aaaaaaaa-1"})["screen"], " Pick one\n  1. Red\n  2. Blue")
         self.assertNotIn("screen", server.GETS["/api/session"]({"id": "aaaaaaaa-2"}))
         self.assertEqual(self.calls, [(["logs", "aaaaaaaa"], None)])
+
+
+class SessionRemoval(BackgroundFixture):
+    """Removing a background session stops its dev servers first, then the session, then `claude rm`."""
+
+    def setUp(self):
+        super().setUp()
+        f = Path(self.project, ".claude", "launch.json")
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({"configurations": [{"name": "web", "port": 5173}]}))
+        self.procs = {5173: (11, self.project)}
+        self.events, self.rm_reply = [], (0, "")
+
+    def listen(self, port):
+        return [self.procs[port]] if port in self.procs else []
+
+    def kill(self, pid, sig):
+        self.events.append(("kill", pid, sig))
+
+    def fake_cli(self, args, cwd=None):
+        if args[0] in ("stop", "rm"):
+            self.events.append((args[0], args[1]))
+            if args[0] == "rm" and self.rm_reply[0] == 0:
+                self.agents = [a for a in self.agents if a["id"] != args[1]]
+            return self.rm_reply if args[0] == "rm" else (0, "")
+        return super().fake_cli(args, cwd)
+
+    def remove(self, sid):
+        return server.post_session_remove({"sessionId": sid}, listen=self.listen, kill=self.kill)
+
+    def test_stops_its_servers_then_the_session_then_removes_it(self):
+        self.bg("aaaaaaaa-1", "A-2 idle", 1, status="idle")
+        self.assertEqual(self.remove("aaaaaaaa-1"), {"ok": True})
+        self.assertEqual(self.events, [("kill", 11, server.signal.SIGTERM), ("stop", "aaaaaaaa"), ("rm", "aaaaaaaa")])
+        self.assertEqual(server.background_sessions(), [])
+
+    def test_an_exited_session_is_removed_without_stopping_it(self):
+        self.bg("aaaaaaaa-1", "A-2 exited", 1, pid=None, status=None)
+        self.remove("aaaaaaaa-1")
+        self.assertEqual(self.events, [("kill", 11, server.signal.SIGTERM), ("rm", "aaaaaaaa")])
+
+    def test_spares_a_server_another_listed_session_has(self):
+        self.bg("aaaaaaaa-1", "A-2 idle", 1)
+        self.bg("bbbbbbbb-2", "other in the same folder", 2, pid=None, status=None)
+        self.remove("aaaaaaaa-1")
+        self.assertEqual(self.events, [("stop", "aaaaaaaa"), ("rm", "aaaaaaaa")])
+
+    def test_an_archived_app_session_does_not_spare_a_server(self):
+        self.bg("aaaaaaaa-1", "A-2 idle", 1)
+        self.session("local_1", isArchived=True)
+        self.remove("aaaaaaaa-1")
+        self.assertEqual(self.events[0], ("kill", 11, server.signal.SIGTERM))
+
+    def test_rm_refusal_is_409_with_its_message_and_the_session_stays(self):
+        self.bg("aaaaaaaa-1", "A-2 idle", 1)
+        self.rm_reply = (1, "Not removed: worktree skl-22 has 2 unpushed commits\n")
+        with self.assertRaises(server.ApiError) as e:
+            self.remove("aaaaaaaa-1")
+        self.assertEqual(e.exception.status, 409)
+        self.assertIn("2 unpushed commits", str(e.exception))
+        self.assertEqual([s["id"] for s in server.background_sessions()], ["aaaaaaaa"])
+
+    def test_unknown_session_is_404_and_stops_nothing(self):
+        with self.assertRaises(server.ApiError) as e:
+            self.remove("nope")
+        self.assertEqual(e.exception.status, 404)
+        self.assertEqual(self.events, [])
+        self.assertIn("/api/session/remove", server.POSTS)
+
+    def test_reaper_keeps_a_server_a_background_session_lists(self):
+        self.session("local_1", isArchived=True)
+        self.bg("aaaaaaaa-1", "same folder", 1)
+        self.assertEqual(server.reap_once(listen=self.listen, kill=self.kill), [])
+        self.agents = []
+        self.assertEqual([x["pid"] for x in server.reap_once(listen=self.listen, kill=self.kill)], [11])
 
 
 class Chat(Fixture):
