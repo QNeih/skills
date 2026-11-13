@@ -86,12 +86,12 @@ flowchart TD
 
 | Screen | Key | What it does |
 | --- | --- | --- |
-| everywhere | `?` | toggle the key list |
-| | `esc` / `⌫` | back |
-| | `↑` `↓` / `j` `k` | move selection |
-| | `⏎` | open |
+| home, ticket, session | `?` | toggle the key list (`esc` / `⌫` also close it) |
+| ticket, session | `esc` / `⌫` | back |
 | start (clock) | any key or click | go to home |
-| home | `←` / `→` | previous / next project |
+| home | `↑` `↓` / `j` `k` | move ticket selection |
+| | `⏎` | open selected ticket |
+| | `←` / `→` | previous / next project |
 | | `tab` / `p` | next project (`⇧tab` back) |
 | | `⇧←` / `⇧→`, `H` / `L` | move project left / right (order saved) |
 | | `[` / `]` | previous / next 3 projects |
@@ -101,12 +101,14 @@ flowchart TD
 | | `r` | refresh briefing |
 | | `c` | clock screen |
 | | jump key | run the project's jump (to-do done: press twice) |
-| ticket | `⏎` | open session |
+| ticket | `↑` `↓` / `j` `k` | move session selection |
+| | `⏎` | open session |
 | | `o` | open session in the Claude app |
 | | `g` | open the PR |
 | | `t` | new session in the app with `/ticket <id>` prefilled |
 | session | `i` / `/` | focus reply box |
 | | `⏎` (in box) | copy reply, open in the app |
+| | `⇧⏎` (in box) | new line |
 | | `esc` (in box) | leave box |
 | | `↑` `↓` / `j` `k` | scroll chat |
 | | `o` | open in the Claude app |
