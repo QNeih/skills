@@ -219,7 +219,7 @@ class TicketSessions(Fixture):
         self.session("local_3", title="A-2 old", isArchived=True)
         self.session("local_4", title="A-3 other", lines=[user("go")])
         states = server.ticket_states("A-2", self.project, server.load_sessions(self.sessions), self.transcripts)
-        self.assertEqual(states, {"running": 1, "waiting": 1, "archived": 1})
+        self.assertEqual(states, {"running": 1, "waiting": 1, "blocked": 0, "archived": 1})
 
     def test_word_boundary(self):
         self.assertTrue(server.mentions("Grill BGH-2 x", "BGH-2"))
@@ -231,6 +231,88 @@ class TicketSessions(Fixture):
         self.assertFalse(server.ticket_prompt_matches("/work OBO-2", "BGH-2"))
         self.assertTrue(server.ticket_prompt_matches("/ticket BGH-2", "BGH-2"))  # sessions from before the rename
         self.assertFalse(server.ticket_prompt_matches("/ticket fix BGH-2 login", "BGH-2"))
+
+
+def agent(sid, cwd, name, started, **fields):
+    """One entry of `claude agents --json --all` as Claude Code 2.1.323 prints it."""
+    a = {"pid": 31544, "id": sid[:8], "cwd": cwd, "kind": "background", "startedAt": started,
+         "sessionId": sid, "name": name, "status": "idle", "state": "done"}
+    a.update(fields)
+    return {k: v for k, v in a.items() if v is not None}
+
+
+class BackgroundSessions(Fixture):
+    """Background sessions come from `claude agents --json --all` and join a ticket by the same rules as app sessions."""
+
+    def setUp(self):
+        super().setUp()
+        saved = server.claude, server.lookup, server.SESSIONS_DIR, server.TRANSCRIPTS_DIR
+        self.addCleanup(lambda: (setattr(server, "claude", saved[0]), setattr(server, "lookup", saved[1]),
+                                 setattr(server, "SESSIONS_DIR", saved[2]), setattr(server, "TRANSCRIPTS_DIR", saved[3])))
+        server.SESSIONS_DIR, server.TRANSCRIPTS_DIR = self.sessions, self.transcripts
+        board = Path(self.tmp.name, "board.md")
+        board.write_text("## In progress\n\n- [ ] **A-2 · Do it**\n")
+        server.lookup = lambda name: {"dir": self.project, "board": "vault", "board-file": str(board)}
+        self.agents = []
+        server.claude = self.fake_cli
+
+    def fake_cli(self, args, cwd=None):
+        if args == ["agents", "--json", "--all"]:
+            return 0, json.dumps(self.agents)
+        raise AssertionError("unexpected claude call: {}".format(args))
+
+    def bg(self, sid, name, started, cwd=None, lines=None, **fields):
+        cwd = cwd or self.project
+        self.agents.append(agent(sid, cwd, name, started, **fields))
+        if lines is not None:
+            t = self.transcripts / server.re.sub(r"[^A-Za-z0-9]", "-", cwd) / (sid + ".jsonl")
+            t.parent.mkdir(parents=True, exist_ok=True)
+            t.write_text("".join(json.dumps(l) + "\n" for l in lines))
+            return t
+
+    def test_ticket_view_lists_matching_background_sessions_after_app_sessions(self):
+        self.session("local_1", title="A-2 app")
+        self.bg("bbbbbbbb-2", "skills: /work 2", 300, lines=[user("/work 2")])
+        self.bg("aaaaaaaa-1", "skills: fix A-2 login", 200)
+        self.bg("cccccccc-3", "skills: go on", 100, lines=[dict(user("go"), gitBranch="feature/A-2")])
+        self.bg("dddddddd-4", "skills: A-2 elsewhere", 50, cwd="/elsewhere")
+        self.bg("eeeeeeee-5", "skills: other", 60, lines=[user("/work 23")])
+        self.agents.append(dict(agent("ffffffff-6", self.project, "A-2 interactive", 10), kind="interactive"))
+        tree = server.ticket_view("p", "A-2")["sessions"]
+        self.assertEqual([(n["kind"], n["sessionId"]) for n in tree], [
+            ("app", "local_1"), ("background", "cccccccc-3"), ("background", "aaaaaaaa-1"), ("background", "bbbbbbbb-2")])
+        b = tree[2]
+        self.assertEqual((b["id"], b["title"], b["children"], b["prs"], b["servers"]),
+                         ("aaaaaaaa", "skills: fix A-2 login", [], [], []))
+        self.assertEqual(b["lastActivityAt"], 200)  # no transcript yet: its start time
+        t = self.transcripts / server.re.sub(r"[^A-Za-z0-9]", "-", self.project) / "bbbbbbbb-2.jsonl"
+        self.assertEqual(tree[3]["lastActivityAt"], int(t.stat().st_mtime * 1000))
+
+    def test_states_from_the_cli(self):
+        self.bg("aaaaaaaa-1", "A-2 busy", 1, status="busy", state="running")
+        self.bg("aaaaaaaa-2", "A-2 idle", 2, status="idle", state="done")
+        self.bg("aaaaaaaa-3", "A-2 question", 3, status="waiting", waitingFor="input needed", state="blocked")
+        self.bg("aaaaaaaa-4", "A-2 blocked busy", 4, status="busy", state="blocked")
+        self.bg("aaaaaaaa-5", "A-2 waiting", 5, status="waiting", state="running")
+        self.bg("aaaaaaaa-6", "A-2 exited", 6, pid=None, status=None, state="done")
+        tree = server.ticket_view("p", "A-2")["sessions"]
+        self.assertEqual([(n["title"], n["state"]) for n in tree], [
+            ("A-2 busy", "running"), ("A-2 idle", "waiting"), ("A-2 question", "blocked"),
+            ("A-2 blocked busy", "blocked"), ("A-2 waiting", "blocked"), ("A-2 exited", "waiting")])
+        self.assertEqual([n["summary"] for n in tree],
+                         ["", "", "needs you: input needed", "needs you", "needs you", ""])
+
+    def test_home_row_counts_include_background_sessions(self):
+        self.session("local_1", title="A-2 app running", lines=[user("go")])
+        self.session("local_2", title="A-2 app archived", isArchived=True)
+        self.bg("aaaaaaaa-1", "A-2 busy", 1, status="busy", state="running")
+        self.bg("aaaaaaaa-2", "A-2 idle", 2)
+        self.bg("aaaaaaaa-3", "A-2 question", 3, status="waiting", waitingFor="input needed", state="blocked")
+        self.bg("aaaaaaaa-4", "no ticket", 4, status="busy", state="running")
+        sessions = server.load_sessions() + server.background_sessions()
+        view = server.project_view("p", {"status": "running"}, sessions)
+        self.assertEqual(view["next"][0]["sessionCounts"], {"running": 2, "waiting": 1, "blocked": 1, "archived": 1})
+        self.assertEqual((view["running"], view["background"]), (3, 2))
 
 
 class Transcript(Fixture):

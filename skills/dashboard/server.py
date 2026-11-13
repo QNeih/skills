@@ -335,7 +335,8 @@ def briefing_jumps(name, briefing):
     return jumps
 
 
-def project_view(name, briefing, sessions, agents=()):
+def project_view(name, briefing, sessions):
+    """sessions: app and background sessions together."""
     info = lookup(name)
     d = info.get("dir", "none")
     view = {"name": name, "dir": None if d == "none" else d, "board": info.get("board"), "key": info.get("key"),
@@ -362,7 +363,7 @@ def project_view(name, briefing, sessions, agents=()):
         acts = [s.get("lastActivityAt") or 0 for s in mine]
         view["lastActivityAt"] = max(acts) if acts else None
         view["running"] = sum(1 for s in mine if session_state(s) == "running")
-        view["background"] = sum(1 for a in agents if a.get("status") == "busy" and in_dir(a, view["dir"]))
+        view["background"] = sum(1 for s in mine if s.get("kind") == "background" and session_state(s) == "running")
         for t in view["next"]:
             t["sessionCounts"] = ticket_states(t["id"], view["dir"], mine)
     return view
@@ -403,9 +404,9 @@ def save_order(body):
 
 
 def projects_view():
-    briefing, sessions, agents = BRIEFING.get(), load_sessions(), background_agents()
+    briefing, sessions = BRIEFING.get(), load_sessions() + background_sessions()
     with ThreadPoolExecutor() as pool:  # lookups and acli are slow; run the projects side by side
-        views = list(pool.map(lambda n: project_view(n, briefing, sessions, agents), active_projects()))
+        views = list(pool.map(lambda n: project_view(n, briefing, sessions), active_projects()))
     return sort_projects(views, read_order())
 
 
@@ -415,6 +416,23 @@ def load_sessions(root=None):
     out = []
     for f in sorted(Path(root or SESSIONS_DIR).glob("*/*/local_*.json")):
         out.append(json.loads(f.read_text(encoding="utf-8")))
+    return out
+
+
+def background_sessions(transcripts=None):
+    """The background sessions (`claude --bg`), live and exited, from `claude agents --json --all`,
+    shaped like app sessions so the same matching applies: sessionId, cliSessionId (the transcript's
+    name), cwd, title (its name), lastActivityAt (transcript mtime, else startedAt), plus kind,
+    the short id and the CLI's entry as `agent`."""
+    out = []
+    for a in json.loads(claude_ok(["agents", "--json", "--all"])):
+        if a.get("kind") != "background":
+            continue
+        s = {"kind": "background", "id": a["id"], "sessionId": a["sessionId"], "cliSessionId": a["sessionId"],
+             "cwd": a.get("cwd"), "title": a.get("name"), "startedAt": a.get("startedAt"), "agent": a}
+        path = transcript_path(s, transcripts)
+        s["lastActivityAt"] = int(path.stat().st_mtime * 1000) if path else a.get("startedAt")
+        out.append(s)
     return out
 
 
@@ -498,8 +516,18 @@ def transcript_facts(path):
 END_REASONS = {"end_turn", "stop_sequence", "max_tokens", "refusal"}
 
 
+def background_state(agent):
+    """A background session's state from its `claude agents` entry: blocked when it waits on a
+    question or permission (state blocked, or status waiting), running while busy, else waiting
+    (idle, or the process exited)."""
+    if agent.get("state") == "blocked" or agent.get("status") == "waiting":
+        return "blocked"
+    return "running" if agent.get("status") == "busy" else "waiting"
+
+
 def session_state(session, transcripts=None, now=None):
-    """archived: isArchived.
+    """Background sessions: background_state. App sessions:
+    archived: isArchived.
     running: the transcript changed in the last 10 minutes and its last main-thread user/assistant
       line is not a finished turn (an assistant line with stop_reason end_turn etc.), nor an
       interrupt marker. So a tool call in flight or a tool result waiting for the model is running.
@@ -507,6 +535,8 @@ def session_state(session, transcripts=None, now=None):
     waiting: everything else; an idle unarchived session waits on Quinn.
     The app's own fields (lastTurnEdgeAt, postTurnSummary) only change at turn edges and lag
     behind, so they can't tell a running turn from a finished one."""
+    if session.get("kind") == "background":
+        return background_state(session["agent"])
     if session.get("isArchived"):
         return "archived"
     path = transcript_path(session, transcripts)
@@ -528,6 +558,10 @@ def session_state(session, transcripts=None, now=None):
 
 
 def session_summary(s):
+    if s.get("kind") == "background":
+        if background_state(s["agent"]) != "blocked":
+            return ""
+        return "needs you" + (": " + s["agent"]["waitingFor"] if s["agent"].get("waitingFor") else "")
     pts, wrap = s.get("postTurnSummary") or {}, s.get("turnWrapUp") or {}
     if pts.get("needs_action"):
         return "needs you: " + pts["needs_action"]
@@ -535,12 +569,18 @@ def session_summary(s):
 
 
 def session_brief(s, transcripts=None):
-    return {"sessionId": s["sessionId"], "title": s.get("title"), "name": (s.get("spawnedFrom") or {}).get("name"),
-            "state": session_state(s, transcripts), "lastActivityAt": s.get("lastActivityAt"),
-            "summary": session_summary(s), "link": LINK.format(s["sessionId"]),
-            "servers": [] if s.get("isArchived") else [{k: x[k] for k in ("name", "url", "error") if k in x}
-                                                       for x in session_servers(s)],
-            "prs": [p["url"] for p in s.get("prs") or [] if p.get("url")]}
+    brief = {"sessionId": s["sessionId"], "kind": s.get("kind", "app"), "title": s.get("title"),
+             "name": (s.get("spawnedFrom") or {}).get("name"),
+             "state": session_state(s, transcripts), "lastActivityAt": s.get("lastActivityAt"),
+             "summary": session_summary(s),
+             "servers": [] if s.get("isArchived") else [{k: x[k] for k in ("name", "url", "error") if k in x}
+                                                        for x in session_servers(s)],
+             "prs": [p["url"] for p in s.get("prs") or [] if p.get("url")]}
+    if brief["kind"] == "background":
+        brief["id"] = s["id"]
+    else:
+        brief["link"] = LINK.format(s["sessionId"])
+    return brief
 
 
 def mentions(text, ticket_id):
@@ -578,9 +618,10 @@ def matched_sessions(ticket_id, project_dir, sessions, transcripts=None):
 
 
 def ticket_states(ticket_id, project_dir, sessions, transcripts=None):
-    """How many of the ticket's sessions are running, waiting and archived (the home row's marks)."""
+    """How many of the ticket's sessions (app and background) are running, waiting, blocked and
+    archived (the home row's marks)."""
     ids = matched_sessions(ticket_id, project_dir, sessions, transcripts)
-    counts = {"running": 0, "waiting": 0, "archived": 0}
+    counts = {"running": 0, "waiting": 0, "blocked": 0, "archived": 0}
     for s in sessions:
         if s["sessionId"] in ids:
             counts[session_state(s, transcripts)] += 1
@@ -588,7 +629,8 @@ def ticket_states(ticket_id, project_dir, sessions, transcripts=None):
 
 
 def ticket_sessions(ticket_id, project_dir, sessions, transcripts=None):
-    """Sessions of the project for the ticket (matched_sessions), each with its spawnedFrom descendants nested."""
+    """Sessions of the project for the ticket (matched_sessions), each with its spawnedFrom descendants
+    nested. App sessions first by creation, then background sessions (they have no spawnedFrom) by start."""
     matched = matched_sessions(ticket_id, project_dir, sessions, transcripts)
     by_id = {s["sessionId"]: s for s in sessions}
     kids = {}
@@ -613,7 +655,7 @@ def ticket_sessions(ticket_id, project_dir, sessions, transcripts=None):
         return False
 
     roots = sorted((by_id[i] for i in matched if not ancestor_matched(by_id[i])),
-                   key=lambda s: s.get("createdAt") or 0)
+                   key=lambda s: (s.get("kind") == "background", s.get("startedAt") or s.get("createdAt") or 0))
     return [node(s, set()) for s in roots]
 
 
@@ -951,7 +993,7 @@ def ticket_view(project, ticket_id):
                    "next": field(text, "Next:")}
         issues = read_issues(folders[0].parent)
     handoff = Path(d, ".handoffs", "HANDOFF-{}.md".format(ticket_id))
-    sessions = ticket_sessions(ticket_id, d, load_sessions())
+    sessions = ticket_sessions(ticket_id, d, load_sessions() + background_sessions())
     prs = [pr_status(u) for u in ticket_pr_urls(lines, sessions, (scratch or {}).get("branch"), d)]
     return {"id": ticket_id, "title": title, "column": column, "goal": card_goal(lines[1:]), "card": lines,
             "scratch": scratch,
@@ -1156,11 +1198,6 @@ def claude_ok(args, cwd=None):
     if code != 0:
         raise ApiError(500, "claude {}: {}".format(args[0], out.strip()))
     return out
-
-
-def background_agents():
-    """The background sessions `claude --bg` started, from `claude agents --json`."""
-    return [a for a in json.loads(claude_ok(["agents", "--json"])) if a.get("kind") == "background"]
 
 
 BG_ID = re.compile(r"backgrounded · (\S+) ·")

@@ -75,7 +75,7 @@ main { min-height: 0; padding: 15px 20px; overflow: hidden; }
 /* ⏺ status glyph; the class sets its colour */
 .dot { flex: none; display: inline-block; width: 1.1em; text-align: center; font-size: 1em; line-height: 1; color: var(--arch); }
 .dot::before { content: '\23FA\FE0E'; }
-.dot.running { color: var(--run); } .dot.waiting { color: var(--wait); }
+.dot.running { color: var(--run); } .dot.waiting, .dot.blocked { color: var(--wait); }
 .dot.archived { color: var(--arch); } .dot.error, .dot.sentry { color: var(--err); }
 .dot.jira { color: var(--label); } .dot.dependabot { color: var(--wait); } .dot.other { color: var(--text); }
 .dot.note { color: var(--label); } .dot.note::before { content: '\25CB'; }
@@ -342,7 +342,7 @@ function toggleOverlay(force) {
     ['everywhere', [['?', 'toggle this list'], ['tab / ⇧tab', 'next / previous project: its last screen, unsent text kept'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
     ['home', [['space / 1–9', 'open the selected / numbered ticket (in progress first, then to do)'], ['→', 'background session with the ticket\'s next command: /work <id>, then /send'], ['⏎', 'ticket view with the next command in its prompt box; ⏎ again starts it in the background'], ['b', 'prompt box: start a background session (claude --bg) in the project with your text'], ['⇧↑ / ⇧↓', 'move project up / down in the rail'], ['s', 'background session: fix new Sentry errors'], ['d', 'background session: Dependabot review'], ['c', 'clock screen'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
-    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: background session with /work <id>'], ['⏎', 'prompt box with the next command; ⏎ again starts a background session with it'], ['→ / space / click', 'on a server row: open it in a new tab of your normal Chrome'], ['→', 'no live sessions: prompt box'], ['←', 'no live sessions: back']]],
+    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected app session in the app; no sessions yet: background session with /work <id>'], ['⏎', 'prompt box with the next command; ⏎ again starts a background session with it'], ['→ / space / click', 'on a server row: open it in a new tab of your normal Chrome'], ['→', 'no live sessions: prompt box'], ['←', 'no live sessions: back']]],
   ];
   const p = focusedProject();
   if (p && (p.jumps || []).length) groups.push([`jumps · ${p.name}`, p.jumps.map(j => [j.key, j.label])]);
@@ -528,7 +528,7 @@ function renderHome() {
     sel.scrollIntoView({ block: 'nearest' });
   }
 }
-const STATES = [['running', 'running'], ['waiting', 'waiting on you'], ['archived', 'archived']];
+const STATES = [['running', 'running'], ['blocked', 'needs you'], ['waiting', 'waiting on you'], ['archived', 'archived']];
 function projectPanel(p, idx, lines) {
   const items = homeItems(p);
   const armed = key => S.armed && S.armed.idx === idx && S.armed.key === key ? ' armed' : '';
@@ -734,7 +734,7 @@ function renderTicket() {
     return `<div class="row${i === S.ticketSel ? ' sel' : ''}" data-act="session" data-i="${i}">
       <span class="conn">${esc(f.conn)}</span><span class="dot ${esc(s.state)}"></span>
       <span class="t" title="${esc(s.title || s.name)}">${esc(s.title || s.name || s.sessionId)}</span>
-      <span class="st">${esc(s.state)}</span><span class="when">${esc(relTime(s.lastActivityAt))}</span></div>` +
+      ${s.kind === 'background' ? `<span class="tag">bg ${esc(s.id)}</span>` : ''}<span class="st">${esc(s.state === 'blocked' ? 'needs you' : s.state)}</span><span class="when">${esc(relTime(s.lastActivityAt))}</span></div>` +
       (i === S.ticketSel && s.summary ? `<div class="summary" style="padding-left:calc(var(--c1) + ${f.conn.length}ch + 8px)">${esc(s.summary)}</div>` : '');
   }).join('');
   main.innerHTML = `<div class="screen">
@@ -821,7 +821,8 @@ function ticketKey(e) {
   const f = S.flat[S.ticketSel];
   if (f && f.srv && (k === ' ' || k === 'ArrowRight')) { openServer(f.srv); return true; }
   if (k === ' ') {
-    if (f) openInApp(f.s.sessionId); else startSession(S.route.project, '/work ' + S.route.id);
+    if (f && f.s.kind === 'background') toast(`Background session ${f.s.id}: the dashboard can't open it yet`);
+    else if (f) openInApp(f.s.sessionId); else startSession(S.route.project, '/work ' + S.route.id);
     return true;
   }
   if (k === 'ArrowLeft' && !aliveSessions()) { back(); return true; }
