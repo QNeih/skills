@@ -424,7 +424,7 @@ class FollowUp(BackgroundFixture):
         self.calls = []
         # Like the real CLI: `claude stop` returns while the process still shuts down, and a resume
         # while it runs starts a copy with a new id. A stopped process is gone after `exit_after` checks.
-        self.alive, self.stopping, self.exit_after, self.fork = set(), {}, 1, False
+        self.alive, self.stopping, self.exit_after, self.fork, self.colour = set(), {}, 1, False, False
         saved = server.process_alive, server.STOP_WAIT
         self.addCleanup(lambda: (setattr(server, "process_alive", saved[0]), setattr(server, "STOP_WAIT", saved[1])))
         server.process_alive, server.STOP_WAIT = self.process_alive, 2
@@ -458,6 +458,8 @@ class FollowUp(BackgroundFixture):
                 return 0, ("note: session {0} is already running in the background, so this started a copy as bbbbbbbb. "
                            "`claude attach {0}` opens the original.\nbackgrounded · bbbbbbbb\n"
                            "  claude agents             list sessions\n").format(a["id"])
+            if self.colour:  # what the CLI prints when its environment asks for colour
+                return 0, "backgrounded · \x1b[36m{}\x1b[39m · \x1b[1m{}\x1b[22m\n".format(a["id"], a["name"])
             return 0, "Starting background service…\nbackgrounded · {} · {}\n  claude agents  list sessions\n".format(
                 a["id"], a["name"])
         raise AssertionError("unexpected claude call: {}".format(args))
@@ -504,6 +506,11 @@ class FollowUp(BackgroundFixture):
             self.send("aaaaaaaa-1", "go on")
         self.assertIn("bbbbbbbb", str(e.exception))
         self.assertIn("aaaaaaaa", str(e.exception))
+
+    def test_a_coloured_session_id_is_still_the_same_session(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100, pid=None, status=None, state="done")
+        self.colour = True
+        self.assertEqual(self.send("aaaaaaaa-1", "go on")["id"], "aaaaaaaa")
 
     def test_an_answer_to_a_blocked_session_quotes_its_question_read_before_the_stop(self):
         self.bg("aaaaaaaa-1", "skills: probe", 100, status="waiting", waitingFor="input needed", state="blocked")

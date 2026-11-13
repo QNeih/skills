@@ -17,6 +17,7 @@
   --rp: 10px; --gw: 12px; --gap: 9px; --c1: calc(var(--rp) + var(--gw) + var(--gap));
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; } /* a class that sets display must not show a hidden element */
 html, body { height: 100%; margin: 0; overflow: hidden; background: var(--bg); color: var(--text);
   font: var(--fs)/1.5 var(--mono); -webkit-font-smoothing: antialiased; }
 ::selection { background: #4a2b20; }

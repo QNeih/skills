@@ -1398,6 +1398,13 @@ def claude_ok(args, cwd=None):
 
 
 BG_ID = re.compile(r"backgrounded · (\S+)")  # `· <name>` follows unless the session has none
+
+
+def printed_id(out):
+    """The short id `claude --bg` printed, or None. The CLI colours it when its environment asks
+    for colour (the app's preview servers do), so escape sequences are dropped first."""
+    m = BG_ID.search(ESCAPE_RE.sub("", out))
+    return m.group(1) if m else None
 STOP_WAIT = 15  # seconds a stopped session's process gets to exit
 START_WAIT = 5  # seconds a started session gets to show up in `claude agents`
 
@@ -1444,18 +1451,18 @@ def post_bg_session(body):
     if d == "none" or not Path(d).is_dir():
         raise ApiError(404, "no folder for project " + project)
     out = claude_ok(["--bg", "--permission-mode", "auto", "-n", bg_session_name(project, text), text.strip()], cwd=d)
-    m = BG_ID.search(out)
-    if not m:
+    short = printed_id(out)
+    if not short:
         raise ApiError(500, "claude --bg printed no session id: " + out.strip())
     # `claude agents` may not list a just-started session yet.
     deadline = time.time() + START_WAIT
     while True:
-        s = next((s for s in background_sessions() if s["id"] == m.group(1)), None)
+        s = next((s for s in background_sessions() if s["id"] == short), None)
         if s:
             return {"ok": True, "id": s["id"], "sessionId": s["sessionId"]}
         if time.time() > deadline:
             raise ApiError(500, "background session {} was started but is not in `claude agents` after {} s".format(
-                m.group(1), START_WAIT))
+                short, START_WAIT))
         time.sleep(0.1)
 
 
@@ -1475,13 +1482,13 @@ def post_session_send(body):
         text = "Answering your question:\n{}\n\nMy answer: {}".format(session_screen(s), text)
     stop_session(s)  # a resume while its process lives would fork
     out = claude_ok(["--bg", "--resume", sid, text], cwd=s["cwd"])
-    m = BG_ID.search(out)
-    if not m:
+    short = printed_id(out)
+    if not short:
         raise ApiError(500, "claude --bg --resume printed no session id: " + out.strip())
-    if m.group(1) != s["id"]:
+    if short != s["id"]:
         raise ApiError(500, "claude forked session {} into a new session {} instead of resuming it".format(
-            s["id"], m.group(1)))
-    return {"ok": True, "id": m.group(1)}
+            s["id"], short))
+    return {"ok": True, "id": short}
 
 
 def post_session_remove(body, *, listen=listeners, kill=os.kill):
