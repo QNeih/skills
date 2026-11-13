@@ -305,7 +305,7 @@ function updateMeta() {
 const HINTS = {
   start: [],
   home: [['↑↓', 'select'], ['→', 'next command'], ['⏎', 'edit next command'], ['space / 1–9', 'open'], ['tab', 'project'], ['⇧↑↓', 'move project'], ['b', 'bg session'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
-  ticket: [['↑↓', 'select'], ['space', 'new /work session'], ['⏎', 'edit next command'], ['tab', 'project'], ['esc', 'back'], ['←', 'back']],
+  ticket: [['↑↓', 'select'], ['space', 'new /work bg session'], ['⏎', 'edit next command'], ['tab', 'project'], ['esc', 'back'], ['←', 'back']],
 };
 function updateHints() {
   let h = HINTS[S.route.name].slice();
@@ -341,8 +341,8 @@ function toggleOverlay(force) {
   const groups = [
     ['everywhere', [['?', 'toggle this list'], ['tab / ⇧tab', 'next / previous project: its last screen, unsent text kept'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
-    ['home', [['space / 1–9', 'open the selected / numbered ticket (in progress first, then to do)'], ['→', 'new session with the ticket\'s next command: /work <id>, then /send'], ['⏎', 'ticket view with the next command in its prompt box; ⏎ again starts it'], ['b', 'prompt box: start a background session (claude --bg) in the project with your text'], ['⇧↑ / ⇧↓', 'move project up / down in the rail'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
-    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: new session with /work <id> prefilled'], ['⏎', 'prompt box with the next command; ⏎ again starts a new session with it'], ['→ / space / click', 'on a server row: open it in a new tab of your normal Chrome'], ['→', 'no live sessions: prompt box'], ['←', 'no live sessions: back']]],
+    ['home', [['space / 1–9', 'open the selected / numbered ticket (in progress first, then to do)'], ['→', 'background session with the ticket\'s next command: /work <id>, then /send'], ['⏎', 'ticket view with the next command in its prompt box; ⏎ again starts it in the background'], ['b', 'prompt box: start a background session (claude --bg) in the project with your text'], ['⇧↑ / ⇧↓', 'move project up / down in the rail'], ['s', 'background session: fix new Sentry errors'], ['d', 'background session: Dependabot review'], ['c', 'clock screen'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
+    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: background session with /work <id>'], ['⏎', 'prompt box with the next command; ⏎ again starts a background session with it'], ['→ / space / click', 'on a server row: open it in a new tab of your normal Chrome'], ['→', 'no live sessions: prompt box'], ['←', 'no live sessions: back']]],
   ];
   const p = focusedProject();
   if (p && (p.jumps || []).length) groups.push([`jumps · ${p.name}`, p.jumps.map(j => [j.key, j.label])]);
@@ -593,7 +593,7 @@ async function runJump(idx, key) {
   if (!j) return false;
   try {
     if (j.action === 'copy') {
-      await newSession(p.name, j.arg);
+      await startSession(p.name, j.arg);
     } else if (j.action === 'note-done') {
       const now = Date.now();
       if (!(S.armed && S.armed.idx === idx && S.armed.key === key && now < S.armed.until)) {
@@ -637,7 +637,7 @@ function askKey(e, ta) {
   else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     if (!ta.value.trim()) return;
-    bgSession($('#ask').dataset.project, ta.value.trim());
+    startSession($('#ask').dataset.project, ta.value.trim());
     closeAsk();
   }
 }
@@ -778,13 +778,9 @@ async function openServer(srv) {
 async function openInApp(sessionId) {
   try { await api('/api/open', { sessionId }); toast('Opened in the Claude app'); } catch (e) { fail(e); }
 }
-// Opens a new Code session (in the app's last-used folder) with the command prefilled; Enter in the app starts it.
-async function newSession(project, text) {
-  try { await api('/api/new-session', { project, text }); toast(text ? 'New session: ' + text : 'New session'); } catch (e) { fail(e); }
-}
-// Starts a `claude --bg` session in the project's folder; the app stays where it is.
-async function bgSession(project, text) {
-  try { const j = await api('/api/bg-session', { project, text }); toast(`Background session ${j.id} started`); loadProjects(); } catch (e) { fail(e); }
+// Starts a `claude --bg` session in the project's folder with the text as its first prompt; the app stays where it is.
+async function startSession(project, text) {
+  try { const j = await api('/api/bg-session', { project, text }); toast(`Background session ${j.id} started: ${text}`); loadProjects(); } catch (e) { fail(e); }
 }
 const aliveSessions = () => S.flat.some(f => f.s && f.s.state !== 'archived');
 // The ticket's next workflow command: /work until ticket.md exists, then /send until a PR exists.
@@ -795,11 +791,11 @@ function nextCommand(t) {
   if (wf.some(s => /^PR #/.test(s.step))) return { why: `${t.id} has a PR: nothing to start` };
   return { cmd: '/send' };
 }
-// → on home: a new session with the ticket's next command, without opening the ticket view.
+// → on home: a background session with the ticket's next command, without opening the ticket view.
 async function runNext(project, id) {
   try {
     const n = nextCommand(await api(`/api/ticket?project=${encodeURIComponent(project)}&id=${encodeURIComponent(id)}`));
-    if (n.cmd) await newSession(project, n.cmd); else toast(n.why);
+    if (n.cmd) await startSession(project, n.cmd); else toast(n.why);
   } catch (e) { fail(e); }
 }
 function openExtra() {
@@ -814,7 +810,7 @@ function extraKey(e, ta) {
   else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     if (!ta.value.trim()) return;
-    newSession(S.route.project, ta.value.trim());
+    startSession(S.route.project, ta.value.trim());
     closeExtra();
   }
 }
@@ -825,7 +821,7 @@ function ticketKey(e) {
   const f = S.flat[S.ticketSel];
   if (f && f.srv && (k === ' ' || k === 'ArrowRight')) { openServer(f.srv); return true; }
   if (k === ' ') {
-    if (f) openInApp(f.s.sessionId); else newSession(S.route.project, '/work ' + S.route.id);
+    if (f) openInApp(f.s.sessionId); else startSession(S.route.project, '/work ' + S.route.id);
     return true;
   }
   if (k === 'ArrowLeft' && !aliveSessions()) { back(); return true; }

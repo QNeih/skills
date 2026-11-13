@@ -1122,20 +1122,6 @@ def get_ticket(q):
     return ticket_view(project, tid)
 
 
-def as_request(text):
-    """The app swaps a leading `/` in link-prefilled text for a look-alike so a link can't run a
-    command, so a command gets a word in front: `/work SKL-15` → `Run /work SKL-15`."""
-    return "Run " + text.strip() if text.strip().startswith("/") else text
-
-
-def new_session_url(text):
-    """claude://code/new?q=…: the new Code session screen, the text prefilled (none → a blank
-    prompt). No `folder`: the app marks any link that names one as external and asks to trust
-    the folder every time, so the session opens in the folder the app used last. A link can't
-    pick the sidebar group."""
-    return "claude://code/new" + ("?" + urllib.parse.urlencode({"q": as_request(text)}) if text else "")
-
-
 def post_open(body):
     session_id = need(body, "sessionId")[0]
     if not any(s["sessionId"] == session_id for s in load_sessions()):
@@ -1165,14 +1151,6 @@ def post_open_url(body):
     return {"ok": True}
 
 
-def post_new_session(body):
-    """Opens the Claude app's new Code session screen; Quinn presses Enter there."""
-    code, out = run(["open", new_session_url(body.get("text") or "")])
-    if code != 0:
-        raise ApiError(500, "open: " + out.strip())
-    return {"ok": True}
-
-
 def claude_cli():
     path = shutil.which("claude") or str(HOME / ".local/bin/claude")
     if not Path(path).is_file():
@@ -1180,12 +1158,23 @@ def claude_cli():
     return path
 
 
+def claude(args, cwd=None):
+    """The CLI gateway: runs `claude <args>` in cwd and returns (exit code, output). Every `claude`
+    call goes through here, so tests replace this one function."""
+    return run([claude_cli()] + list(args), cwd=cwd)
+
+
+def claude_ok(args, cwd=None):
+    """Runs `claude <args>`; a non-zero exit is an API error carrying the CLI's output."""
+    code, out = claude(args, cwd=cwd)
+    if code != 0:
+        raise ApiError(500, "claude {}: {}".format(args[0], out.strip()))
+    return out
+
+
 def background_agents():
     """The background sessions `claude --bg` started, from `claude agents --json`."""
-    code, out = run([claude_cli(), "agents", "--json"])
-    if code != 0:
-        raise ApiError(500, "claude agents: " + out.strip())
-    return [a for a in json.loads(out) if a.get("kind") == "background"]
+    return [a for a in json.loads(claude_ok(["agents", "--json"])) if a.get("kind") == "background"]
 
 
 BG_ID = re.compile(r"backgrounded · (\S+) ·")
@@ -1205,11 +1194,10 @@ def post_bg_session(body):
     d = lookup(project).get("dir", "none")
     if d == "none" or not Path(d).is_dir():
         raise ApiError(404, "no folder for project " + project)
-    code, out = run([claude_cli(), "--bg", "--permission-mode", "auto", "-n", bg_session_name(project, text),
-                     text.strip()], cwd=d)
+    out = claude_ok(["--bg", "--permission-mode", "auto", "-n", bg_session_name(project, text), text.strip()], cwd=d)
     m = BG_ID.search(out)
-    if code != 0 or not m:
-        raise ApiError(500, "claude --bg: " + out.strip())
+    if not m:
+        raise ApiError(500, "claude --bg printed no session id: " + out.strip())
     return {"ok": True, "id": m.group(1)}
 
 
@@ -1223,7 +1211,7 @@ def post_copy(body):
 GETS = {"/api/briefing": lambda q: BRIEFING.get(), "/api/projects": lambda q: projects_view(),
         "/api/ticket": get_ticket, "/api/weather": lambda q: weather(),
         "/api/order": lambda q: {"order": read_order()}}
-POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/open-url": post_open_url, "/api/new-session": post_new_session,
+POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/open-url": post_open_url,
          "/api/bg-session": post_bg_session,
          "/api/copy": post_copy, "/api/note-done": lambda b: note_done(need(b, "n")[0]),
          "/api/order": save_order}

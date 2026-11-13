@@ -101,22 +101,61 @@ class PullRequests(unittest.TestCase):
         self.assertEqual(server.with_pr_steps(steps, []), steps)
 
 
-class NewSession(unittest.TestCase):
-    def test_command_becomes_request(self):
-        self.assertEqual(server.as_request("/work SKL-15"), "Run /work SKL-15")
-        self.assertEqual(server.as_request("hello"), "hello")
+class FakeClaude:
+    """Stands in for the claude CLI: records each call with its folder and answers from a queue."""
 
-    def test_url(self):
-        self.assertEqual(server.new_session_url(""), "claude://code/new")
-        self.assertEqual(server.new_session_url("hi there"), "claude://code/new?q=hi+there")
+    def __init__(self, *replies):
+        self.calls, self.replies = [], list(replies)
+
+    def __call__(self, args, cwd=None):
+        self.calls.append((list(args), cwd))
+        return self.replies.pop(0)
 
 
-class BackgroundSession(unittest.TestCase):
-    def test_name_and_id(self):
-        self.assertEqual(server.bg_session_name("skills", "fix the clock\nmore"), "skills: fix the clock")
-        self.assertEqual(len(server.bg_session_name("p", "x" * 80)), len("p: ") + 48)
-        out = "Starting background service…\nbackgrounded · 36e71ce8 · skills: hi\n  claude agents  list sessions"
-        self.assertEqual(server.BG_ID.search(out).group(1), "36e71ce8")
+class BackgroundStart(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = self.tmp.name
+        saved = server.claude, server.lookup
+        self.addCleanup(lambda: (setattr(server, "claude", saved[0]), setattr(server, "lookup", saved[1])))
+        server.lookup = lambda name: {"dir": self.dir} if name == "skills" else {"dir": "none"}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_starts_in_the_project_folder_with_the_text_verbatim(self):
+        server.claude = fake = FakeClaude((0, "Starting background service…\nbackgrounded · 36e71ce8 · skills: /work SKL-1\n"))
+        got = server.post_bg_session({"project": "skills", "text": "/work SKL-1\n"})
+        self.assertEqual(got["id"], "36e71ce8")
+        self.assertEqual(fake.calls, [(["--bg", "--permission-mode", "auto", "-n", "skills: /work SKL-1", "/work SKL-1"], self.dir)])
+
+    def test_name_is_the_project_and_the_first_line_cut_to_48(self):
+        server.claude = fake = FakeClaude((0, "backgrounded · a1 · x\n"), (0, "backgrounded · a2 · x\n"))
+        server.post_bg_session({"project": "skills", "text": "fix the clock\nmore detail"})
+        server.post_bg_session({"project": "skills", "text": "x" * 80})
+        self.assertEqual(fake.calls[0][0][4], "skills: fix the clock")
+        self.assertEqual(fake.calls[1][0][4], "skills: " + "x" * 47 + "…")
+
+    def test_cli_failure_is_an_api_error_with_its_output(self):
+        server.claude = FakeClaude((1, "error: not logged in\n"))
+        with self.assertRaises(server.ApiError) as e:
+            server.post_bg_session({"project": "skills", "text": "hi"})
+        self.assertIn("error: not logged in", str(e.exception))
+        server.claude = FakeClaude((0, "something unexpected\n"))
+        with self.assertRaises(server.ApiError) as e:
+            server.post_bg_session({"project": "skills", "text": "hi"})
+        self.assertIn("something unexpected", str(e.exception))
+
+    def test_unknown_project_starts_nothing(self):
+        server.claude = fake = FakeClaude()
+        with self.assertRaises(server.ApiError) as e:
+            server.post_bg_session({"project": "nope", "text": "hi"})
+        self.assertEqual(e.exception.status, 404)
+        self.assertEqual(fake.calls, [])
+
+    def test_app_link_start_is_gone(self):
+        self.assertNotIn("/api/new-session", server.POSTS)
+        self.assertIn("/api/open", server.POSTS)
 
 
 class Fixture(unittest.TestCase):
