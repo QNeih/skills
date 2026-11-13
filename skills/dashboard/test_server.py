@@ -169,25 +169,6 @@ class TicketSessions(Fixture):
 
 
 class Transcript(Fixture):
-    def test_parse(self):
-        self.session("local_1", lines=[
-            user("<system-reminder>ignore</system-reminder>"),
-            user([{"type": "text", "text": "<system-reminder>x</system-reminder>"}, {"type": "text", "text": "hello"}]),
-            user("Base directory for this skill: …", isMeta=True),
-            user("<command-name>/goal</command-name>\n<command-args>ship it</command-args>"),
-            assistant([{"type": "thinking", "thinking": "hmm"}, {"type": "text", "text": "Sure."}]),
-            assistant([{"type": "tool_use", "name": "Bash", "input": {"command": "ls   -la\n/tmp", "description": "x"}}]),
-            user([{"type": "tool_result", "content": "lots"}]),
-            dict(assistant([{"type": "text", "text": "side"}]), isSidechain=True),
-            assistant([{"type": "text", "text": "Done."}], stop="end_turn"),
-        ])
-        s = server.load_sessions(self.sessions)[0]
-        msgs = server.parse_transcript(server.transcript_path(s, self.transcripts))
-        self.assertEqual([(m["role"], m["text"]) for m in msgs], [
-            ("user", "hello"), ("user", "/goal ship it"), ("assistant", "Sure."), ("tool", "▸ Bash ls -la /tmp"),
-            ("assistant", "Done.")])
-        self.assertEqual(server.parse_transcript(server.transcript_path(s, self.transcripts), limit=2)[0]["role"], "tool")
-
     def test_fallback_glob(self):
         self.session("local_1", lines=[user("hi")])
         s = dict(server.load_sessions(self.sessions)[0], cwd="/moved")

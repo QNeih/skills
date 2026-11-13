@@ -130,9 +130,6 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 .head .id { font-size: 19px; }
 .head h1 { font-size: 19px; font-weight: 600; color: var(--head); margin: 0; flex: 1; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.btn { font-size: var(--fs-s); color: var(--label); background: none; border: 1px solid var(--line2); border-radius: 6px;
-  padding: 4px 11px; cursor: pointer; flex: none; transition: color 100ms, border-color 100ms; }
-.btn:hover { color: var(--head); border-color: var(--clay-line); }
 .tgoal { flex: none; padding: 0 4px; margin-top: -6px; color: var(--label); }
 .two { flex: 1; display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 15px; min-height: 0; }
 .step { display: flex; align-items: baseline; gap: var(--gap); padding: 4px 15px 4px calc(var(--c1) - 2px); color: var(--label); }
@@ -150,29 +147,6 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 .tree .summary { padding: 2px 15px 8px 0; color: var(--label); font-size: var(--fs-s); white-space: pre-wrap; display: flex; gap: .6em; }
 .tree .summary::before { content: '\23BF'; color: var(--dim); flex: none; }
 
-/* session */
-.chat { flex: 1; overflow: auto; padding: 18px 24px; min-height: 0; }
-.msg { margin: 14px 0; max-width: 100ch; display: flex; gap: 12px; align-items: baseline; }
-.msg::before { content: '\23FA\FE0E'; width: 1.1em; text-align: center; color: var(--head); flex: none; }
-.msg .body { flex: 1; min-width: 0; }
-.msg.user { background: var(--raised); border-radius: 6px; padding: 9px 14px 9px 10px; color: var(--head); }
-.msg.user::before { content: '>'; font-size: 1em; color: var(--label); }
-.msg.user .body { white-space: pre-wrap; word-break: break-word; }
-.md p { margin: 0 0 9px; } .md p:last-child { margin-bottom: 0; }
-.md p.h { color: var(--head); font-weight: 600; }
-.md ul, .md ol { margin: 0 0 9px; padding-left: 24px; }
-.md pre { background: #0a0a0a; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; overflow: auto; margin: 0 0 9px; }
-.md pre code { background: none; border: 0; padding: 0; }
-.tool { font-size: var(--fs-s); color: var(--dim); padding: 1px 0 1px 30px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tool::before { content: '\23BF  '; }
-.reply { flex: none; display: flex; gap: 12px; align-items: flex-start; background: var(--panel); border: 1px solid var(--line2);
-  border-radius: var(--rad); padding: 12px 16px; transition: border-color 120ms; }
-.reply:focus-within { border-color: var(--clay); }
-.reply .prompt { color: var(--label); line-height: 1.5; }
-.reply:focus-within .prompt { color: var(--clay); }
-.reply textarea { flex: 1; resize: none; height: 72px; background: none; color: var(--text); border: 0; padding: 0;
-  font: var(--fs)/1.5 var(--mono); outline: none; }
-.reply textarea::placeholder { color: var(--dim); }
 
 /* start */
 #app.start { grid-template-rows: 1fr; }
@@ -240,8 +214,6 @@ const S = {
   route: { name: 'home' }, gen: 0, timer: null, overlay: false, armed: null,
   briefing: null, briefingErr: null, projects: null, projectsErr: null, focus: 0, homeSel: 0,
   ticket: null, ticketErr: null, ticketSel: 0, flat: [],
-  session: null, sessionErr: null, sessionSig: '',
-  states: {}, // sessionId -> state, from every ticket/session response seen
 };
 
 /* ---------- api ---------- */
@@ -282,38 +254,6 @@ function inline(s) {
 // Colour ticket ids in text outside of tags.
 const hlIds = html => html.split(/(<[^>]+>)/).map(p => p.startsWith('<') ? p
   : p.replace(/\b([A-Z][A-Z0-9]+-\d+)\b/g, '<span class="id">$1</span>')).join('');
-function md(src) {
-  const out = [], lines = String(src ?? '').replace(/\r\n?/g, '\n').split('\n');
-  let para = [], list = null, i = 0;
-  const flushPara = () => { if (para.length) { out.push(`<p>${inline(para.join('\n')).replace(/\n/g, '<br>')}</p>`); para = []; } };
-  const flushList = () => { if (list) { out.push(`<${list.type}>${list.items.map(x => `<li>${inline(x)}</li>`).join('')}</${list.type}>`); list = null; } };
-  while (i < lines.length) {
-    const l = lines[i];
-    if (/^\s*```/.test(l)) {
-      flushPara(); flushList();
-      const code = []; i++;
-      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) code.push(lines[i++]);
-      i++;
-      out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`);
-      continue;
-    }
-    const ul = l.match(/^\s*[-*+]\s+(.*)$/), ol = l.match(/^\s*\d+[.)]\s+(.*)$/);
-    if (ul || ol) {
-      flushPara();
-      const type = ul ? 'ul' : 'ol';
-      if (list && list.type !== type) flushList();
-      if (!list) list = { type, items: [] };
-      list.items.push((ul || ol)[1]); i++; continue;
-    }
-    if (!l.trim()) { flushPara(); flushList(); i++; continue; }
-    if (list && /^\s{2,}\S/.test(l)) { list.items[list.items.length - 1] += ' ' + l.trim(); i++; continue; }
-    const h = l.match(/^#{1,6}\s+(.*)$/);
-    if (h) { flushPara(); flushList(); out.push(`<p class="h">${inline(h[1])}</p>`); i++; continue; }
-    flushList(); para.push(l); i++;
-  }
-  flushPara(); flushList();
-  return out.join('');
-}
 const dotLine = (kind, text) => {
   if (kind === 'note') {
     const m = String(text).match(/^#?(\d+)[.):]?\s+([\s\S]*)$/);
@@ -342,14 +282,11 @@ function updateMeta() {
 const HINTS = {
   start: [],
   home: [['↑↓', 'select'], ['⏎', 'open'], ['1–9', 'ticket'], ['← →', 'project'], ['⇧← →', 'move'], ['[ ]', 'page'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
-  ticket: [['↑↓', 'select'], ['⏎', 'chat'], ['space', 'new /ticket session'], ['o', 'session in app'], ['g', 'open PR'], ['esc', 'back']],
-  session: [['i', 'reply'], ['↑↓', 'scroll'], ['o', 'open in app'], ['esc', 'back']],
-  reply: [['⏎', 'send'], ['⇧⏎', 'new line'], ['esc', 'leave box']],
+  ticket: [['↑↓', 'select'], ['space', 'new /ticket session'], ['esc', 'back'], ['←', 'back (no sessions)']],
 };
 function updateHints() {
-  const typing = document.activeElement && document.activeElement.id === 'reply';
-  let h = typing ? HINTS.reply : HINTS[S.route.name].slice();
-  if (!typing && S.route.name === 'home') {
+  let h = HINTS[S.route.name].slice();
+  if (S.route.name === 'home') {
     const p = focusedProject();
     for (const j of (p && p.jumps) || []) h.push([j.key, j.label]);
   }
@@ -373,8 +310,7 @@ function toggleOverlay(force) {
     ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection'], ['⏎ / space', 'open']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
     ['home', [['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open to-do ticket 1–9'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
-    ['ticket', [['⏎', 'show the chat here'], ['space', 'new session in the app with /ticket <id> prefilled'], ['o', 'go to the session in the Claude app'], ['g', 'open the PR']]],
-    ['session', [['i / /', 'focus reply box'], ['⏎ (in box)', 'copy reply, open in app'], ['esc (in box)', 'leave box'], ['↑↓ / j k', 'scroll chat'], ['o', 'open in Claude app']]],
+    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'new session in the app with /ticket <id> prefilled']]],
   ];
   const p = focusedProject();
   if (p && (p.jumps || []).length) groups.push([`jumps · ${p.name}`, p.jumps.map(j => [j.key, j.label])]);
@@ -389,22 +325,13 @@ function parseHash() {
   if (location.hash === '' || location.hash === '#' || location.hash === '#/start') return { name: 'start' };
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
   if (parts[0] === 'ticket' && parts.length >= 3) return { name: 'ticket', project: parts[1], id: parts.slice(2).join('/') };
-  if (parts[0] === 'session' && parts[1]) return { name: 'session', id: parts[1] };
   return { name: 'home' };
 }
 const ticketHash = (project, id) => `#/ticket/${encodeURIComponent(project)}/${encodeURIComponent(id)}`;
-const sessionHash = id => `#/session/${encodeURIComponent(id)}`;
 function go(h) { if (location.hash === h) route(); else location.hash = h; }
-function ticketCtx() {
-  try { return JSON.parse(sessionStorage.getItem('dash.ticket') || 'null'); } catch { return null; }
-}
 function back() {
   const r = S.route;
   if (r.name === 'ticket') go('#/');
-  else if (r.name === 'session') {
-    const c = ticketCtx();
-    go(c && (c.sessionIds || []).includes(r.id) ? ticketHash(c.project, c.id) : '#/');
-  }
 }
 function route() {
   clearTimeout(S.timer);
@@ -420,9 +347,6 @@ function route() {
     setCrumbs([{ text: 'home', href: '#/' }, { text: r.id, id: true }]);
     if (!S.ticket || S.ticket.id !== r.id) { S.ticket = null; S.ticketSel = 0; }
     S.ticketErr = null; renderTicket(); loadTicket();
-  } else {
-    S.session = null; S.sessionErr = null; S.sessionSig = '';
-    renderSession(); loadSession();
   }
   updateHints();
 }
@@ -648,10 +572,7 @@ async function loadTicket() {
     const prevId = S.flat[S.ticketSel] && S.flat[S.ticketSel].s.sessionId;
     S.ticket = t; S.ticketErr = null;
     S.flat = flatten(t.sessions || []);
-    for (const f of S.flat) S.states[f.s.sessionId] = f.s.state;
-    const c = ticketCtx();
-    const want = prevId || (c && c.last);
-    const at = S.flat.findIndex(f => f.s.sessionId === want);
+    const at = S.flat.findIndex(f => f.s.sessionId === prevId);
     S.ticketSel = at >= 0 ? at : Math.min(S.ticketSel, Math.max(S.flat.length - 1, 0));
     updateMeta();
   } catch (e) {
@@ -678,7 +599,7 @@ function renderTicket() {
     const c = pr.checks || {};
     const checks = [c.failed ? `<span class="tag fail">✗ ${c.failed}</span>` : '', c.pending ? `<span class="tag block">● ${c.pending}</span>` : '',
       c.passed ? `<span class="tag prog">✓ ${c.passed}</span>` : ''].join('');
-    return `<div class="line pr" data-act="open-pr" data-url="${esc(pr.url)}"><span class="dot pr-${esc(pr.state)}"></span>
+    return `<div class="line pr"><span class="dot pr-${esc(pr.state)}"></span>
       <span class="n">#${esc(pr.number)}</span><span class="tx">${esc(pr.title)}</span>
       <span class="tag">${esc(pr.state)}</span>${pr.review ? `<span class="tag">${esc(pr.review)}</span>` : ''}${checks}</div>`;
   }).join('');
@@ -696,13 +617,13 @@ function renderTicket() {
       ${sc.branch ? `<span class="tag">${esc(sc.branch)}</span>` : ''}
       ${sc.status ? `<span class="tag prog">${esc(sc.status)}</span>` : ''}
       ${t.column ? `<span class="tag">${esc(t.column)}</span>` : ''}
-      <button class="btn" data-act="open-app"><kbd>o</kbd>open in app</button></div>
+</div>
     ${t.goal ? `<div class="tgoal">${esc(t.goal)}</div>` : ''}
     ${S.ticketErr ? `<div class="errtext">${esc(S.ticketErr)}</div>` : ''}
     <div class="two">
       <section class="panel"><div class="scroll">
         <div class="section"><div class="label">workflow</div>${wf || '<div class="empty">no workflow</div>'}</div>
-        ${prs ? `<div class="section"><div class="label">pull requests<span class="r"><kbd>g</kbd> open</span></div>${prs}</div>` : ''}
+        ${prs ? `<div class="section"><div class="label">pull requests</div>${prs}</div>` : ''}
         ${sc.next ? `<div class="section"><div class="label">next</div><div class="text">${hlIds(inline(sc.next))}</div></div>` : ''}
         ${issues ? `<div class="section"><div class="label">build issues</div>${issues}</div>` : ''}
         ${t.handoff ? `<div class="section"><div class="label">handoff</div><div class="text dim">${esc(t.handoff)}</div></div>` : ''}
@@ -715,110 +636,16 @@ function renderTicket() {
   const selEl = main.querySelector('.tree .row.sel');
   if (selEl) selEl.scrollIntoView({ block: 'nearest' });
 }
-function openSession(i) {
-  const f = S.flat[i];
-  if (!f) return;
-  const r = S.route;
-  sessionStorage.setItem('dash.ticket', JSON.stringify({ project: r.project, id: r.id, last: f.s.sessionId, sessionIds: S.flat.map(x => x.s.sessionId) }));
-  go(sessionHash(f.s.sessionId));
-}
-async function openInApp(sessionId) {
-  if (!sessionId) { toast('No session selected', true); return; }
-  try { await api('/api/open', { sessionId }); toast('Opened in the Claude app'); } catch (e) { fail(e); }
-}
 // Opens a new Code session in the project's folder with the command prefilled; Enter in the app starts it.
 async function newSession(project, text) {
   try { await api('/api/new-session', { project, text }); toast('New session: ' + text); } catch (e) { fail(e); }
-}
-async function openPr(url) {
-  try { await api('/api/open-pr', { url }); toast('Opened PR'); } catch (e) { fail(e); }
 }
 function ticketKey(e) {
   const k = e.key;
   if (k === 'ArrowDown' || k === 'j') { S.ticketSel = Math.min(S.ticketSel + 1, Math.max(S.flat.length - 1, 0)); renderTicket(); return true; }
   if (k === 'ArrowUp' || k === 'k') { S.ticketSel = Math.max(S.ticketSel - 1, 0); renderTicket(); return true; }
-  if (k === 'Enter') { openSession(S.ticketSel); return true; }
-  if (k === 'o') { const f = S.flat[S.ticketSel]; openInApp(f && f.s.sessionId); return true; }
-  if (k === 'g') { const pr = (S.ticket && S.ticket.prs || [])[0]; if (pr) openPr(pr.url); else toast('No PR yet', true); return true; }
   if (k === ' ') { newSession(S.route.project, '/ticket ' + S.route.id); return true; }
-  return false;
-}
-
-/* ---------- session ---------- */
-function sessionCrumbs(title) {
-  const c = ticketCtx(), r = S.route;
-  const parts = [{ text: 'home', href: '#/' }];
-  if (c && (c.sessionIds || []).includes(r.id)) parts.push({ text: c.id, id: true, href: ticketHash(c.project, c.id) });
-  parts.push({ text: title });
-  setCrumbs(parts);
-}
-async function loadSession() {
-  const gen = S.gen, id = S.route.id;
-  try {
-    const s = await api(`/api/session?id=${encodeURIComponent(id)}`);
-    if (gen !== S.gen) return;
-    S.session = s; S.sessionErr = null;
-    S.states[s.sessionId || id] = s.state;
-    updateMeta();
-  } catch (e) {
-    if (gen !== S.gen) return;
-    S.sessionErr = e.message;
-  }
-  renderSession();
-  if (S.session && S.session.state === 'running') S.timer = setTimeout(loadSession, 3000);
-}
-function renderSession() {
-  if (S.route.name !== 'session') return;
-  const main = $('#main'), s = S.session;
-  if (!main.querySelector('.screen.session')) {
-    main.innerHTML = `<div class="screen session"><div class="head" id="s-head"></div><div id="s-err"></div>
-      <section class="panel" style="flex:1"><div class="chat" id="chat"></div></section>
-      <div class="reply"><span class="prompt">&gt;</span><textarea id="reply" placeholder="Reply — i to focus, ⏎ to copy it and open the session in the Claude app"></textarea></div></div>`;
-    const ta = $('#reply');
-    ta.addEventListener('focus', updateHints);
-    ta.addEventListener('blur', updateHints);
-  }
-  $('#s-err').innerHTML = S.sessionErr ? `<div class="errtext">${esc(S.sessionErr)}</div>` : '';
-  const title = s ? (s.title || s.sessionId) : S.route.id;
-  sessionCrumbs(title);
-  if (!s) { $('#chat').innerHTML = S.sessionErr ? '' : '<div class="status">loading…</div>'; return; }
-  $('#s-head').innerHTML = `<span class="dot ${esc(s.state)}" style="align-self:center"></span><h1 title="${esc(title)}">${esc(title)}</h1>
-    <span class="tag">${esc(s.state)}</span>${s.branch ? `<span class="tag">${esc(s.branch)}</span>` : ''}
-    ${s.cwd ? `<span class="tag" title="${esc(s.cwd)}">${esc(String(s.cwd).split('/').slice(-2).join('/'))}</span>` : ''}
-    <button class="btn" data-act="open-app"><kbd>o</kbd>open in app</button>`;
-  const msgs = s.messages || [];
-  const last = msgs[msgs.length - 1];
-  const sig = `${msgs.length}|${last ? last.ts + '|' + String(last.text).length : ''}`;
-  if (sig === S.sessionSig) return;
-  const chat = $('#chat');
-  const first = !S.sessionSig;
-  const atBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 60;
-  S.sessionSig = sig;
-  chat.innerHTML = msgs.map(m => {
-    const when = m.ts ? esc(new Date(typeof m.ts === 'number' && m.ts < 1e12 ? m.ts * 1000 : m.ts).toLocaleString('en-GB')) : '';
-    if (m.role === 'user') return `<div class="msg user" title="${when}"><div class="body">${esc(m.text)}</div></div>`;
-    if (m.role === 'tool') return `<div class="tool" title="${esc(m.text)}">${esc(String(m.text).split('\n')[0].replace(/^▸\s*/, ''))}</div>`;
-    return `<div class="msg" title="${when}"><div class="body md">${md(m.text)}</div></div>`;
-  }).join('') || (s.summary ? `<div class="text dim">${esc(s.summary)}</div>` : '<div class="empty">no messages</div>');
-  if (first || atBottom) chat.scrollTop = chat.scrollHeight;
-}
-async function sendReply() {
-  const ta = $('#reply'), text = ta.value.trim();
-  if (!text) return;
-  const id = (S.session && S.session.sessionId) || S.route.id;
-  try {
-    await api('/api/reply', { sessionId: id, text });
-    ta.value = '';
-    ta.blur();
-    toast('Copied — paste it in the Claude app');
-  } catch (e) { fail(e); }
-}
-function sessionKey(e) {
-  const k = e.key, chat = $('#chat');
-  if (k === 'ArrowDown' || k === 'j') { chat.scrollBy(0, 80); return true; }
-  if (k === 'ArrowUp' || k === 'k') { chat.scrollBy(0, -80); return true; }
-  if (k === 'i' || k === '/') { $('#reply').focus(); return true; }
-  if (k === 'o') { openInApp((S.session && S.session.sessionId) || S.route.id); return true; }
+  if (k === 'ArrowLeft' && !S.flat.length) { back(); return true; }
   return false;
 }
 
@@ -915,19 +742,13 @@ async function loadWeather() {
 document.addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (S.route.name === 'start') { e.preventDefault(); go('#/'); return; }
-  const t = e.target;
-  if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT')) {
-    if (e.key === 'Escape') { e.preventDefault(); t.blur(); }
-    else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && t.id === 'reply') { e.preventDefault(); sendReply(); }
-    return;
-  }
   if (e.key === '?') { e.preventDefault(); toggleOverlay(); return; }
   if (S.overlay) {
     if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); toggleOverlay(false); }
     return;
   }
   if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); back(); return; }
-  const handler = { home: homeKey, ticket: ticketKey, session: sessionKey }[S.route.name];
+  const handler = { home: homeKey, ticket: ticketKey }[S.route.name];
   if (handler(e)) e.preventDefault();
 });
 document.addEventListener('click', e => {
@@ -942,15 +763,8 @@ document.addEventListener('click', e => {
     openTicket(el.dataset.project, el.dataset.id);
   } else if (a === 'jump') runJump(Number(el.dataset.idx), el.dataset.key);
   else if (a === 'focus') { if (Number(el.dataset.idx) !== S.focus) focusProject(Number(el.dataset.idx)); }
-  else if (a === 'session') openSession(Number(el.dataset.i));
-  else if (a === 'open-pr') openPr(el.dataset.url);
-  else if (a === 'open-app') {
-    if (S.route.name === 'ticket') { const f = S.flat[S.ticketSel]; openInApp(f && f.s.sessionId); }
-    else openInApp((S.session && S.session.sessionId) || S.route.id);
-  }
+  else if (a === 'session') { S.ticketSel = Number(el.dataset.i); renderTicket(); }
 });
-// Buttons must not keep focus: Enter/space would then trigger them instead of the screen's keys.
-document.addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); });
 window.addEventListener('hashchange', route);
 updateMeta();
 setInterval(updateMeta, 10000);

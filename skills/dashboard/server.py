@@ -463,42 +463,6 @@ def user_text(content):
     return "\n".join(parts) or None
 
 
-def short_arg(inp):
-    if not isinstance(inp, dict):
-        return ""
-    for k in ("command", "file_path", "path", "pattern", "url", "query", "skill", "description", "prompt"):
-        v = inp.get(k)
-        if isinstance(v, str) and v:
-            break
-    else:
-        v = next((v for v in inp.values() if isinstance(v, str) and v), "")
-    v = " ".join(v.split())
-    return v if len(v) <= 80 else v[:79] + "…"
-
-
-def parse_transcript(path, limit=200):
-    """user / assistant / tool messages of the main thread; thinking and tool results dropped."""
-    msgs = []
-    for e in read_lines(path):
-        if e.get("isSidechain") or e.get("isMeta") or e.get("type") not in ("user", "assistant"):
-            continue
-        content, ts = (e.get("message") or {}).get("content"), e.get("timestamp")
-        if e["type"] == "user":
-            t = user_text(content)
-            if t:
-                msgs.append({"role": "user", "text": t, "ts": ts})
-            continue
-        if isinstance(content, str):
-            content = [{"type": "text", "text": content}]
-        for b in content or []:
-            if b.get("type") == "text" and b.get("text", "").strip():
-                msgs.append({"role": "assistant", "text": b["text"].strip(), "ts": ts})
-            elif b.get("type") == "tool_use":
-                msgs.append({"role": "tool", "text": ("▸ " + b.get("name", "") + " " + short_arg(b.get("input"))).rstrip(),
-                             "ts": ts})
-    return msgs[-limit:]
-
-
 _facts_cache = {}
 
 
@@ -620,16 +584,6 @@ def ticket_sessions(ticket_id, project_dir, sessions, transcripts=None):
     roots = sorted((by_id[i] for i in matched if not ancestor_matched(by_id[i])),
                    key=lambda s: s.get("createdAt") or 0)
     return [node(s, set()) for s in roots]
-
-
-def session_view(session_id):
-    s = next((s for s in load_sessions() if s["sessionId"] == session_id), None)
-    if not s:
-        raise ApiError(404, "no session " + session_id)
-    path = transcript_path(s)
-    return {"sessionId": s["sessionId"], "title": s.get("title"), "state": session_state(s), "cwd": s.get("cwd"),
-            "branch": s.get("branch"), "link": LINK.format(s["sessionId"]), "summary": session_summary(s),
-            "messages": parse_transcript(path) if path else []}
 
 
 # --- tickets ---------------------------------------------------------------------------------
@@ -910,12 +864,6 @@ def pbcopy(text):
     subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True)
 
 
-def open_session(session_id):
-    if not any(s["sessionId"] == session_id for s in load_sessions()):
-        raise ApiError(404, "no session " + str(session_id))
-    subprocess.run(["open", LINK.format(session_id)], check=True)
-
-
 def note_done(n):
     if not re.fullmatch(r"\d+", str(n)):
         raise ApiError(400, "n must be a note number")
@@ -998,34 +946,6 @@ def get_ticket(q):
     return ticket_view(project, tid)
 
 
-def get_session(q):
-    if not q.get("id"):
-        raise ApiError(400, "id is required")
-    return session_view(q["id"])
-
-
-def post_reply(body):
-    sid, text = need(body, "sessionId", "text")
-    pbcopy(text)
-    open_session(sid)
-    return {"ok": True, "copied": True}
-
-
-def post_open(body):
-    open_session(need(body, "sessionId")[0])
-    return {"ok": True}
-
-
-def post_open_pr(body):
-    url = need(body, "url")[0]
-    if not PR_URL_RE.fullmatch(url):
-        raise ApiError(400, "not a GitHub PR link: " + url)
-    code, out = run(["open", url])
-    if code != 0:
-        raise ApiError(500, "open: " + out.strip())
-    return {"ok": True}
-
-
 def as_request(text):
     """The app swaps a leading `/` in link-prefilled text for a look-alike so a link can't run a
     command; a skill command becomes a plain request naming the skill file. Quinn still reads and
@@ -1059,9 +979,9 @@ def post_copy(body):
 
 
 GETS = {"/api/briefing": lambda q: BRIEFING.get(), "/api/projects": lambda q: projects_view(),
-        "/api/ticket": get_ticket, "/api/session": get_session, "/api/weather": lambda q: weather(),
+        "/api/ticket": get_ticket, "/api/weather": lambda q: weather(),
         "/api/order": lambda q: {"order": read_order()}}
-POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/open-pr": post_open_pr, "/api/new-session": post_new_session, "/api/reply": post_reply,
+POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/new-session": post_new_session,
          "/api/copy": post_copy, "/api/note-done": lambda b: note_done(need(b, "n")[0]),
          "/api/order": save_order}
 
