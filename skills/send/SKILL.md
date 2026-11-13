@@ -1,6 +1,6 @@
 ---
 name: send
-description: Ship the current branch on any board — lint, commit by concern, push, open or reuse the PR, move the board card, then clean up the branch and the ticket's files. Closes the flow /ticket starts.
+description: Ship the current branch on any board — lint, commit by concern, push, open or reuse the PR, move the board card, then clean up the branch and the ticket's files. Closes the flow /work starts.
 argument-hint: "[draft] [notes for the commit and PR wording]"
 disable-model-invocation: true
 ---

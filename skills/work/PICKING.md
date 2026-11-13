@@ -1,6 +1,6 @@
 # Picking a Jira ticket
 
-Only when `/ticket` got no argument. `<key>` is the Jira project key; **Hotfix** and the type buckets are defined in `${CLAUDE_SKILL_DIR}/JIRA.md` › Terms.
+Only when `/work` got no argument. `<key>` is the Jira project key; **Hotfix** and the type buckets are defined in `${CLAUDE_SKILL_DIR}/JIRA.md` › Terms.
 
 ## 1. List the current sprint
 

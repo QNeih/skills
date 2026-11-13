@@ -229,7 +229,7 @@ const PAGE = 3, TICKETS = 9;
 const S = {
   route: { name: 'home' }, gen: 0, timer: null, overlay: false, armed: null,
   briefing: null, briefingErr: null, projects: null, projectsErr: null, focus: 0, homeSel: 0,
-  ticket: null, ticketErr: null, ticketSel: 0, flat: [], extra: null, // extra: text for /ticket while the input is open
+  ticket: null, ticketErr: null, ticketSel: 0, flat: [], extra: null, // extra: text for /work while the input is open
 };
 
 /* ---------- api ---------- */
@@ -297,8 +297,8 @@ function updateMeta() {
 }
 const HINTS = {
   start: [],
-  home: [['↑↓', 'select'], ['space', 'open'], ['⏎', 'ask'], ['1–9', 'ticket'], ['t', '/ticket selected'], ['← →', 'project'], ['⇧← →', 'move'], ['[ ]', 'page'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
-  ticket: [['↑↓', 'select'], ['space', 'new /ticket session'], ['esc', 'back'], ['←', 'back']],
+  home: [['↑↓', 'select'], ['space', 'open'], ['⏎', 'ask'], ['1–9', 'ticket'], ['t', '/work selected'], ['← →', 'project'], ['⇧← →', 'move'], ['[ ]', 'page'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
+  ticket: [['↑↓', 'select'], ['space', 'new /work session'], ['esc', 'back'], ['←', 'back']],
 };
 function updateHints() {
   let h = HINTS[S.route.name].slice();
@@ -330,8 +330,8 @@ function toggleOverlay(force) {
   const groups = [
     ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
-    ['home', [['space', 'open selected ticket'], ['⏎', 'prompt box: new session in the project with your text'], ['t', 'new session with /ticket <selected ticket>'], ['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open to-do ticket 1–9'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
-    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: new session with /ticket <id> prefilled'], ['→', 'no live sessions: edit the /ticket prompt, ⏎ starts it, ← (unchanged) closes'], ['←', 'no live sessions: back']]],
+    ['home', [['space', 'open selected ticket'], ['⏎', 'prompt box: new session in the project with your text'], ['t', 'new session with /work <selected ticket>'], ['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open to-do ticket 1–9'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
+    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: new session with /work <id> prefilled'], ['→', 'no live sessions: edit the /work prompt, ⏎ starts it, ← (unchanged) closes'], ['←', 'no live sessions: back']]],
   ];
   const p = focusedProject();
   if (p && (p.jumps || []).length) groups.push([`jumps · ${p.name}`, p.jumps.map(j => [j.key, j.label])]);
@@ -584,7 +584,7 @@ function homeKey(e) {
   if (k === 'ArrowUp' || k === 'k') { S.homeSel = Math.max(S.homeSel - 1, 0); renderHome(); return true; }
   if (k === ' ') { const t = items[S.homeSel]; if (t) openTicket(focusedProject().name, t.id); return true; }
   if (k === 'Enter') { const p = focusedProject(); if (p) openAsk(p.name); return true; }
-  if (k === 't') { const t = items[S.homeSel]; if (t) newSession(focusedProject().name, '/ticket ' + t.id); return true; }
+  if (k === 't') { const t = items[S.homeSel]; if (t) newSession(focusedProject().name, '/work ' + t.id); return true; }
   if ((e.shiftKey && k === 'ArrowLeft') || k === 'H') { moveProject(-1); return true; }
   if ((e.shiftKey && k === 'ArrowRight') || k === 'L') { moveProject(1); return true; }
   if (k === 'ArrowLeft' || k === 'ArrowRight') {
@@ -705,7 +705,7 @@ async function newSession(project, text) {
   try { await api('/api/new-session', { project, text }); toast(text ? 'New session: ' + text : 'New session'); } catch (e) { fail(e); }
 }
 const aliveSessions = () => S.flat.some(f => f.s.state !== 'archived');
-const ticketPrompt = () => `/ticket ${S.route.id} `;
+const ticketPrompt = () => `/work ${S.route.id} `;
 function openExtra() { if (S.extra === null) S.extra = ticketPrompt(); renderTicket(); updateHints(); }
 function closeExtra() { S.extra = null; renderTicket(); updateHints(); }
 function extraKey(e, ta) {
@@ -723,7 +723,7 @@ function ticketKey(e) {
   if (k === 'ArrowUp' || k === 'k') { S.ticketSel = Math.max(S.ticketSel - 1, 0); renderTicket(); return true; }
   if (k === ' ') {
     const f = S.flat[S.ticketSel];
-    if (f) openInApp(f.s.sessionId); else newSession(S.route.project, '/ticket ' + S.route.id);
+    if (f) openInApp(f.s.sessionId); else newSession(S.route.project, '/work ' + S.route.id);
     return true;
   }
   if (k === 'ArrowLeft' && !aliveSessions()) { back(); return true; }

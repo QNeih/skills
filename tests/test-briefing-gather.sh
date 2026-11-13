@@ -276,7 +276,7 @@ SH
 rm -rf "$BRIEFING_STATE"
 out=$(gather)
 s=$(section Jet "$out")
-expect "jira first run: next is the /ticket pick (hotfix first)" "$s" "next: JET-14 Patch prod (top pick)"
+expect "jira first run: next is the /work pick (hotfix first)" "$s" "next: JET-14 Patch prod (top pick)"
 grep -q '^jira' <<<"$s" && fail "jira first run: no diff" || pass "jira first run: no diff"
 grep -qx '# Utf' <<<"$out" && fail "jira: key unknown to Jira → nothing" || pass "jira: key unknown to Jira → nothing"
 { issue JET-11 "To Do" new jq@acme.test "Add login" Story

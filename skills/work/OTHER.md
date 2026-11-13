@@ -4,7 +4,7 @@ The board is a `board:` link or text that names neither the vault nor Jira, e.g.
 
 ## Connector
 
-Find the MCP tools for that tool (e.g. Microsoft's Azure DevOps MCP server for Azure Boards). None, or they answer unauthenticated → stop: "No connector for <tool> reachable. Add its MCP server (e.g. <the server you know for it>) or run `/mcp`, then rerun /ticket."
+Find the MCP tools for that tool (e.g. Microsoft's Azure DevOps MCP server for Azure Boards). None, or they answer unauthenticated → stop: "No connector for <tool> reachable. Add its MCP server (e.g. <the server you know for it>) or run `/mcp`, then rerun /work."
 
 Every step below goes through that connector. A step the connector can't do → loose end naming the step, and go on.
 

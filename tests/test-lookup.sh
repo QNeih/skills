@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Project lookup (skills/ticket/project.sh): derivation cases from the spec.
+# Project lookup (skills/work/project.sh): derivation cases from the spec.
 . "$(dirname "$0")/lib.sh"
-LOOKUP="$REPO_DIR/skills/ticket/project.sh"
+LOOKUP="$REPO_DIR/skills/work/project.sh"
 fixture_new
 lookup() { (cd "$1" && "$LOOKUP" "${@:2}" 2>&1); }
 
