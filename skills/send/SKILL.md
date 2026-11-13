@@ -118,20 +118,23 @@ Runs after a successful push, even if the PR step failed; without git, right aft
 
 - **Git**: runs only when step 6 ended with an `OPEN` PR, even if step 7 failed. Otherwise skip and say why.
   1. `git rev-parse HEAD` differs from `git rev-parse @{u}` → stop: the remote doesn't hold every local commit.
-  2. Linked worktree (`git rev-parse --git-dir` differs from `git rev-parse --git-common-dir`) → don't switch and don't delete the branch; say "linked worktree: `<branch>` stays checked out".
-  3. Otherwise `git switch <base>`, `git pull --ff-only`, then `git branch -D <branch>` (`-D` because the PR isn't merged yet; the commits are on `origin/<branch>`). Switch fails → stop and show the output.
+  2. Leave `<branch>`. Linked worktree (`git rev-parse --git-dir` differs from `git rev-parse --git-common-dir`) → `git switch --detach origin/<base>`, since `<base>` is usually checked out in the main checkout. Otherwise `git switch <base>`, then `git pull --ff-only`. Switch fails → stop and show the output.
+  3. `git branch -D <branch>` (`-D` because the PR isn't merged yet; the commits are on `origin/<branch>`).
+  4. Leftover session branches: `git for-each-ref --format='%(refname:short) %(worktreepath)' 'refs/heads/claude/*'`. For each one with no worktree path and no output from `git rev-list -1 <name> --not --remotes` (every commit is on `origin`) → `git branch -D <name>`. The others stay; name them in the report.
+  5. Each of `main`, `master`, `develop` that exists locally and is checked out in no worktree → `git fetch origin <name>:<name>`. Not a fast-forward → report it and go on.
 - **No git**: runs when step 7 left the card in `Done` (or the item done). Otherwise keep the files and say why.
 
 Then, with a ticket, delete its files (untracked, so `rm -rf`): its `<dir>/.scratch/<id>-<slug>/` folder and `<dir>/.handoffs/HANDOFF-<id>.md`. A `.scratch/` or `.handoffs/` folder left empty → remove it. Other tickets' files stay.
 
-**Done when:** neither ticket path exists, and outside a linked worktree `<branch>` is gone and `<base>` is checked out.
+**Done when:** neither ticket path exists, `git branch --list <branch>` prints nothing, and `HEAD` is on `<base>` (in a linked worktree: detached at `origin/<base>`).
 
 ## 9. Report
 
 - commits, one subject each (lint commit included)
 - PR URL, new or reused
 - board state of the card or item
-- deleted branch, current branch, removed paths
+- deleted branches, current branch or detached `HEAD`, removed paths
+- session branches kept and why; fast-forwarded branches
 - every skipped step and why
 
 **Done when:** the report has a line for each item above.
