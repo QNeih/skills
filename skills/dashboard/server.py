@@ -479,29 +479,19 @@ def user_text(content):
 _facts_cache = {}
 
 
-PREVIEW_START = "mcp__Claude_Browser__preview_start"
-
-
 def transcript_facts(path):
-    """First real user prompt, every git branch the transcript recorded (a worktree session
-    starts on claude/<name>; /work then cuts feature/<id> there), and the input (`name` or `url`)
-    of every preview_start call, deduplicated. Cached per file version."""
+    """First real user prompt and every git branch the transcript recorded (a worktree session
+    starts on claude/<name>; /work then cuts feature/<id> there). Cached per file version."""
     st = path.stat()
     key = (str(path), st.st_mtime_ns, st.st_size)
     if key not in _facts_cache:
-        first, branches, servers = None, set(), []
+        first, branches = None, set()
         for e in read_lines(path):
             if e.get("gitBranch"):
                 branches.add(e["gitBranch"])
             if first is None and e.get("type") == "user" and not e.get("isSidechain") and not e.get("isMeta"):
                 first = user_text((e.get("message") or {}).get("content"))
-            if e.get("type") == "assistant":
-                for b in (e.get("message") or {}).get("content") or []:
-                    if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == PREVIEW_START:
-                        start = {k: v for k, v in (b.get("input") or {}).items() if k in ("name", "url")}
-                        if start and start not in servers:
-                            servers.append(start)
-        _facts_cache[key] = {"firstPrompt": first, "branches": sorted(branches), "servers": servers}
+        _facts_cache[key] = {"firstPrompt": first, "branches": sorted(branches)}
     return _facts_cache[key]
 
 
@@ -549,7 +539,7 @@ def session_brief(s, transcripts=None):
             "state": session_state(s, transcripts), "lastActivityAt": s.get("lastActivityAt"),
             "summary": session_summary(s), "link": LINK.format(s["sessionId"]),
             "servers": [] if s.get("isArchived") else [{k: x[k] for k in ("name", "url", "error") if k in x}
-                                                       for x in session_servers(s, transcripts)],
+                                                       for x in session_servers(s)],
             "prs": [p["url"] for p in s.get("prs") or [] if p.get("url")]}
 
 
@@ -628,10 +618,10 @@ def ticket_sessions(ticket_id, project_dir, sessions, transcripts=None):
 
 
 # --- servers ---------------------------------------------------------------------------------
-# A session keeps the dev servers it started with preview_start until it is archived; then the
-# dashboard stops them (reaper thread). A server counts for a session only while something listens
-# on its port from inside the session's folder, so another worktree's server on a reused port and
-# this dashboard itself are never listed or stopped.
+# A session's dev servers are its folder's .claude/launch.json entries whose port something listens
+# on from inside that folder, however the server was started (preview_start or Bash). They run until
+# the session is archived; then the dashboard stops them (reaper thread). Another worktree's server
+# on a reused port and this dashboard itself are never listed or stopped.
 
 REAP_EVERY = 30  # seconds
 
@@ -680,46 +670,36 @@ def owns(session_cwd, proc_cwd):
 
 
 def launch_configs(cwd):
-    """Configurations of the folder's .claude/launch.json by name; raises ValueError when the file
-    isn't the {"configurations": [{name, port, ...}]} shape."""
+    """Configurations of the folder's .claude/launch.json in file order ([] without the file);
+    raises ValueError when the file isn't the {"configurations": [{name, port, ...}]} shape."""
     f = Path(cwd, ".claude", "launch.json")
     if not f.is_file():
-        return {}
+        return []
     data = json.loads(f.read_text(encoding="utf-8"))
     configs = data.get("configurations") if isinstance(data, dict) else None
     if not isinstance(configs, list) or not all(isinstance(c, dict) for c in configs):
         raise ValueError("configurations is not a list of objects")
-    return {c.get("name"): c for c in configs}
+    return configs
 
 
-def session_servers(session, transcripts=None, listen=listeners):
-    """Running servers the session started: {name, url, port, pid}, plus {name, error} for one
-    that can't be checked (its launch.json entry is missing or broken, or lsof failed)."""
-    path, cwd = transcript_path(session, transcripts), session.get("cwd")
-    if not path or not cwd:
+def session_servers(session, *, listen=listeners):
+    """The session folder's launch.json servers that something listens on from inside that folder:
+    {name, url, port, pid}, plus {name, error} for one that can't be checked (a broken
+    launch.json, an entry without a port, or lsof failed). However the server was started."""
+    cwd = session.get("cwd")
+    if not cwd:
         return []
-    out, ports, configs = [], set(), None
     launch = "{}/.claude/launch.json".format(cwd)
-    for start in transcript_facts(path)["servers"]:
-        if "name" in start:
-            if configs is None:
-                try:
-                    configs = launch_configs(cwd)
-                except (OSError, ValueError) as e:
-                    configs = e
-            if isinstance(configs, Exception):
-                out.append({"name": start["name"], "error": "{}: {}".format(launch, configs)})
-                continue
-            c = configs.get(start["name"])
-            if not c or not isinstance(c.get("port"), int):
-                out.append({"name": start["name"], "error": "no port for it in " + launch})
-                continue
-            name, port, url = start["name"], c["port"], c.get("url") or "http://localhost:{}/".format(c["port"])
-        else:
-            port = local_port(start["url"])
-            if port is None:
-                continue  # an outside site, not a dev server
-            name, url = urllib.parse.urlparse(start["url"]).netloc, start["url"]
+    try:
+        configs = launch_configs(cwd)
+    except (OSError, ValueError) as e:
+        return [{"name": "launch.json", "error": "{}: {}".format(launch, e)}]
+    out, ports = [], set()
+    for c in configs:
+        name, port = c.get("name") or "?", c.get("port")
+        if not isinstance(port, int) or isinstance(port, bool):
+            out.append({"name": name, "error": "no port for it in " + launch})
+            continue
         if port in ports:
             continue
         ports.add(port)
@@ -730,14 +710,20 @@ def session_servers(session, transcripts=None, listen=listeners):
             continue
         pid = next((p for p, d in procs if p != os.getpid() and owns(cwd, d)), None)
         if pid:
-            out.append({"name": name, "url": url, "port": port, "pid": pid})
+            out.append({"name": name, "url": c.get("url") or "http://localhost:{}/".format(port), "port": port, "pid": pid})
     return out
 
 
-def reap_servers(sessions, transcripts=None, listen=listeners, kill=os.kill):
+def reap_servers(sessions, *, listen=listeners, kill=os.kill):
     """Stops (SIGTERM) the running servers of archived sessions, except one an unarchived session
     also lists. Returns the stopped servers."""
-    found = [(s, session_servers(s, transcripts, listen)) for s in sessions]
+    ports = {}  # many sessions share a folder; ask lsof once per port per pass
+
+    def listen_once(port):
+        if port not in ports:
+            ports[port] = listen(port)
+        return ports[port]
+    found = [(s, session_servers(s, listen=listen_once)) for s in sessions]
     keep = {x["pid"] for s, xs in found if not s.get("isArchived") for x in xs if "pid" in x}
     stopped = []
     for s, xs in found:

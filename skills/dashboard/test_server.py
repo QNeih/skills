@@ -315,83 +315,96 @@ class Weather(unittest.TestCase):
         self.assertEqual(w["fetchedAt"], 123)
 
 
-def preview_start(**inp):
-    return assistant([{"type": "tool_use", "id": "t", "name": "mcp__Claude_Browser__preview_start", "input": inp}])
-
-
 class Servers(Fixture):
-    """Servers a session started with preview_start: listed while their port answers from the
-    session's folder, stopped once the session is archived."""
+    """A session's servers are its folder's launch.json entries whose port something listens on
+    from inside the session's folder; they are stopped once the session is archived."""
 
     def setUp(self):
         super().setUp()
         self.wt = self.project + "/.claude/worktrees/x"
-        launch = Path(self.wt, ".claude", "launch.json")
-        launch.parent.mkdir(parents=True)
-        launch.write_text(json.dumps({"version": "0.0.1", "configurations": [
-            {"name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 5173}]}))
+        self.launch(self.wt, {"name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 5173},
+                    {"name": "api", "port": 4780, "url": "http://localhost:4780/docs"})
         self.procs = {}  # port -> (pid, cwd)
+
+    def launch(self, cwd, *configs):
+        f = Path(cwd, ".claude", "launch.json")
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({"version": "0.0.1", "configurations": list(configs)}))
 
     def listen(self, port):
         return [self.procs[port]] if port in self.procs else []
 
-    def test_starts_from_transcript(self):
-        s = self.session("local_1", cwd=self.wt, lines=[
-            user("go"), preview_start(name="web"), preview_start(url="http://127.0.0.1:4780/"), preview_start(url="https://example.com/"),
-            preview_start(name="web"), preview_start(name="gone")])
-        path = server.transcript_path(s, self.transcripts)
-        self.assertEqual(server.transcript_facts(path)["servers"],
-                         [{"name": "web"}, {"url": "http://127.0.0.1:4780/"}, {"url": "https://example.com/"}, {"name": "gone"}])
-
-    def test_listed_only_while_running_in_the_session_folder(self):
-        s = self.session("local_1", cwd=self.wt, lines=[
-            preview_start(name="web"), preview_start(url="http://localhost:4780/"), preview_start(url="https://example.com/"), preview_start(name="gone")])
-        self.procs = {5173: (11, self.wt + "/web"), 4780: (12, self.project)}  # 4780 runs from the main checkout
-        got = server.session_servers(s, self.transcripts, listen=self.listen)
-        self.assertEqual([(x["name"], x["url"], x.get("pid")) for x in got if "error" not in x],
-                         [("web", "http://localhost:5173/", 11)])
-        self.assertEqual([x["name"] for x in got if "error" in x], ["gone"])
+    def test_listed_while_a_launch_port_listens_from_the_session_folder(self):
+        s = self.session("local_1", cwd=self.wt)
+        self.procs = {5173: (11, self.wt + "/web"), 4780: (12, self.wt)}
+        self.assertEqual(server.session_servers(s, listen=self.listen), [
+            {"name": "web", "url": "http://localhost:5173/", "port": 5173, "pid": 11},
+            {"name": "api", "url": "http://localhost:4780/docs", "port": 4780, "pid": 12}])
         self.procs = {}
-        self.assertEqual([x for x in server.session_servers(s, self.transcripts, listen=self.listen) if "error" not in x], [])
+        self.assertEqual(server.session_servers(s, listen=self.listen), [])
 
-    def test_main_checkout_session_does_not_own_worktree_servers(self):
-        s = self.session("local_1", lines=[preview_start(url="http://localhost:5173/")])
+    def test_listener_from_another_folder_is_not_listed(self):
+        s = self.session("local_1", cwd=self.wt)
+        self.procs = {5173: (11, self.project), 4780: (12, self.project + "/.claude/worktrees/xy")}
+        self.assertEqual(server.session_servers(s, listen=self.listen), [])
+
+    def test_main_checkout_session_does_not_own_nested_worktree_servers(self):
+        self.launch(self.project, {"name": "web", "port": 5173})
+        s = self.session("local_1")
         self.procs = {5173: (11, self.wt)}
-        self.assertEqual(server.session_servers(s, self.transcripts, listen=self.listen), [])
+        self.assertEqual(server.session_servers(s, listen=self.listen), [])
 
     def test_never_lists_the_dashboard_itself(self):
-        s = self.session("local_1", lines=[preview_start(url="http://127.0.0.1:4777/")])
-        self.procs = {4777: (server.os.getpid(), self.project)}
-        self.assertEqual(server.session_servers(s, self.transcripts, listen=self.listen), [])
+        s = self.session("local_1", cwd=self.wt)
+        self.procs = {4780: (server.os.getpid(), self.wt)}
+        self.assertEqual(server.session_servers(s, listen=self.listen), [])
+
+    def test_no_launch_json_means_no_servers(self):
+        s = self.session("local_1")
+        self.procs = {5173: (11, self.project)}
+        self.assertEqual(server.session_servers(s, listen=self.listen), [])
+
+    def test_broken_launch_json_gives_an_error_row(self):
+        f = Path(self.wt, ".claude", "launch.json")
+        s = self.session("local_1", cwd=self.wt)
+        f.write_text("[1]")
+        got = server.session_servers(s, listen=self.listen)
+        self.assertEqual(len(got), 1)
+        self.assertIn("not a list", got[0]["error"])
+        f.write_text("{")
+        self.assertIn(str(f), server.session_servers(s, listen=self.listen)[0]["error"])
+
+    def test_entry_without_a_port_gives_an_error_row(self):
+        self.launch(self.wt, {"name": "web"}, {"name": "api", "port": 4780})
+        s = self.session("local_1", cwd=self.wt)
+        self.procs = {4780: (12, self.wt)}
+        got = server.session_servers(s, listen=self.listen)
+        self.assertEqual(got[0]["name"], "web")
+        self.assertIn("no port", got[0]["error"])
+        self.assertEqual(got[1]["pid"], 12)
 
     def test_reap_stops_archived_unless_a_live_session_shares_it(self):
         other = self.project + "/.claude/worktrees/y"
-        self.session("local_1", cwd=self.wt, isArchived=True, lines=[preview_start(name="web")])
-        self.session("local_2", cwd=other, isArchived=True, lines=[preview_start(url="http://localhost:6000/")])
-        self.session("local_3", cwd=other, lines=[preview_start(url="http://localhost:6000/")])
+        self.launch(other, {"name": "app", "port": 6000})
+        self.session("local_1", cwd=self.wt, isArchived=True)
+        self.session("local_2", cwd=other, isArchived=True)
+        self.session("local_3", cwd=other)
         self.procs = {5173: (11, self.wt), 6000: (12, other)}
         killed = []
-        stopped = server.reap_servers(server.load_sessions(self.sessions), self.transcripts, listen=self.listen,
+        stopped = server.reap_servers(server.load_sessions(self.sessions), listen=self.listen,
                                       kill=lambda pid, sig: killed.append(pid))
         self.assertEqual(killed, [11])
         self.assertEqual([x["url"] for x in stopped], ["http://localhost:5173/"])
 
-    def test_broken_launch_json_hides_only_named_servers(self):
-        Path(self.wt, ".claude", "launch.json").write_text("[1]")
-        s = self.session("local_1", cwd=self.wt, lines=[preview_start(name="web"), preview_start(url="http://localhost:4780/")])
-        self.procs = {4780: (12, self.wt)}
-        got = server.session_servers(s, self.transcripts, listen=self.listen)
-        self.assertIn("not a list", got[0]["error"])
-        self.assertEqual(got[1]["url"], "http://localhost:4780/")
-
     def test_picks_the_owned_listener_and_reports_lsof_failure(self):
-        s = self.session("local_1", cwd=self.wt, lines=[preview_start(name="web")])
-        got = server.session_servers(s, self.transcripts, listen=lambda p: [(7, "/elsewhere"), (8, self.wt)])
+        self.launch(self.wt, {"name": "web", "port": 5173})
+        s = self.session("local_1", cwd=self.wt)
+        got = server.session_servers(s, listen=lambda p: [(7, "/elsewhere"), (8, self.wt)])
         self.assertEqual(got[0]["pid"], 8)
 
         def broken(port):
             raise RuntimeError("lsof broke")
-        self.assertEqual(server.session_servers(s, self.transcripts, listen=broken), [{"name": "web", "error": "lsof broke"}])
+        self.assertEqual(server.session_servers(s, listen=broken), [{"name": "web", "error": "lsof broke"}])
 
     def test_local_url(self):
         self.assertEqual(server.local_port("http://localhost:5173/x"), 5173)
