@@ -209,12 +209,11 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 #toast.show { display: block; }
 #overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, .75); display: none; align-items: center; justify-content: center; z-index: 10; }
 #overlay.show { display: flex; }
-#ask { position: fixed; inset: 0; background: rgba(0, 0, 0, .75); display: none; align-items: center; justify-content: center; z-index: 10; }
-#ask.show { display: flex; }
-#ask .panel { width: min(900px, 92vw); border-color: var(--line2); }
-#ask .panel > .label { color: var(--head); padding-top: 18px; }
-#ask .panel > .label .spark { color: var(--clay); }
-#ask .extra-hint { padding-bottom: 14px; }
+.homebox { flex: none; margin: 12px 15px 0; border-color: var(--line); cursor: text; }
+.homebox.sel { border-color: var(--clay); background: var(--sel); }
+.homebox textarea { height: 3em; }
+.loose .st { font-size: var(--fs-s); color: var(--label); flex: none; }
+.loose .when { font-size: var(--fs-s); color: var(--dim); flex: none; width: 8ch; text-align: right; }
 #overlay .panel { width: min(1000px, 92vw); max-height: 86vh; border-color: var(--line2); }
 #overlay .panel > .label { color: var(--head); padding-top: 18px; }
 #overlay .panel > .label .spark { color: var(--clay); }
@@ -235,7 +234,6 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 </div>
 <div id="toast"></div>
 <div id="overlay"></div>
-<div id="ask"></div>
 <script>
 'use strict';
 const $ = s => document.querySelector(s);
@@ -247,9 +245,10 @@ const S = {
   briefing: null, briefingErr: null, projects: null, projectsErr: null, focus: 0, homeSel: 0,
   ticket: null, ticketErr: null, ticketSel: 0, flat: [], extra: null, // extra: the prompt box's text while it is open
   last: {}, // project name → hash of the screen Quinn was last on in it
-  drafts: {}, // hash (or 'ask:<project>') → unsent prompt text, kept while tab is on another project
+  drafts: {}, // ticket hash → unsent prompt text, kept while tab is on another project
+  boxText: {}, // project name → text in its home prompt box
   promptNext: null, // hash of the ticket whose prompt box opens with its next command once it loads (⏎ on home)
-  selBy: {}, // project name → id of the ticket selected on its home
+  selBy: {}, // project name → key of the row selected on its home (homeRows)
 };
 
 /* ---------- api ---------- */
@@ -317,7 +316,7 @@ function updateMeta() {
 }
 const HINTS = {
   start: [],
-  home: [['↑↓', 'select'], ['→', 'next command'], ['⏎', 'edit next command'], ['space / 1–9', 'open'], ['tab', 'project'], ['⇧↑↓', 'move project'], ['b', 'bg session'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
+  home: [['↑↓', 'select'], ['→', 'next command'], ['⏎', 'edit next command'], ['space / 1–9', 'open'], ['tab', 'project'], ['⇧↑↓', 'move project'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
   ticket: [['↑↓', 'select'], ['space', 'new /work bg session'], ['⏎', 'edit next command'], ['tab', 'project'], ['esc', 'back'], ['←', 'back']],
   session: [['↑↓', 'scroll'], ['a a', 'remove session'], ['← / esc', 'back'], ['tab', 'project']],
 };
@@ -335,8 +334,14 @@ function updateHints() {
     else h.push(['→', 'edit prompt']);
   }
   if (S.route.name === 'home') {
-    const p = focusedProject();
-    for (const j of (p && p.jumps) || []) h.push([j.key, j.label]);
+    const p = focusedProject(), row = homeRows(p)[S.homeSel];
+    if (document.activeElement && document.activeElement.id === 'home-box') {
+      h = [['⏎', 'start bg session'], ['⇧⏎', 'new line'], ['tab', 'project (keeps text)'], ['esc', 'leave box']];
+    } else {
+      if (row && row.kind === 'box') h.splice(1, 3, ['→', '/ticket'], ['⏎', 'type prompt'], ['1–9', 'open']);
+      if (row && row.kind === 'session') h.splice(1, 3, ['→ / space', 'open session'], ['a a', 'remove session'], ['1–9', 'open']);
+      for (const j of (p && p.jumps) || []) h.push([j.key, j.label]);
+    }
   }
   if (S.route.name !== 'start') h = h.concat([['?', 'keys']]);
   $('#hints').innerHTML = h.map(([k, l]) => `<span><kbd>${esc(k)}</kbd>${esc(l)}</span>`).join('');
@@ -357,9 +362,9 @@ function toggleOverlay(force) {
   const groups = [
     ['everywhere', [['?', 'toggle this list'], ['tab / ⇧tab', 'next / previous project: its last screen, unsent text kept'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
-    ['home', [['space / 1–9', 'open the selected / numbered ticket (in progress first, then to do)'], ['→', 'background session with the ticket\'s next command: /work <id>, then /send'], ['⏎', 'ticket view with the next command in its prompt box; ⏎ again starts it in the background'], ['b', 'prompt box: start a background session (claude --bg) in the project with your text'], ['⇧↑ / ⇧↓', 'move project up / down in the rail'], ['s', 'background session: fix new Sentry errors'], ['d', 'background session: Dependabot review'], ['c', 'clock screen'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
+    ['home', [['↑↓', 'prompt box, then sessions without a ticket, then tickets'], ['→ on the box', 'fill in /ticket and type'], ['⏎ on the box', 'type a prompt; ⏎ starts a background session (claude --bg) in the project and opens it'], ['esc in the box', 'leave it; the text stays'], ['→ / space on a session', 'open its session view'], ['a a on a session', 'stop its dev servers, stop and remove it (claude rm)'], ['space / 1–9', 'open the selected / numbered ticket (in progress first, then to do)'], ['→ on a ticket', 'background session with the ticket\'s next command: /work <id>, then /send'], ['⏎ on a ticket', 'ticket view with the next command in its prompt box; ⏎ again starts it in the background'], ['⇧↑ / ⇧↓', 'move project up / down in the rail'], ['s', 'background session: fix new Sentry errors'], ['d', 'background session: Dependabot review'], ['c', 'clock screen'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
     ['ticket', [['↑↓ / j k', 'select session'], ['→ / space', 'on a background session: open its session view'], ['a a', 'on a background session: stop its dev servers, stop and remove it (claude rm)'],['space', 'open the selected app session in the app; no sessions yet: background session with /work <id>'], ['⏎', 'prompt box with the next command; ⏎ again starts a background session with it'], ['→ / space / click', 'on a server row: open it in a new tab of your normal Chrome'], ['→', 'no live sessions: prompt box'], ['←', 'no live sessions: back']]],
-    ['session', [['↑↓ / j k', 'scroll the chat'], ['a a', 'stop its dev servers, stop and remove the session (claude rm)'], ['← / esc', 'back to the ticket view']]],
+    ['session', [['↑↓ / j k', 'scroll the chat'], ['a a', 'stop its dev servers, stop and remove the session (claude rm)'], ['← / esc', 'back to the ticket view; home for a session without a ticket']]],
   ];
   const p = focusedProject();
   if (p && (p.jumps || []).length) groups.push([`jumps · ${p.name}`, p.jumps.map(j => [j.key, j.label])]);
@@ -402,7 +407,6 @@ function route() {
   if (S.route.name === 'ticket' && S.extra !== null) S.drafts[S.route.hash] = S.extra;
   S.route = parseHash();
   if (S.route.hash !== S.promptNext) S.promptNext = null;
-  closeAsk();
   const r = S.route;
   $('#app').classList.toggle('start', r.name === 'start');
   if (r.name === 'start') { renderStart(); loadWeather(); loadHome(); }
@@ -414,7 +418,7 @@ function route() {
   else if (r.name === 'ticket') {
     S.last[r.project] = r.hash;
     syncFocus();
-    const at = homeItems(focusedProject()).findIndex(t => t.id === r.id);
+    const at = rowAt(focusedProject(), 't:' + r.id);
     if (at >= 0) S.homeSel = at;
     setCrumbs([{ text: 'home', href: '#/' }, { text: r.id, id: true }]);
     if (!S.ticket || S.ticket.id !== r.id) { S.ticket = null; S.ticketSel = 0; S.flat = []; }
@@ -448,10 +452,10 @@ function showProject(idx) {
   const p = (S.projects || [])[idx];
   if (!p) return;
   if (S.route.name === 'ticket' && S.extra !== null) { S.drafts[S.route.hash] = S.extra; S.extra = null; }
-  const cur = focusedProject(), sel = homeItems(cur)[S.homeSel];
-  if (cur && sel) S.selBy[cur.name] = sel.id;
+  const cur = focusedProject(), sel = homeRows(cur)[S.homeSel];
+  if (cur && sel) S.selBy[cur.name] = sel.key;
   S.focus = idx; S.armed = null;
-  S.homeSel = Math.max(0, homeItems(p).findIndex(t => t.id === S.selBy[p.name]));
+  S.homeSel = Math.max(0, rowAt(p, S.selBy[p.name]));
   let to = S.last[p.name] || '#/';
   const m = to.match(/^#\/ticket\/[^/]+\/(.+)$/);
   if (m && !(p.next || []).some(t => t.id === decodeURIComponent(m[1]))) to = '#/';
@@ -464,11 +468,21 @@ function homeItems(p) {
   if (!p) return [];
   return (p.next || []).slice(0, TICKETS).map((t, i) => ({ ...t, num: i + 1 }));
 }
+// The selectable rows of a project's home, in order: the prompt box, its background sessions without a ticket, its tickets.
+function homeRows(p) {
+  if (!p) return [];
+  return [{ kind: 'box', key: 'box' }, ...(p.ticketless || []).map(s => ({ kind: 'session', key: 's:' + s.sessionId, s })),
+    ...homeItems(p).map(t => ({ kind: 'ticket', key: 't:' + t.id, t }))];
+}
+const rowAt = (p, key) => homeRows(p).findIndex(r => r.key === key);
 // Home data is global: fetched on the start screen too, so home is ready when Quinn gets there.
 function loadHome() { loadProjects(); loadBriefing(S.gen); }
 async function loadProjects() {
+  const was = (homeRows(focusedProject())[S.homeSel] || {}).key;
   try { S.projects = (await api('/api/projects')) || []; S.projectsErr = null; }
   catch (e) { S.projectsErr = e.message; }
+  const at = rowAt(focusedProject(), was); // rows above it come and go; the selection stays on its row
+  if (at >= 0) S.homeSel = at;
   clampHome(); syncFocus(); renderHome(); renderRail();
   if (S.route.name === 'home') updateHints();
 }
@@ -483,7 +497,7 @@ async function loadBriefing(gen) {
 function clampHome() {
   const n = (S.projects || []).length;
   S.focus = n ? Math.min(Math.max(S.focus, 0), n - 1) : 0;
-  const m = homeItems(focusedProject()).length;
+  const m = homeRows(focusedProject()).length;
   S.homeSel = m ? Math.min(Math.max(S.homeSel, 0), m - 1) : 0;
 }
 // Home and ticket screens sit beside the project rail; the start screen replaces both.
@@ -550,24 +564,40 @@ function renderHome() {
   if (!S.projects) { box.innerHTML = `<section class="panel"><div class="status">loading projects…</div></section>`; return; }
   if (!S.projects.length) { box.innerHTML = `<section class="panel"><div class="empty">no projects</div></section>`; return; }
   const keep = box.querySelector('.scroll'), top = keep ? keep.scrollTop : 0;
+  const old = $('#home-box'), typing = old && document.activeElement === old, caret = old ? old.selectionStart : 0;
   box.innerHTML = projectPanel(focusedProject(), S.focus, briefLines(focusedProject().name));
   const sc = box.querySelector('.scroll');
   if (sc) sc.scrollTop = top;
+  const ta = $('#home-box'), name = focusedProject().name;
+  ta.value = S.boxText[name] || '';
+  ta.addEventListener('input', () => { S.boxText[name] = ta.value; });
+  ta.addEventListener('focus', () => { if (S.homeSel !== 0) { S.homeSel = 0; renderHome(); } updateHints(); });
+  ta.addEventListener('blur', updateHints);
+  if (typing) { ta.focus(); ta.setSelectionRange(caret, caret); }
   const sel = box.querySelector('.row.sel');
   if (sel) {
     const g = sel.nextElementSibling;
     if (g && g.classList.contains('goal')) g.scrollIntoView({ block: 'nearest' });
     sel.scrollIntoView({ block: 'nearest' });
   }
+  updateHints();
 }
 const STATES = [['running', 'running'], ['blocked', 'needs you'], ['waiting', 'waiting on you'], ['archived', 'archived']];
 function projectPanel(p, idx, lines) {
-  const items = homeItems(p);
+  const items = homeItems(p), loose = p.ticketless || [], off = 1 + loose.length;
   const armed = key => S.armed && S.armed.idx === idx && S.armed.key === key ? ' armed' : '';
   const jump = key => (p.jumps || []).find(j => j.key === key);
   const badge = key => `<span class="jk">${esc(key)}</span>`;
+  const looseRow = (s, i) => {
+    const sel = 1 + i === S.homeSel;
+    return `<div class="row loose${sel ? ' sel' : ''}${armedFor(s.sessionId) ? ' armed' : ''}" data-act="loose" data-sid="${esc(s.sessionId)}">
+      <span class="k"></span><span class="dot ${esc(s.state)}"></span><span class="t" title="${esc(s.title)}">${esc(s.title || s.sessionId)}</span>
+      <span class="tag">bg ${esc(s.id)}</span><span class="st">${esc(s.state === 'blocked' ? 'needs you' : s.state)}</span>
+      <span class="when">${esc(relTime(s.lastActivityAt))}</span>${sel ? badge('→') : ''}</div>` +
+      (sel && s.summary ? `<div class="goal" title="${esc(s.summary)}">${esc(s.summary)}</div>` : '');
+  };
   const row = (t, i) => {
-    const sel = i === S.homeSel;
+    const sel = off + i === S.homeSel;
     const tags = [];
     if ((t.blockedBy || []).length) tags.push(`<span class="tag block">blocked by ${esc(t.blockedBy.join(', '))}</span>`);
     if (t.urgent) tags.push('<span class="tag urgent">urgent</span>');
@@ -589,7 +619,9 @@ function projectPanel(p, idx, lines) {
   return `<section class="panel proj focused">
     <div class="label"><span class="pname">${esc(p.name)}</span>${p.key ? `<span class="pkey">${esc(p.key)}</span>` : ''}
       <span class="r">${p.background ? `${p.background} bg running · ` : ''}${esc(relTime(p.lastActivityAt))}</span></div>
+    <div class="extra homebox${S.homeSel === 0 ? ' sel' : ''}" data-act="box"><span class="prompt">&gt;</span><textarea id="home-box" placeholder="${S.homeSel === 0 ? '/ticket →' : ''}"></textarea></div>
     <div class="scroll">
+      ${loose.length ? `<div class="section"><div class="label">sessions<span class="r">${loose.length}</span></div>${loose.map(looseRow).join('')}</div>` : ''}
       <div class="section"><div class="label">tickets${items.length ? `<span class="r">${items.length}</span>` : ''}</div>${p.error ? `<div class="errtext">${esc(p.error)}</div>` : ''}${items.length ? items.map(row).join('') : '<div class="empty">—</div>'}</div>
       <div class="section"><div class="label">to-do</div>${todo.length ? todo.map(todoLine).join('') : '<div class="empty">—</div>'}</div>
     </div></section>`;
@@ -646,44 +678,45 @@ async function runJump(idx, key) {
   } catch (e) { fail(e); }
   return true;
 }
-// Enter on a project: a prompt box; ⏎ starts a background session (claude --bg) in the project's folder.
-function openAsk(project) {
-  const a = $('#ask');
-  a.innerHTML = `<div class="panel"><div class="label"><span class="spark">✻</span>new background session · ${esc(project)}</div>
-    <div class="extra"><span class="prompt">&gt;</span><textarea id="ask-text" placeholder="Ask about ${esc(project)} …"></textarea></div>
-    <div class="extra-hint">⏎ start in the background · ⇧⏎ new line · ← (empty) or esc close</div></div>`;
-  a.dataset.project = project;
-  a.className = 'show';
-  const ta = $('#ask-text');
-  ta.value = S.drafts['ask:' + project] || '';
-  delete S.drafts['ask:' + project];
-  ta.focus();
+// The home prompt box: ⏎ starts a background session (claude --bg) in the project's folder with
+// the text and opens its session view.
+function focusBox(fill) {
+  const ta = $('#home-box'), p = focusedProject();
+  if (!ta || !p) return;
+  if (fill && !ta.value.trim()) S.boxText[p.name] = ta.value = fill;
+  ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
 }
-function closeAsk(keep) {
-  const a = $('#ask'), ta = $('#ask-text');
-  if (keep && ta && ta.value.trim()) S.drafts['ask:' + a.dataset.project] = ta.value;
-  a.className = ''; a.innerHTML = '';
+async function submitBox(p, text) {
+  if (S.boxBusy) return;
+  S.boxBusy = true;
+  const j = await startSession(p.name, text);
+  S.boxBusy = false;
+  if (!j) return; // failed: the toast says why, the text stays
+  delete S.boxText[p.name];
+  if (S.route.name === 'home' && focusedProject() === p) go(sessionHash(p.name, null, j.sessionId));
 }
-function askKey(e, ta) {
-  if (e.key === 'Escape' || (e.key === 'ArrowLeft' && !ta.value.trim())) { e.preventDefault(); closeAsk(); }
+function boxKey(e, ta) {
+  const empty = !ta.value.trim();
+  if (e.key === 'Escape' || (empty && e.key === 'ArrowLeft')) { e.preventDefault(); ta.blur(); }
+  else if (empty && e.key === 'ArrowDown') { e.preventDefault(); ta.blur(); S.homeSel = Math.min(1, homeRows(focusedProject()).length - 1); renderHome(); }
   else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
-    if (!ta.value.trim()) return;
-    startSession($('#ask').dataset.project, ta.value.trim());
-    closeAsk();
+    if (!empty) submitBox(focusedProject(), ta.value.trim());
   }
 }
 function homeKey(e) {
   const k = e.key;
-  const items = homeItems(focusedProject());
-  const t = items[S.homeSel], p = focusedProject();
+  const p = focusedProject(), items = homeItems(p), rows = homeRows(p), row = rows[S.homeSel];
+  const t = row && row.kind === 'ticket' ? row.t : null;
   if (e.shiftKey && (k === 'ArrowUp' || k === 'ArrowDown')) { moveProject(k === 'ArrowUp' ? -1 : 1); return true; }
-  if (k === 'ArrowDown' || k === 'j') { S.homeSel = Math.min(S.homeSel + 1, Math.max(items.length - 1, 0)); renderHome(); return true; }
+  if (k === 'ArrowDown' || k === 'j') { S.homeSel = Math.min(S.homeSel + 1, Math.max(rows.length - 1, 0)); renderHome(); return true; }
   if (k === 'ArrowUp' || k === 'k') { S.homeSel = Math.max(S.homeSel - 1, 0); renderHome(); return true; }
+  if (row && row.kind === 'box' && (k === 'ArrowRight' || k === 'Enter')) { focusBox(k === 'ArrowRight' ? '/ticket ' : null); return true; }
+  if (row && row.kind === 'session' && (k === ' ' || k === 'ArrowRight')) { go(sessionHash(p.name, null, row.s.sessionId)); return true; }
+  if (row && row.kind === 'session' && k === 'a') { removeSession(row.s, renderHome); return true; }
   if (k === ' ') { if (t) openTicket(p.name, t.id); return true; }
   if (k === 'ArrowRight') { if (t) runNext(p.name, t.id); return true; }
   if (k === 'Enter') { if (t) { S.promptNext = ticketHash(p.name, t.id); openTicket(p.name, t.id); } return true; }
-  if (k === 'b') { if (p) openAsk(p.name); return true; }
   if (/^[1-9]$/.test(k)) { const n = items.find(x => x.num === Number(k)); if (n) openTicket(p.name, n.id); return true; }
   if (k === 'r') { refreshBriefing(); return true; }
   if (k === 'c') { go('#/start'); return true; }
@@ -812,7 +845,7 @@ async function openInApp(sessionId) {
 }
 // Starts a `claude --bg` session in the project's folder with the text as its first prompt; the app stays where it is.
 async function startSession(project, text) {
-  try { const j = await api('/api/bg-session', { project, text }); toast(`Background session ${j.id} started: ${text}`); loadProjects(); } catch (e) { fail(e); }
+  try { const j = await api('/api/bg-session', { project, text }); toast(`Background session ${j.id} started: ${text}`); loadProjects(); return j; } catch (e) { fail(e); }
 }
 // a, twice within 2 s: stops the session's dev servers, then stops and removes it (claude rm).
 // A refusal (unpushed or uncommitted work) comes back as a toast and the session stays.
@@ -831,6 +864,7 @@ async function removeSession(s, render) {
     toast(`Removed ${s.title || s.id}`);
     if (S.route.name === 'session' && S.route.sid === s.sessionId) back();
     else if (S.route.name === 'ticket') loadTicket();
+    else if (S.route.name === 'home') loadProjects();
   } catch (e) { fail(e); }
 }
 const aliveSessions = () => S.flat.some(f => f.s && f.s.state !== 'archived');
@@ -1038,13 +1072,12 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Tab') {
     e.preventDefault();
     if (S.overlay) toggleOverlay(false);
-    if ($('#ask').className) closeAsk(true);
     switchProject(e.shiftKey ? -1 : 1);
     return;
   }
   if (S.route.name === 'start') { e.preventDefault(); go('#/'); return; }
   if (e.target && e.target.id === 'extra') { extraKey(e, e.target); return; }
-  if (e.target && e.target.id === 'ask-text') { askKey(e, e.target); return; }
+  if (e.target && e.target.id === 'home-box') { boxKey(e, e.target); return; }
   if (e.key === '?') { e.preventDefault(); toggleOverlay(); return; }
   if (S.overlay) {
     if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); toggleOverlay(false); }
@@ -1056,16 +1089,17 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('click', e => {
   if (S.route.name === 'start') { go('#/'); return; }
-  if ($('#ask').className) { if (!e.target.closest('#ask .panel')) closeAsk(); return; }
   if (S.overlay) { if (!e.target.closest('#overlay .panel')) toggleOverlay(false); return; }
   const el = e.target.closest('[data-act]');
   if (!el || e.target.closest('a[href^="http"]')) return;
   const a = el.dataset.act;
   if (a === 'ticket') {
-    S.homeSel = Math.max(0, homeItems(focusedProject()).findIndex(t => t.id === el.dataset.id));
+    S.homeSel = Math.max(0, rowAt(focusedProject(), 't:' + el.dataset.id));
     openTicket(el.dataset.project, el.dataset.id);
   } else if (a === 'jump') runJump(Number(el.dataset.idx), el.dataset.key);
   else if (a === 'card') showProject(Number(el.dataset.idx));
+  else if (a === 'box') focusBox();
+  else if (a === 'loose') go(sessionHash(focusedProject().name, null, el.dataset.sid));
   else if (a === 'extra') openExtra();
   else if (a === 'session') {
     S.ticketSel = Number(el.dataset.i); renderTicket();

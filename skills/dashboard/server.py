@@ -336,23 +336,28 @@ def briefing_jumps(name, briefing):
 
 
 def project_view(name, briefing, sessions):
-    """sessions: app and background sessions together."""
+    """sessions: app and background sessions together. `ticketless`: the project's background
+    sessions that match no ticket on its board (any column), newest first."""
     info = lookup(name)
     d = info.get("dir", "none")
     view = {"name": name, "dir": None if d == "none" else d, "board": info.get("board"), "key": info.get("key"),
-            "error": None, "next": [], "jumps": [], "lastActivityAt": None, "running": 0, "background": 0}
-    errors = []
+            "error": None, "next": [], "jumps": [], "lastActivityAt": None, "running": 0, "background": 0,
+            "ticketless": []}
+    errors, board_ids = [], []
     if d == "none":
         errors.append("folder: " + info.get("reason", "not found"))
     try:
         if info.get("board") == "vault":
             cards = parse_board(Path(info["board-file"]).read_text(encoding="utf-8"))
+            board_ids = [c["id"] for c in cards]
             view["next"] = [dict(id=c["id"], title=c["title"], column=c["column"], goal=c["goal"],
                                  blockedBy=blocked_by(c, cards), urgent=c["urgent"], active=c["column"] == "in progress")
                              for c in home_vault(cards)[:MAX_TICKETS]]
         elif jira_key(info):
             view["key"] = jira_key(info)
-            view["next"] = jira_board(view["key"])[:MAX_TICKETS]
+            issues = jira_board(view["key"])
+            board_ids = [i["id"] for i in issues]
+            view["next"] = issues[:MAX_TICKETS]
     except Exception as e:
         traceback.print_exc()
         errors.append(str(e))
@@ -366,6 +371,9 @@ def project_view(name, briefing, sessions):
         view["background"] = sum(1 for s in mine if s.get("kind") == "background" and session_state(s) == "running")
         for t in view["next"]:
             t["sessionCounts"] = ticket_states(t["id"], view["dir"], mine)
+        on_board = set().union(*(matched_sessions(i, view["dir"], mine) for i in board_ids))
+        loose = [s for s in mine if s.get("kind") == "background" and s["sessionId"] not in on_board]
+        view["ticketless"] = [session_brief(s) for s in sorted(loose, key=lambda s: -(s.get("startedAt") or 0))]
     return view
 
 
@@ -1278,7 +1286,8 @@ def bg_session_name(project, text):
 
 def post_bg_session(body):
     """Starts a background session (`claude --bg`) in the project's folder with the text as its
-    first prompt. No claude:// link, so the app shows no confirmation and stays in the background."""
+    first prompt. No claude:// link, so the app shows no confirmation and stays in the background.
+    Returns its short id and, from the CLI's session list, its sessionId (the session view's key)."""
     project, text = need(body, "project", "text")
     if not text.strip():
         raise ApiError(400, "text is empty")
@@ -1289,7 +1298,10 @@ def post_bg_session(body):
     m = BG_ID.search(out)
     if not m:
         raise ApiError(500, "claude --bg printed no session id: " + out.strip())
-    return {"ok": True, "id": m.group(1)}
+    s = next((s for s in background_sessions() if s["id"] == m.group(1)), None)
+    if not s:
+        raise ApiError(500, "started background session {} is not in `claude agents`".format(m.group(1)))
+    return {"ok": True, "id": s["id"], "sessionId": s["sessionId"]}
 
 
 def post_session_remove(body, *, listen=listeners, kill=os.kill):
