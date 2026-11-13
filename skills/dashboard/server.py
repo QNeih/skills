@@ -641,14 +641,18 @@ def lsof(*args):
     return p.stdout.decode("utf-8", "replace")
 
 
-def listener(port):
-    """(pid, cwd) of the process listening on the TCP port, or None."""
-    pids = lsof("-nP", "-iTCP:{}".format(port), "-sTCP:LISTEN", "-t").split()
+def listeners(port):
+    """[(pid, cwd)] of every process listening on the TCP port (IPv4 and IPv6, forked workers)."""
+    pids = sorted(set(lsof("-nP", "-iTCP:{}".format(port), "-sTCP:LISTEN", "-t").split()))
     if not pids:
-        return None
-    pid = int(pids[0])
-    cwd = next((l[1:] for l in lsof("-a", "-p", str(pid), "-d", "cwd", "-Fn").splitlines() if l.startswith("n")), None)
-    return (pid, cwd) if cwd else None
+        return []
+    out, pid = [], None
+    for line in lsof("-a", "-p", ",".join(pids), "-d", "cwd", "-Fpn").splitlines():
+        if line.startswith("p"):
+            pid = int(line[1:])
+        elif line.startswith("n") and pid is not None:
+            out.append((pid, line[1:]))
+    return out
 
 
 def owns(session_cwd, proc_cwd):
@@ -658,29 +662,39 @@ def owns(session_cwd, proc_cwd):
 
 
 def launch_configs(cwd):
+    """Configurations of the folder's .claude/launch.json by name; raises ValueError when the file
+    isn't the {"configurations": [{name, port, ...}]} shape."""
     f = Path(cwd, ".claude", "launch.json")
     if not f.is_file():
         return {}
-    return {c.get("name"): c for c in json.loads(f.read_text(encoding="utf-8")).get("configurations") or []}
+    data = json.loads(f.read_text(encoding="utf-8"))
+    configs = data.get("configurations") if isinstance(data, dict) else None
+    if not isinstance(configs, list) or not all(isinstance(c, dict) for c in configs):
+        raise ValueError("configurations is not a list of objects")
+    return {c.get("name"): c for c in configs}
 
 
-def session_servers(session, transcripts=None, listen=listener):
-    """Running servers the session started: {name, url, port, pid}, plus {name, error} for a
-    preview_start name its folder's launch.json doesn't define (any longer)."""
+def session_servers(session, transcripts=None, listen=listeners):
+    """Running servers the session started: {name, url, port, pid}, plus {name, error} for one
+    that can't be checked (its launch.json entry is missing or broken, or lsof failed)."""
     path, cwd = transcript_path(session, transcripts), session.get("cwd")
     if not path or not cwd:
         return []
     out, ports, configs = [], set(), None
+    launch = "{}/.claude/launch.json".format(cwd)
     for start in transcript_facts(path)["servers"]:
         if "name" in start:
             if configs is None:
                 try:
                     configs = launch_configs(cwd)
-                except ValueError as e:
-                    return [{"name": start["name"], "error": "{}/.claude/launch.json: {}".format(cwd, e)}]
+                except (OSError, ValueError) as e:
+                    configs = e
+            if isinstance(configs, Exception):
+                out.append({"name": start["name"], "error": "{}: {}".format(launch, configs)})
+                continue
             c = configs.get(start["name"])
             if not c or not isinstance(c.get("port"), int):
-                out.append({"name": start["name"], "error": "not in {}/.claude/launch.json".format(cwd)})
+                out.append({"name": start["name"], "error": "no port for it in " + launch})
                 continue
             name, port, url = start["name"], c["port"], c.get("url") or "http://localhost:{}/".format(c["port"])
         else:
@@ -691,22 +705,27 @@ def session_servers(session, transcripts=None, listen=listener):
         if port in ports:
             continue
         ports.add(port)
-        proc = listen(port)
-        if proc and proc[0] != os.getpid() and owns(cwd, proc[1]):
-            out.append({"name": name, "url": url, "port": port, "pid": proc[0]})
+        try:
+            procs = listen(port)
+        except (RuntimeError, subprocess.TimeoutExpired) as e:
+            out.append({"name": name, "error": str(e)})
+            continue
+        pid = next((p for p, d in procs if p != os.getpid() and owns(cwd, d)), None)
+        if pid:
+            out.append({"name": name, "url": url, "port": port, "pid": pid})
     return out
 
 
-def reap_servers(sessions, transcripts=None, listen=listener, kill=os.kill):
+def reap_servers(sessions, transcripts=None, listen=listeners, kill=os.kill):
     """Stops (SIGTERM) the running servers of archived sessions, except one an unarchived session
     also lists. Returns the stopped servers."""
-    keep = {x["pid"] for s in sessions if not s.get("isArchived")
-            for x in session_servers(s, transcripts, listen) if "pid" in x}
+    found = [(s, session_servers(s, transcripts, listen)) for s in sessions]
+    keep = {x["pid"] for s, xs in found if not s.get("isArchived") for x in xs if "pid" in x}
     stopped = []
-    for s in sessions:
+    for s, xs in found:
         if not s.get("isArchived"):
             continue
-        for x in session_servers(s, transcripts, listen):
+        for x in xs:
             if "pid" in x and x["pid"] not in keep:
                 kill(x["pid"], signal.SIGTERM)
                 keep.add(x["pid"])
@@ -1112,11 +1131,10 @@ def post_open(body):
 def chrome_command(url):
     """Opens the URL in a new tab of Quinn's normal Chrome. `open -n` starts a Chrome process
     without --user-data-dir, which hands the URL to the Chrome already running on the default
-    profile (or starts it), never to the dashboard's own Chrome (its own --user-data-dir).
-    No Chrome → the default browser."""
-    if Path("/Applications/Google Chrome.app").is_dir():
-        return ["open", "-na", "Google Chrome", "--args", url]
-    return ["open", url]
+    profile (or starts it), never to the dashboard's own Chrome (its own --user-data-dir)."""
+    if not Path("/Applications/Google Chrome.app").is_dir():
+        raise ApiError(500, "Google Chrome is not in /Applications")
+    return ["open", "-na", "Google Chrome", "--args", url]
 
 
 def post_open_url(body):

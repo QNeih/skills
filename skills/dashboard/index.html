@@ -310,7 +310,7 @@ function updateHints() {
     if (S.extra !== null) h = [['⏎', 'start session'], ['⇧⏎', 'new line'], ['← unchanged / esc', 'close']];
     else if (aliveSessions()) {
       const f = S.flat[S.ticketSel];
-      h[1] = f && f.srv ? ['→ / space', 'open server in Chrome'] : ['space', 'open session'];
+      h[1] = f && f.srv && !f.srv.error ? ['→ / space', 'open server in Chrome'] : ['space', 'open session'];
       h = h.filter(([k]) => k !== '←');
     }
     else h.push(['→', 'edit prompt']);
