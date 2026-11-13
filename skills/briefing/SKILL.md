@@ -1,6 +1,6 @@
 ---
 name: briefing
-description: "Whole-day briefing across every active project: what Quinn did last workday, what's next, Jira changes, new Sentry errors, new Dependabot PRs, mail and Teams waiting on Quinn, today's meetings, open notes. Use when Quinn types \"/briefing\" or asks for the day's overview, in the morning or after a break."
+description: "Whole-day briefing across every active project: what Quinn did last workday, what's next, Jira changes, new Sentry errors, new Dependabot PRs, mail and Teams waiting on Quinn, today's meetings, open notes. Use when Quinn types \"/briefing\", asks for the day's overview or asks where things stand, in the morning or back from a break or time off."
 ---
 
 # Briefing
