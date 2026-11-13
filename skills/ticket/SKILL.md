@@ -66,10 +66,10 @@ Write the card block from the ticket text, in the board's language and line patt
 	<line>
 ```
 
-- Quinn's text is a rough dictation. Rewrite it as clean board text: correct spelling and grammar, drop filler and repeats, split run-on thoughts into the pattern's lines, and turn questions into what is to be found out ("Find out why /send fails from the app"). Keep every point and its meaning; add none.
+- Quinn's text is a rough dictation. Rewrite it as clean board text: correct spelling and grammar, drop filler and repeats, spell out shorthand ("fx" → "for example"), split run-on thoughts into the pattern's lines, and turn questions into what is to be found out ("Find out why /send fails from the app"). Keep every point and its meaning; add none.
 - Fill a line only from what the text says; drop the lines it gives nothing for, and list each dropped line as a loose end. Effort, priority, offer item and benefit values come from Quinn, verbatim.
 - Dependencies line: the ids the text names, checked to exist on the board; text names none → drop the line.
-- Tags: `#bug` when the text describes a defect, `#urgent` when it says urgent, `hotfix` in the title when it says hotfix (`/work` reads these for the branch name). Only tags the board already uses, plus `#bug`.
+- Tags: `#bug` only when the ticket is mainly a defect to fix, not when a defect is just mentioned or a feature fixes one along the way: the tag makes `/work` cut a `bugfix/` branch. `#urgent` when it says urgent, `hotfix` in the title when it says hotfix (`/work` reads these for the branch name). Only tags the board already uses, plus `#bug`.
 - Lines start with one tab.
 
 **Done when:** every point of the ticket text is on the card in clean wording, every line traces to the text, and every pattern line without a source is a loose end.
