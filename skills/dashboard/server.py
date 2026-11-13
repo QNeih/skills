@@ -205,7 +205,21 @@ def parse_board(text):
             card = None
     for c in cards:
         c["urgent"] = any("#urgent" in l for l in c["lines"])
+        c["goal"] = card_goal(c["lines"][1:])
     return cards
+
+
+def card_goal(desc):
+    """The ticket's goal in one sentence: a `Goal:`/`Ziel:` line, else the first sentence of the
+    first description line (meta lines Branch/PR/Braucht/Needs skipped). Same rule as briefing/gather.sh's vault_next."""
+    for line in desc:
+        m = re.match(r"(?:Goal|Ziel):\s*(.+)", line)
+        if m:
+            return m.group(1).strip()
+    desc = [l for l in desc if not re.match(r"(Branch|PR|Braucht|Needs)[ :]", l)]
+    if not desc:
+        return ""
+    return re.split(r"(?<=[.!?])\s", desc[0], 1)[0].strip()
 
 
 def blocked_by(card, cards):
@@ -322,9 +336,10 @@ def project_view(name, briefing, sessions):
     try:
         if info.get("board") == "vault":
             cards = parse_board(Path(info["board-file"]).read_text(encoding="utf-8"))
-            view["next"] = [dict(id=c["id"], title=c["title"], column=c["column"],
+            view["next"] = [dict(id=c["id"], title=c["title"], column=c["column"], goal=c["goal"],
                                  blockedBy=blocked_by(c, cards), urgent=c["urgent"]) for c in rank_vault(cards)[:3]]
-            view["inProgress"] = [{"id": c["id"], "title": c["title"]} for c in cards if c["column"] == "in progress"]
+            view["inProgress"] = [{"id": c["id"], "title": c["title"], "goal": c["goal"]}
+                                  for c in cards if c["column"] == "in progress"]
         elif jira_key(info):
             view["key"] = jira_key(info)
             nxt, view["inProgress"], top_pick = jira_board(view["key"])
@@ -735,7 +750,8 @@ def ticket_view(project, ticket_id):
                    "next": field(text, "Next:")}
         issues = read_issues(folders[0].parent)
     handoff = Path(d, ".handoffs", "HANDOFF-{}.md".format(ticket_id))
-    return {"id": ticket_id, "title": title, "column": column, "card": lines, "scratch": scratch,
+    return {"id": ticket_id, "title": title, "column": column, "goal": card_goal(lines[1:]), "card": lines,
+            "scratch": scratch,
             "handoff": str(handoff) if handoff.is_file() else None, "issues": issues,
             "workflow": workflow(column, scratch, issues),
             "sessions": ticket_sessions(ticket_id, d, load_sessions())}

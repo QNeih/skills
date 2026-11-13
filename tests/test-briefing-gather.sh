@@ -153,6 +153,10 @@ grep -q 'ACM-2' <<<"$s" && fail "next: no to-do pick when in progress" || pass "
 fixture_note Cards; mkdir -p "$VAULT/Projects/Cards"
 printf '## To do\n\n- [ ] **CRD-1 · Only card**\n' > "$VAULT/Projects/Cards/Cards Board.md"
 expect "next: vault board without a folder" "$(section Cards "$(gather "" "$(at "2026-11-09 12:00")")")" "next: CRD-1 · Only card (to do)"
+printf '## To do\n\n- [ ] **CRD-1 · Only card**\n\tSave reports. Then share.\n\tBraucht: nichts\n' > "$VAULT/Projects/Cards/Cards Board.md"
+expect "next: goal is the first sentence" "$(section Cards "$(gather "" "$(at "2026-11-09 12:00")")")" "next: CRD-1 · Only card — Save reports. (to do)"
+printf '## To do\n\n- [ ] **CRD-1 · Only card**\n\tLong text. More.\n\tZiel: Ship it\n' > "$VAULT/Projects/Cards/Cards Board.md"
+expect "next: goal line wins" "$(section Cards "$(gather "" "$(at "2026-11-09 12:00")")")" "next: CRD-1 · Only card — Ship it (to do)"
 
 # --- Folder lookup fails: one line with the reason and the fix; no folder at all stays silent (Quiet above) ---
 fixture_note Twin "repo: https://git.acme.test/acme/twin.git"

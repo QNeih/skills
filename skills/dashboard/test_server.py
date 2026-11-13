@@ -62,6 +62,17 @@ class Board(unittest.TestCase):
         self.assertEqual([i["id"] for i in ranked], ["J-4", "J-3", "J-2", "J-5", "J-1"])
 
 
+class Goal(unittest.TestCase):
+    def test_goal_line_wins(self):
+        self.assertEqual(server.card_goal(["Long text. More.", "Goal: Ship it"]), "Ship it")
+
+    def test_first_sentence_skipping_meta(self):
+        self.assertEqual(server.card_goal(["Branch `x`", "Save reports. Then share.", "Braucht: nichts"]), "Save reports.")
+
+    def test_no_description(self):
+        self.assertEqual(server.card_goal(["Braucht: BGH-1"]), "")
+
+
 class Fixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

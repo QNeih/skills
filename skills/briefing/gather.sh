@@ -192,12 +192,21 @@ fi
 [ -z "$today_lines" ] || printf '# Today\n%s' "$today_lines"
 
 # --- Next on a vault board: cards in In progress; none → first #urgent card in To do, else the first ---
+# Each card carries its goal in one sentence: its `Goal:`/`Ziel:` line, else the first sentence of its
+# first description line (meta lines Branch/PR/Braucht/Needs skipped). Same rule as dashboard/server.py.
 vault_next() {
-  awk '/^## / { col = tolower(substr($0, 4)); next }
-    /^- \[[ x]\] / { c = substr($0, 7); gsub(/\*\*/, "", c)
-      if (col == "in progress") ip = ip "next: " c " (in progress)\n"
-      else if (col == "to do") { if (!first) first = c; if (!urgent && c ~ /#urgent/) urgent = c } }
-    END { if (ip) printf "%s", ip; else if (urgent || first) print "next: " (urgent ? urgent : first) " (to do)" }' "$1"
+  awk 'function flush() { if (c == "") return; g = goal != "" ? goal : first; t = c (g != "" ? " — " g : "")
+      if (col == "in progress") ip = ip "next: " t " (in progress)\n"
+      else if (col == "to do") { if (!fst) fst = t; if (!urgent && c ~ /#urgent/) urgent = t }
+      c = "" }
+    /^## / { flush(); col = tolower(substr($0, 4)); next }
+    /^- \[[ x]\] / { flush(); c = substr($0, 7); gsub(/\*\*/, "", c); goal = first = ""; next }
+    c != "" && /^\t/ { l = substr($0, 2)
+      if (l ~ /^(Goal|Ziel):/) { sub(/^(Goal|Ziel):[ \t]*/, "", l); goal = l }
+      else if (first == "" && l !~ /^(Branch|PR|Braucht|Needs)[ :]/) { first = l; if (match(first, /[.!?][ \t]/)) first = substr(first, 1, RSTART) }
+      next }
+    { flush() }
+    END { flush(); if (ip) printf "%s", ip; else if (urgent || fst) print "next: " (urgent ? urgent : fst) " (to do)" }' "$1"
 }
 
 # need <cli> <source> <name>: a missing CLI is one line with its fix

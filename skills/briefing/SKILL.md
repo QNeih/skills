@@ -21,7 +21,7 @@ It prints header lines, then `# Today` and one `# <project>` section per project
 
 - Header: `today:`, `last workday:`, `since:` (start of the window for new items: the last `/briefing` run, or last workday 00:00 on the first run) and, on a later run the same day, `later run today: no Did`.
 - `prompt <date time> <text>` and `commit <date time> <subject>`: Quinn's prompts and commits from last workday through yesterday. `left off: <branch>, clean|uncommitted (N files)`.
-- `next: <ticket or card> (in progress|to do|top pick)`.
+- `next: <ticket or card>[ — <goal>] (in progress|to do|top pick)`; `<goal>` is a vault card's goal in one sentence.
 - `jira added: …` and `jira back: <key> <from> → <to> …`: changes in the open sprint since the last run.
 - `sentry <org>/<project>[ staging]: N issues, new: <shortIds>, regressed: <shortIds>`.
 - `dependabot: N new of M open: #<n> <title>; …`.
@@ -71,7 +71,7 @@ Write the brief from the lines of steps 1 and 2; every fact comes from them, the
 
 **Acme**
 - Did: <2–4 bullets>; left off: feature/ACM-12, clean
-- Next: ACM-12 Export grounding
+- Next: ACM-12 Export grounding — users can export reports with their sources
 - Jira:
 
   | Change | Key | Title | Status | Assignee |
@@ -92,7 +92,7 @@ Reply: "fix all" (Sentry) · "/dependabot-review" · "add all" · "done 2"
 - **Today** first: meetings, then messages (`+N more` last), then notes, then one `Packages:` line listing the `skill`/`plugin` lines, then errors. For an updated skill, add what changed in a few words, read from `git -C <projects root>/claude-config log -p --since=<since> -- agents/skills/<name>`. Then one section per `#` project section of the gather output, in its order; a project with only step 2 lines gets a section after them.
 - In a project section: Did, Next, Jira, Sentry, Dependabot, messages, notes, errors.
 - **Did**: 2–4 bullets condensed from the `prompt` and `commit` lines, grouped by ticket or topic, then the `left off` value. No `prompt`/`commit` lines (or `later run today`) → no Did line.
-- **Next**: every `next:` line, key and title.
+- **Next**: every `next:` line, key and title; then the goal after ` — ` when the line has one, else one sentence on what the ticket is for, from its title.
 - **Jira**: one table per project, one row per `jira` line; `added` rows first, then `back`. Status is the `[status]` of an added line or the `<from> → <to>` of a back line.
 - **Sentry**: one line per `sentry` line; name the Sentry project when the section has several.
 - Every `jira`, `sentry`, `dependabot`, `note` and `error` line and every step 2 line appears; step 2 lines verbatim without their `today:`/`<project>:` prefix, `unmatched:` lines as `Unmatched: …` after the last section. Notes keep their number, so `done <n>` hits the right one. Errors keep their fix verbatim.
