@@ -337,27 +337,24 @@ def briefing_jumps(name, briefing):
 
 def project_view(name, briefing, sessions):
     """sessions: app and background sessions together. `ticketless`: the project's background
-    sessions that match no ticket on its board (any column), newest first."""
+    sessions that name no ticket of the project's key (has_ticket), newest first."""
     info = lookup(name)
     d = info.get("dir", "none")
     view = {"name": name, "dir": None if d == "none" else d, "board": info.get("board"), "key": info.get("key"),
             "error": None, "next": [], "jumps": [], "lastActivityAt": None, "running": 0, "background": 0,
             "ticketless": []}
-    errors, board_ids = [], []
+    errors = []
     if d == "none":
         errors.append("folder: " + info.get("reason", "not found"))
     try:
         if info.get("board") == "vault":
             cards = parse_board(Path(info["board-file"]).read_text(encoding="utf-8"))
-            board_ids = [c["id"] for c in cards]
             view["next"] = [dict(id=c["id"], title=c["title"], column=c["column"], goal=c["goal"],
                                  blockedBy=blocked_by(c, cards), urgent=c["urgent"], active=c["column"] == "in progress")
                              for c in home_vault(cards)[:MAX_TICKETS]]
         elif jira_key(info):
             view["key"] = jira_key(info)
-            issues = jira_board(view["key"])
-            board_ids = [i["id"] for i in issues]
-            view["next"] = issues[:MAX_TICKETS]
+            view["next"] = jira_board(view["key"])[:MAX_TICKETS]
     except Exception as e:
         traceback.print_exc()
         errors.append(str(e))
@@ -371,8 +368,7 @@ def project_view(name, briefing, sessions):
         view["background"] = sum(1 for s in mine if s.get("kind") == "background" and session_state(s) == "running")
         for t in view["next"]:
             t["sessionCounts"] = ticket_states(t["id"], view["dir"], mine)
-        on_board = set().union(*(matched_sessions(i, view["dir"], mine) for i in board_ids))
-        loose = [s for s in mine if s.get("kind") == "background" and s["sessionId"] not in on_board]
+        loose = [s for s in mine if s.get("kind") == "background" and not has_ticket(s, view["key"])]
         view["ticketless"] = [session_brief(s) for s in sorted(loose, key=lambda s: -(s.get("startedAt") or 0))]
     return view
 
@@ -412,7 +408,7 @@ def save_order(body):
 
 
 def projects_view():
-    briefing, sessions = BRIEFING.get(), load_sessions() + background_sessions()
+    briefing, sessions = BRIEFING.get(), all_sessions()
     with ThreadPoolExecutor() as pool:  # lookups and acli are slow; run the projects side by side
         views = list(pool.map(lambda n: project_view(n, briefing, sessions), active_projects()))
     return sort_projects(views, read_order())
@@ -425,6 +421,19 @@ def load_sessions(root=None):
     for f in sorted(Path(root or SESSIONS_DIR).glob("*/*/local_*.json")):
         out.append(json.loads(f.read_text(encoding="utf-8")))
     return out
+
+
+def all_sessions():
+    """App and background sessions together; runs `claude agents` once."""
+    return load_sessions() + background_sessions()
+
+
+def find_background(sid, sessions):
+    """The background session with this sessionId among `sessions`; 404 when missing."""
+    s = next((s for s in sessions if s.get("kind") == "background" and s["sessionId"] == sid), None)
+    if not s:
+        raise ApiError(404, "no background session " + str(sid))
+    return s
 
 
 def background_sessions(transcripts=None):
@@ -753,6 +762,23 @@ def matched_sessions(ticket_id, project_dir, sessions, transcripts=None):
     return matched
 
 
+def has_ticket(session, key):
+    """A background session names a ticket of the project's key, on the board or not (done, another
+    sprint, another assignee): its name, first prompt or a recorded branch mentions <key>-<n>, or
+    its first prompt is `/work <n>`. Without a key no session has a ticket."""
+    if not key:
+        return False
+    id_re = re.compile(r"(?<![A-Za-z0-9])" + re.escape(key) + r"-\d+", re.I)
+    texts = [session.get("title")]
+    path = transcript_path(session)
+    if path:
+        facts = transcript_facts(path)
+        if re.match(r"/(?:work|ticket)\s+\d+\b", facts["firstPrompt"] or ""):
+            return True
+        texts += [facts["firstPrompt"]] + facts["branches"]
+    return any(t and id_re.search(t) for t in texts)
+
+
 def ticket_states(ticket_id, project_dir, sessions, transcripts=None):
     """How many of the ticket's sessions (app and background) are running, waiting, blocked and
     archived (the home row's marks)."""
@@ -929,7 +955,7 @@ def reap_servers(sessions, *, listen=listeners, kill=os.kill):
 def reap_once(*, listen=listeners, kill=os.kill):
     """One reaper pass over app and background sessions, so a background session in the same
     folder as an archived app session keeps their shared server."""
-    return reap_servers(load_sessions() + background_sessions(), listen=listen, kill=kill)
+    return reap_servers(all_sessions(), listen=listen, kill=kill)
 
 
 def reaper():
@@ -1146,7 +1172,7 @@ def ticket_view(project, ticket_id):
                    "next": field(text, "Next:")}
         issues = read_issues(folders[0].parent)
     handoff = Path(d, ".handoffs", "HANDOFF-{}.md".format(ticket_id))
-    sessions = ticket_sessions(ticket_id, d, load_sessions() + background_sessions())
+    sessions = ticket_sessions(ticket_id, d, all_sessions())
     prs = [pr_status(u) for u in ticket_pr_urls(lines, sessions, (scratch or {}).get("branch"), d)]
     return {"id": ticket_id, "title": title, "column": column, "goal": card_goal(lines[1:]), "card": lines,
             "scratch": scratch,
@@ -1303,13 +1329,6 @@ def get_ticket(q):
     return ticket_view(project, tid)
 
 
-def find_background(sid):
-    s = next((s for s in background_sessions() if s["sessionId"] == sid), None)
-    if not s:
-        raise ApiError(404, "no background session " + str(sid))
-    return s
-
-
 def session_screen(s):
     """The terminal screen of a live background session (its question while blocked)."""
     return render_screen(claude_ok(["logs", s["id"]]))
@@ -1320,7 +1339,7 @@ def get_session(q):
     sid = q.get("id")
     if not sid:
         raise ApiError(400, "id is required")
-    s = find_background(sid)
+    s = find_background(sid, background_sessions())
     path = transcript_path(s)
     view = dict(session_brief(s), chat=session_chat(path) if path else [])
     if view["state"] == "blocked":
@@ -1364,7 +1383,7 @@ def claude_cli():
     return path
 
 
-def claude(args, cwd=None):
+def run_claude(args, cwd=None):
     """The CLI gateway: runs `claude <args>` in cwd and returns (exit code, output). Every `claude`
     call goes through here, so tests replace this one function."""
     return run([claude_cli()] + list(args), cwd=cwd)
@@ -1372,7 +1391,7 @@ def claude(args, cwd=None):
 
 def claude_ok(args, cwd=None):
     """Runs `claude <args>`; a non-zero exit is an API error carrying the CLI's output."""
-    code, out = claude(args, cwd=cwd)
+    code, out = run_claude(args, cwd=cwd)
     if code != 0:
         raise ApiError(500, "claude {}: {}".format(args[0], out.strip()))
     return out
@@ -1380,6 +1399,7 @@ def claude_ok(args, cwd=None):
 
 BG_ID = re.compile(r"backgrounded · (\S+)")  # `· <name>` follows unless the session has none
 STOP_WAIT = 15  # seconds a stopped session's process gets to exit
+START_WAIT = 5  # seconds a started session gets to show up in `claude agents`
 
 
 def process_alive(pid):
@@ -1390,6 +1410,22 @@ def process_alive(pid):
     except PermissionError:
         return True
     return True
+
+
+def stop_session(s):
+    """`claude stop` while the session's process lives (an exited one has no pid, and stop refuses
+    it), then waits until the process is gone: stop returns while it still shuts down, and a
+    resume or rm before then acts on a live session."""
+    pid = s["agent"].get("pid")
+    if not pid:
+        return
+    claude_ok(["stop", s["id"]])
+    deadline = time.time() + STOP_WAIT
+    while process_alive(pid):
+        if time.time() > deadline:
+            raise ApiError(500, "session {} is still running {} s after claude stop (pid {})".format(
+                s["id"], STOP_WAIT, pid))
+        time.sleep(0.1)
 
 
 def bg_session_name(project, text):
@@ -1411,10 +1447,16 @@ def post_bg_session(body):
     m = BG_ID.search(out)
     if not m:
         raise ApiError(500, "claude --bg printed no session id: " + out.strip())
-    s = next((s for s in background_sessions() if s["id"] == m.group(1)), None)
-    if not s:
-        raise ApiError(500, "started background session {} is not in `claude agents`".format(m.group(1)))
-    return {"ok": True, "id": s["id"], "sessionId": s["sessionId"]}
+    # `claude agents` may not list a just-started session yet.
+    deadline = time.time() + START_WAIT
+    while True:
+        s = next((s for s in background_sessions() if s["id"] == m.group(1)), None)
+        if s:
+            return {"ok": True, "id": s["id"], "sessionId": s["sessionId"]}
+        if time.time() > deadline:
+            raise ApiError(500, "background session {} was started but is not in `claude agents` after {} s".format(
+                m.group(1), START_WAIT))
+        time.sleep(0.1)
 
 
 def post_session_send(body):
@@ -1425,22 +1467,13 @@ def post_session_send(body):
     text = text.strip()
     if not text:
         raise ApiError(400, "text is empty")
-    s = find_background(sid)
+    s = find_background(sid, background_sessions())
     state = background_state(s["agent"])
     if state == "running":
         raise ApiError(409, "session is running")
     if state == "blocked":  # stopping drops the unanswered question, so read it first
         text = "Answering your question:\n{}\n\nMy answer: {}".format(session_screen(s), text)
-    pid = s["agent"].get("pid")
-    if pid:
-        claude_ok(["stop", s["id"]])
-        # `claude stop` returns while the process still shuts down; a resume before it's gone forks.
-        deadline = time.time() + STOP_WAIT
-        while process_alive(pid):
-            if time.time() > deadline:
-                raise ApiError(500, "session {} is still running {} s after claude stop (pid {})".format(
-                    s["id"], STOP_WAIT, pid))
-            time.sleep(0.1)
+    stop_session(s)  # a resume while its process lives would fork
     out = claude_ok(["--bg", "--resume", sid, text], cwd=s["cwd"])
     m = BG_ID.search(out)
     if not m:
@@ -1453,23 +1486,21 @@ def post_session_send(body):
 
 def post_session_remove(body, *, listen=listeners, kill=os.kill):
     """Removes a background session: SIGTERMs its dev servers (sparing one another listed session
-    also has), then `claude stop` while its process lives, then `claude rm`. A refusal from rm
-    (unpushed or uncommitted work) is a 409 with its message; the session stays listed."""
+    also has), then stop_session, then `claude rm`. A refusal from rm (unpushed or uncommitted
+    work) is a 409 with its message; the session stays listed, its dev servers already stopped."""
     sid = need(body, "sessionId")[0]
-    sessions = load_sessions() + background_sessions()
-    s = next((x for x in sessions if x.get("kind") == "background" and x["sessionId"] == sid), None)
-    if not s:
-        raise ApiError(404, "no background session " + str(sid))
+    sessions = all_sessions()
+    s = find_background(sid, sessions)
     found = servers_by_session(sessions, listen)
     keep = held_pids(found, but=s)
     for x in next(xs for o, xs in found if o is s):
         if "pid" in x and x["pid"] not in keep:
             kill(x["pid"], signal.SIGTERM)
-    if "pid" in s["agent"]:  # exited sessions have no pid, and `claude stop` refuses them
-        claude_ok(["stop", s["id"]])
-    code, out = claude(["rm", s["id"]])
+    stop_session(s)
+    code, out = run_claude(["rm", s["id"]])
     if code != 0:
-        raise ApiError(409, "claude rm: " + out.strip())
+        raise ApiError(409, "claude rm refused, so the session stays (its dev servers were already stopped): "
+                       + out.strip())
     return {"ok": True}
 
 

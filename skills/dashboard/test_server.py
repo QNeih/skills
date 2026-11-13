@@ -102,22 +102,25 @@ class PullRequests(unittest.TestCase):
 
 
 class FakeClaude:
-    """Stands in for the claude CLI: records each call with its folder and answers from a queue."""
+    """Stands in for the claude CLI: records each call with its folder and answers from a queue;
+    the last reply repeats."""
 
     def __init__(self, *replies):
         self.calls, self.replies = [], list(replies)
 
     def __call__(self, args, cwd=None):
         self.calls.append((list(args), cwd))
-        return self.replies.pop(0)
+        return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
 
 
 class BackgroundStart(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = self.tmp.name
-        saved = server.claude, server.lookup
-        self.addCleanup(lambda: (setattr(server, "claude", saved[0]), setattr(server, "lookup", saved[1])))
+        saved = server.run_claude, server.lookup, server.START_WAIT
+        self.addCleanup(lambda: (setattr(server, "run_claude", saved[0]), setattr(server, "lookup", saved[1]),
+                                 setattr(server, "START_WAIT", saved[2])))
+        server.START_WAIT = 0.3
         server.lookup = lambda name: {"dir": self.dir} if name == "skills" else {"dir": "none"}
 
     def tearDown(self):
@@ -127,20 +130,28 @@ class BackgroundStart(unittest.TestCase):
         return 0, json.dumps([agent(sid, self.dir, "x", 1) for sid in sids])
 
     def test_starts_in_the_project_folder_with_the_text_verbatim(self):
-        server.claude = fake = FakeClaude((0, "Starting background service…\nbackgrounded · 36e71ce8 · skills: /work SKL-1\n"),
+        server.run_claude = fake = FakeClaude((0, "Starting background service…\nbackgrounded · 36e71ce8 · skills: /work SKL-1\n"),
                                           self.listed("11111111-0000", "36e71ce8-c057-46bc"))
         got = server.post_bg_session({"project": "skills", "text": "/work SKL-1\n"})
         self.assertEqual((got["id"], got["sessionId"]), ("36e71ce8", "36e71ce8-c057-46bc"))
         self.assertEqual(fake.calls[0], (["--bg", "--permission-mode", "auto", "-n", "skills: /work SKL-1", "/work SKL-1"], self.dir))
 
-    def test_a_started_session_missing_from_the_list_is_an_api_error(self):
-        server.claude = FakeClaude((0, "backgrounded · 36e71ce8 · x\n"), self.listed("11111111-0000"))
+    def test_waits_for_a_started_session_to_appear_in_the_list(self):
+        server.run_claude = fake = FakeClaude((0, "backgrounded · 36e71ce8 · x\n"), self.listed("11111111-0000"),
+                                              self.listed("11111111-0000"), self.listed("36e71ce8-c057-46bc"))
+        got = server.post_bg_session({"project": "skills", "text": "hi"})
+        self.assertEqual(got["sessionId"], "36e71ce8-c057-46bc")
+        self.assertEqual([a[0] for a, _ in fake.calls], ["--bg", "agents", "agents", "agents"])
+
+    def test_a_started_session_that_never_appears_is_an_error_naming_its_short_id(self):
+        server.run_claude = FakeClaude((0, "backgrounded · 36e71ce8 · x\n"), self.listed("11111111-0000"))
         with self.assertRaises(server.ApiError) as e:
             server.post_bg_session({"project": "skills", "text": "hi"})
+        self.assertIn("started", str(e.exception))
         self.assertIn("36e71ce8", str(e.exception))
 
     def test_name_is_the_project_and_the_first_line_cut_to_48(self):
-        server.claude = fake = FakeClaude((0, "backgrounded · aaaaaaa1 · x\n"), self.listed("aaaaaaa1-0"),
+        server.run_claude = fake = FakeClaude((0, "backgrounded · aaaaaaa1 · x\n"), self.listed("aaaaaaa1-0"),
                                           (0, "backgrounded · aaaaaaa2 · x\n"), self.listed("aaaaaaa2-0"))
         server.post_bg_session({"project": "skills", "text": "fix the clock\nmore detail"})
         server.post_bg_session({"project": "skills", "text": "x" * 80})
@@ -148,17 +159,17 @@ class BackgroundStart(unittest.TestCase):
         self.assertEqual(fake.calls[2][0][4], "skills: " + "x" * 47 + "…")
 
     def test_cli_failure_is_an_api_error_with_its_output(self):
-        server.claude = FakeClaude((1, "error: not logged in\n"))
+        server.run_claude = FakeClaude((1, "error: not logged in\n"))
         with self.assertRaises(server.ApiError) as e:
             server.post_bg_session({"project": "skills", "text": "hi"})
         self.assertIn("error: not logged in", str(e.exception))
-        server.claude = FakeClaude((0, "something unexpected\n"))
+        server.run_claude = FakeClaude((0, "something unexpected\n"))
         with self.assertRaises(server.ApiError) as e:
             server.post_bg_session({"project": "skills", "text": "hi"})
         self.assertIn("something unexpected", str(e.exception))
 
     def test_unknown_project_starts_nothing(self):
-        server.claude = fake = FakeClaude()
+        server.run_claude = fake = FakeClaude()
         with self.assertRaises(server.ApiError) as e:
             server.post_bg_session({"project": "nope", "text": "hi"})
         self.assertEqual(e.exception.status, 404)
@@ -257,15 +268,15 @@ class BackgroundFixture(Fixture):
 
     def setUp(self):
         super().setUp()
-        saved = server.claude, server.lookup, server.SESSIONS_DIR, server.TRANSCRIPTS_DIR
-        self.addCleanup(lambda: (setattr(server, "claude", saved[0]), setattr(server, "lookup", saved[1]),
+        saved = server.run_claude, server.lookup, server.SESSIONS_DIR, server.TRANSCRIPTS_DIR
+        self.addCleanup(lambda: (setattr(server, "run_claude", saved[0]), setattr(server, "lookup", saved[1]),
                                  setattr(server, "SESSIONS_DIR", saved[2]), setattr(server, "TRANSCRIPTS_DIR", saved[3])))
         server.SESSIONS_DIR, server.TRANSCRIPTS_DIR = self.sessions, self.transcripts
         board = Path(self.tmp.name, "board.md")
         board.write_text("## In progress\n\n- [ ] **A-2 · Do it**\n")
-        server.lookup = lambda name: {"dir": self.project, "board": "vault", "board-file": str(board)}
+        server.lookup = lambda name: {"dir": self.project, "board": "vault", "board-file": str(board), "key": "A"}
         self.agents = []
-        server.claude = self.fake_cli
+        server.run_claude = self.fake_cli
 
     def fake_cli(self, args, cwd=None):
         if args == ["agents", "--json", "--all"]:
@@ -344,7 +355,7 @@ class BackgroundSessions(BackgroundFixture):
         self.bg("aaaaaaaa-2", "A-2 idle", 2)
         self.bg("aaaaaaaa-3", "A-2 question", 3, status="waiting", waitingFor="input needed", state="blocked")
         self.bg("aaaaaaaa-4", "no ticket", 4, status="busy", state="running")
-        sessions = server.load_sessions() + server.background_sessions()
+        sessions = server.all_sessions()
         view = server.project_view("p", {"status": "running"}, sessions)
         self.assertEqual(view["next"][0]["sessionCounts"], {"running": 2, "waiting": 1, "blocked": 1, "archived": 1})
         self.assertEqual((view["running"], view["background"]), (3, 2))
@@ -363,11 +374,40 @@ class TicketlessSessions(BackgroundFixture):
         self.bg("dddddddd-4", "skills: elsewhere", 400, cwd="/elsewhere")
         self.bg("eeeeeeee-5", "skills: /ticket add a clock", 500, cwd=self.project + "/.claude/worktrees/x",
                 lines=[user("/ticket add a clock")])
-        sessions = server.load_sessions() + server.background_sessions()
+        sessions = server.all_sessions()
         got = server.project_view("p", {"status": "running"}, sessions)["ticketless"]
         self.assertEqual([(s["sessionId"], s["id"], s["state"]) for s in got],
                          [("eeeeeeee-5", "eeeeeeee", "waiting"), ("aaaaaaaa-1", "aaaaaaaa", "running")])
         self.assertEqual(got[1]["lastActivityAt"], 100)
+
+    def ticketless(self):
+        sessions = server.all_sessions()
+        return [s["sessionId"] for s in server.project_view("p", {"status": "running"}, sessions)["ticketless"]]
+
+    def test_a_session_naming_any_id_of_the_project_key_has_a_ticket_even_off_the_board(self):
+        self.bg("aaaaaaaa-1", "skills: A-99 follow-up", 100)
+        self.bg("bbbbbbbb-2", "skills: go on", 200, lines=[dict(user("go on"), gitBranch="feature/A-50")])
+        self.bg("cccccccc-3", "skills: start", 300, lines=[user("/work a-77")])
+        self.bg("dddddddd-4", "skills: B-3 is another project's", 400)
+        self.bg("eeeeeeee-5", "skills: AA-3 neither", 500, lines=[user("/work B-3")])
+        self.assertEqual(self.ticketless(), ["eeeeeeee-5", "dddddddd-4"])
+
+    def test_an_unreadable_board_still_tells_ticket_sessions_apart(self):
+        Path(self.tmp.name, "board.md").unlink()
+        self.bg("aaaaaaaa-1", "skills: A-2 work", 100)
+        self.bg("bbbbbbbb-2", "skills: what is X?", 200)
+        self.assertEqual(self.ticketless(), ["bbbbbbbb-2"])
+
+    def test_jira_sessions_of_tickets_outside_the_sprint_view_have_a_ticket(self):
+        saved = server.jira_board
+        self.addCleanup(lambda: setattr(server, "jira_board", saved))
+        server.jira_board = lambda key: [dict(id="A-2", title="Do it", column="In Progress", blockedBy=[],
+                                              urgent=False, active=True)]
+        server.lookup = lambda name: {"dir": self.project, "board": "jira-candidate", "key": "A"}
+        self.bg("aaaaaaaa-1", "skills: A-1 done ticket", 100)
+        self.bg("bbbbbbbb-2", "skills: A-40 someone else's", 200)
+        self.bg("cccccccc-3", "skills: what is X?", 300)
+        self.assertEqual(self.ticketless(), ["cccccccc-3"])
 
     def test_no_folder_lists_none(self):
         server.lookup = lambda name: {"dir": "none", "reason": "gone"}
@@ -490,6 +530,21 @@ class SessionRemoval(BackgroundFixture):
         f.write_text(json.dumps({"configurations": [{"name": "web", "port": 5173}]}))
         self.procs = {5173: (11, self.project)}
         self.events, self.rm_reply = [], (0, "")
+        # Like the real CLI, `claude stop` returns while the process still shuts down: after the stop it
+        # stays alive for `exit_after` more checks.
+        self.exit_after = 0
+        saved = server.process_alive, server.STOP_WAIT
+        self.addCleanup(lambda: (setattr(server, "process_alive", saved[0]), setattr(server, "STOP_WAIT", saved[1])))
+        server.process_alive, server.STOP_WAIT = self.process_alive, 0.3
+
+    def process_alive(self, pid):
+        if not any(e[0] == "stop" for e in self.events):
+            return True
+        if self.exit_after:
+            self.exit_after -= 1
+            self.events.append(("alive", pid))
+            return True
+        return False
 
     def listen(self, port):
         return [self.procs[port]] if port in self.procs else []
@@ -513,6 +568,20 @@ class SessionRemoval(BackgroundFixture):
         self.assertEqual(self.remove("aaaaaaaa-1"), {"ok": True})
         self.assertEqual(self.events, [("kill", 11, server.signal.SIGTERM), ("stop", "aaaaaaaa"), ("rm", "aaaaaaaa")])
         self.assertEqual(server.background_sessions(), [])
+
+    def test_rm_waits_until_the_stopped_process_has_exited(self):
+        self.bg("aaaaaaaa-1", "A-2 idle", 1)
+        self.exit_after = 2
+        self.remove("aaaaaaaa-1")
+        self.assertEqual([e[0] for e in self.events], ["kill", "stop", "alive", "alive", "rm"])
+
+    def test_a_process_that_outlives_the_wait_is_an_error_and_nothing_is_removed(self):
+        self.bg("aaaaaaaa-1", "A-2 idle", 1)
+        self.exit_after = 10 ** 6
+        with self.assertRaises(server.ApiError) as e:
+            self.remove("aaaaaaaa-1")
+        self.assertIn("still running", str(e.exception))
+        self.assertNotIn("rm", [e[0] for e in self.events])
 
     def test_an_exited_session_is_removed_without_stopping_it(self):
         self.bg("aaaaaaaa-1", "A-2 exited", 1, pid=None, status=None)
@@ -538,6 +607,7 @@ class SessionRemoval(BackgroundFixture):
             self.remove("aaaaaaaa-1")
         self.assertEqual(e.exception.status, 409)
         self.assertIn("2 unpushed commits", str(e.exception))
+        self.assertIn("dev servers were already stopped", str(e.exception))
         self.assertEqual([s["id"] for s in server.background_sessions()], ["aaaaaaaa"])
 
     def test_unknown_session_is_404_and_stops_nothing(self):

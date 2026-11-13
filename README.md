@@ -69,7 +69,7 @@ flowchart TD
 | | Skill | What it does | Uses |
 | --- | --- | --- | --- |
 | **Daily** | `briefing` | One whole-day briefing across every project: what I did last workday, what's next, Jira changes, new Sentry errors and Dependabot PRs, mail and Teams messages waiting on me, today's meetings. | vault, Jira, Sentry, GitHub, Microsoft 365 |
-| | `dashboard` | Full-screen local web app: clock and Köln weather, then one project at a time beside a rail of project cards (open tickets, new Sentry errors, new Dependabot PRs; order saved): its next tickets with their sessions' state (running, waiting on you, archived), briefing to-dos and jumps, and each ticket's workflow, PR status and session tree. Keyboard-driven, no model calls. | vault, Claude app sessions, Jira, Sentry, GitHub, Open-Meteo |
+| | `dashboard` | Full-screen local web app: clock and Köln weather, then one project at a time beside a rail of project cards (open tickets, new Sentry errors, new Dependabot PRs; order saved): a prompt box, the project's background sessions without a ticket, its next tickets with their sessions' state (running, waiting, needs you, archived), briefing to-dos and jumps, and each ticket's workflow, PR status and session tree. Starts every session in the background (`claude --bg`); a session view shows a background session's chat and its question while it needs you, sends follow-ups and answers, and removes it with its dev servers. Keyboard-driven, no model calls. | vault, Claude app and background sessions, Jira, Sentry, GitHub, Open-Meteo |
 | | `note` | Saves a to-do for the briefing, tagged with the project I'm in. | vault |
 | **Ticket flow** | `ticket` | Adds one card to the project's vault board, in the language and line pattern of the cards already there, with the next free id. Given only an id, points to `/work`. | vault |
 | | `work` | Claims a ticket on the project's board (Jira, an Obsidian Kanban board, or any tracker with a connector), cuts its branch, imports it, and starts the route that works on it. | board (vault, Jira, other), repo |
@@ -86,29 +86,42 @@ flowchart TD
 
 `?` shows the same list inside the dashboard.
 
+Every session the dashboard starts is a background session (`claude --bg`, auto mode) in the project's folder, with the text as its first prompt. A background session needs you (blocked) while it waits on a question or a permission.
+
 | Screen | Key | What it does |
 | --- | --- | --- |
-| home, ticket | `?` | toggle the key list (`esc` / `⌫` also close it) |
-| | `tab` / `⇧tab` | next / previous project: opens the screen you were last on in it (home, or a ticket still on its home list); unsent prompt text stays |
-| ticket | `esc` / `⌫` | back |
+| home, ticket, session | `?` | toggle the key list (`esc` / `⌫` also close it); in the session view only while its text box is empty |
+| | `tab` / `⇧tab` | next / previous project: opens the screen you were last on in it; unsent text stays |
+| ticket, session | `esc` / `⌫` | back (the session view: `esc`, or `←` with an empty box) |
 | start (clock) | any key or click | go to home |
-| home | `↑` `↓` / `j` `k` | move ticket selection |
+| home | `↑` `↓` / `j` `k` | move the selection: the prompt box first, then the sessions without a ticket, then the tickets |
+| | `→` on the box | fill in `/ticket ` (the empty box shows `/ticket →`) and type |
+| | `⏎` on the box | type a prompt; `⏎` starts a background session with it and opens its session view. `esc` leaves the box; the text stays |
+| | `space` / `→` on a session | open its session view (a background session of the project that names no ticket of the project's key) |
+| | `a` `a` on a session | remove it: stop its dev servers, stop it, `claude rm` |
 | | `space` | open selected ticket |
-| | `→` | new session in the app with the selected ticket's next command prefilled: `/work <id>` until it is imported, then `/send` until it has a PR |
-| | `⏎` | open the selected ticket with its next command in the prompt box to edit; `⏎` again starts it |
-| | `b` | prompt box; `⏎` there starts a background session (`claude --bg`, auto mode) in the project's folder with the text as its prompt, without the app's link confirmation. `←` (empty) or `esc` closes |
+| | `→` on a ticket | background session with the ticket's next command: `/work <id>` until it is imported, then `/send` until it has a PR |
+| | `⏎` on a ticket | open the ticket with its next command in the prompt box to edit; `⏎` again starts it |
 | | `⇧↑` / `⇧↓` | move project up / down in the rail (order saved) |
 | | `1`–`9` | open ticket 1–9 (in progress first, then to do) |
-| | `s` | new session: fix new Sentry errors (when there are any) |
-| | `d` | new session: Dependabot review (when there are new PRs) |
+| | `s` | background session: fix new Sentry errors (when there are any) |
+| | `d` | background session: Dependabot review (when there are new PRs) |
 | | `r` | refresh briefing |
 | | `c` | clock screen |
 | | `n` | mark the note with the `n` badge done (press twice) |
 | ticket | `↑` `↓` / `j` `k` | move session selection |
-| | `space` | open the selected session in the app; no sessions yet: new session with `/work <id>` prefilled |
+| | `space` / `→` on a background session | open its session view |
+| | `a` `a` on a background session | remove it: stop its dev servers, stop it, `claude rm` |
+| | `space` on an app session | open it in the app; no sessions yet: background session with `/work <id>` |
+| | `space` / `→` on a server row | open the dev server in a new tab of your normal Chrome |
 | | `←` | back, while the ticket has no live sessions |
-| | `⏎` | prompt box with the next command; `⏎` there starts a new session with it, `←` while unchanged or `esc` closes |
+| | `⏎` | prompt box with the next command; `⏎` there starts a background session with it, `←` while unchanged or `esc` closes |
 | | `→` | while the ticket has no live sessions: the same prompt box |
+| session | `⏎` | send the text box: a follow-up, or the answer to the question shown under "needs you" (refused while the session runs) |
+| | `⇧⏎` | new line |
+| | `↑` `↓` | with an empty box: scroll the chat |
+| | `⌘⌫` `⌘⌫` | remove the session: stop its dev servers, stop it, `claude rm`. Every letter goes into the text box, so `a` doesn't remove here. A refusal (unpushed or uncommitted work) shows its message; the session stays, its dev servers already stopped |
+| | `←` (empty box) / `esc` | back to the ticket view, or home for a session without a ticket; the box keeps its draft |
 
 ## Install
 

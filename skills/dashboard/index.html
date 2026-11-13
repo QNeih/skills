@@ -323,7 +323,7 @@ const HINTS = {
   start: [],
   home: [['↑↓', 'select'], ['→', 'next command'], ['⏎', 'edit next command'], ['space / 1–9', 'open'], ['tab', 'project'], ['⇧↑↓', 'move project'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
   ticket: [['↑↓', 'select'], ['space', 'new /work bg session'], ['⏎', 'edit next command'], ['tab', 'project'], ['esc', 'back'], ['←', 'back']],
-  session: [['⏎', 'send'], ['⇧⏎', 'new line'], ['↑↓ empty', 'scroll'], ['a a empty', 'remove session'], ['← empty / esc', 'back'], ['tab', 'project']],
+  session: [['⏎', 'send'], ['⇧⏎', 'new line'], ['↑↓ empty', 'scroll'], ['⌘⌫ ⌘⌫', 'remove session'], ['← empty / esc', 'back'], ['tab', 'project']],
 };
 function updateHints() {
   let h = HINTS[S.route.name].slice();
@@ -369,8 +369,8 @@ function toggleOverlay(force) {
     ['everywhere', [['?', 'toggle this list'], ['tab / ⇧tab', 'next / previous project: its last screen, unsent text kept'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
     ['home', [['↑↓', 'prompt box, then sessions without a ticket, then tickets'], ['→ on the box', 'fill in /ticket and type'], ['⏎ on the box', 'type a prompt; ⏎ starts a background session (claude --bg) in the project and opens it'], ['esc in the box', 'leave it; the text stays'], ['→ / space on a session', 'open its session view'], ['a a on a session', 'stop its dev servers, stop and remove it (claude rm)'], ['space / 1–9', 'open the selected / numbered ticket (in progress first, then to do)'], ['→ on a ticket', 'background session with the ticket\'s next command: /work <id>, then /send'], ['⏎ on a ticket', 'ticket view with the next command in its prompt box; ⏎ again starts it in the background'], ['⇧↑ / ⇧↓', 'move project up / down in the rail'], ['s', 'background session: fix new Sentry errors'], ['d', 'background session: Dependabot review'], ['c', 'clock screen'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
-    ['ticket', [['↑↓ / j k', 'select session'], ['→ / space', 'on a background session: open its session view'], ['a a', 'on a background session: stop its dev servers, stop and remove it (claude rm)'],['space', 'open the selected app session in the app; no sessions yet: background session with /work <id>'], ['⏎', 'prompt box with the next command; ⏎ again starts a background session with it'], ['→ / space / click', 'on a server row: open it in a new tab of your normal Chrome'], ['→', 'no live sessions: prompt box'], ['←', 'no live sessions: back']]],
-    ['session', [['⏎', 'send the text box: a follow-up, or the answer to the question under "needs you" (refused while the session runs)'], ['⇧⏎', 'new line'], ['↑↓', 'empty box: scroll the chat'], ['a a', 'empty box: stop its dev servers, stop and remove the session (claude rm)'], ['← / esc', 'empty box or esc: back to the ticket view, or home for a session without a ticket; the box keeps its draft']]],
+    ['ticket', [['↑↓ / j k', 'select session'], ['→ / space', 'on a background session: open its session view'], ['a a', 'on a background session: stop its dev servers, stop and remove it (claude rm)'], ['space', 'open the selected app session in the app; no sessions yet: background session with /work <id>'], ['⏎', 'prompt box with the next command; ⏎ again starts a background session with it'], ['→ / space / click', 'on a server row: open it in a new tab of your normal Chrome'], ['→', 'no live sessions: prompt box'], ['←', 'no live sessions: back']]],
+    ['session', [['⏎', 'send the text box: a follow-up, or the answer to the question under "needs you" (refused while the session runs)'], ['⇧⏎', 'new line'], ['↑↓', 'empty box: scroll the chat'], ['⌘⌫ twice', 'stop its dev servers, stop and remove the session (claude rm); letters always go into the box'], ['← / esc', 'empty box or esc: back to the ticket view, or home for a session without a ticket; the box keeps its draft']]],
   ];
   const p = focusedProject();
   if (p && (p.jumps || []).length) groups.push([`jumps · ${p.name}`, p.jumps.map(j => [j.key, j.label])]);
@@ -719,7 +719,7 @@ function homeKey(e) {
   if (k === 'ArrowUp' || k === 'k') { S.homeSel = Math.max(S.homeSel - 1, 0); renderHome(); return true; }
   if (row && row.kind === 'box' && (k === 'ArrowRight' || k === 'Enter')) { focusBox(k === 'ArrowRight' ? '/ticket ' : null); return true; }
   if (row && row.kind === 'session' && (k === ' ' || k === 'ArrowRight')) { go(sessionHash(p.name, null, row.s.sessionId)); return true; }
-  if (row && row.kind === 'session' && k === 'a') { removeSession(row.s, renderHome); return true; }
+  if (row && row.kind === 'session' && k === 'a') { removeSession(row.s, renderHome, 'a'); return true; }
   if (k === ' ') { if (t) openTicket(p.name, t.id); return true; }
   if (k === 'ArrowRight') { if (t) runNext(p.name, t.id); return true; }
   if (k === 'Enter') { if (t) { S.promptNext = ticketHash(p.name, t.id); openTicket(p.name, t.id); } return true; }
@@ -853,13 +853,14 @@ async function openInApp(sessionId) {
 async function startSession(project, text) {
   try { const j = await api('/api/bg-session', { project, text }); toast(`Background session ${j.id} started: ${text}`); loadProjects(); return j; } catch (e) { fail(e); }
 }
-// a, twice within 2 s: stops the session's dev servers, then stops and removes it (claude rm).
-// A refusal (unpushed or uncommitted work) comes back as a toast and the session stays.
-const armedFor = sid => !!(S.armed && S.armed.key === 'a' && S.armed.sid === sid && Date.now() < S.armed.until);
-async function removeSession(s, render) {
+// Its key (a on rows, ⌘⌫ in the session view), twice within 2 s: stops the session's dev servers,
+// then stops and removes it (claude rm). A refusal (unpushed or uncommitted work) comes back as a
+// toast and the session stays.
+const armedFor = sid => !!(S.armed && S.armed.key === 'remove' && S.armed.sid === sid && Date.now() < S.armed.until);
+async function removeSession(s, render, again) {
   if (!armedFor(s.sessionId)) {
-    S.armed = { key: 'a', sid: s.sessionId, until: Date.now() + 2000 };
-    toast(`Press a again to remove ${s.title || s.id}`);
+    S.armed = { key: 'remove', sid: s.sessionId, until: Date.now() + 2000 };
+    toast(`Press ${again} again to remove ${s.title || s.id}`);
     render();
     setTimeout(() => { if (S.armed && S.armed.until <= Date.now()) { S.armed = null; render(); } }, 2050);
     return;
@@ -911,10 +912,10 @@ function ticketKey(e) {
   if (k === 'ArrowUp' || k === 'k') { S.ticketSel = Math.max(S.ticketSel - 1, 0); renderTicket(); return true; }
   const f = S.flat[S.ticketSel];
   if (f && f.srv && (k === ' ' || k === 'ArrowRight')) { openServer(f.srv); return true; }
-  if (f && f.s.kind === 'background' && (k === ' ' || k === 'ArrowRight')) {
+  if (f && f.s && f.s.kind === 'background' && (k === ' ' || k === 'ArrowRight')) {
     go(sessionHash(S.route.project, S.route.id, f.s.sessionId)); return true;
   }
-  if (f && f.s && f.s.kind === 'background' && k === 'a') { removeSession(f.s, renderTicket); return true; }
+  if (f && f.s && f.s.kind === 'background' && k === 'a') { removeSession(f.s, renderTicket, 'a'); return true; }
   if (k === ' ') {
     if (f) openInApp(f.s.sessionId); else startSession(S.route.project, '/work ' + S.route.id);
     return true;
@@ -986,9 +987,6 @@ function renderSession() {
 function sessionKey(e) {
   const k = e.key, box = $('#chat');
   if (k === 'ArrowLeft') { back(); return true; }
-  // Not while typing: a focused text box with text in it keeps the key.
-  const t = document.activeElement, typing = t && /^(TEXTAREA|INPUT)$/.test(t.tagName) && t.value;
-  if (k === 'a' && S.session && !typing) { removeSession(S.session, renderSession); return true; }
   if (box && (k === 'ArrowDown' || k === 'j')) { box.scrollBy(0, 60); return true; }
   if (box && (k === 'ArrowUp' || k === 'k')) { box.scrollBy(0, -60); return true; }
   return false;
@@ -999,7 +997,7 @@ function sessionTextKey(e, ta) {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendToSession(ta); return; }
   if (ta.value) return;
   if (e.key === '?') { e.preventDefault(); toggleOverlay(); return; }
-  if (['ArrowLeft', 'ArrowUp', 'ArrowDown', 'a'].includes(e.key) && sessionKey(e)) e.preventDefault();
+  if (['ArrowLeft', 'ArrowUp', 'ArrowDown'].includes(e.key) && sessionKey(e)) e.preventDefault();
 }
 // A follow-up, or while blocked the answer (the server quotes the question in front of it).
 async function sendToSession(ta) {
@@ -1107,6 +1105,12 @@ async function loadWeather() {
 }
 /* ---------- input ---------- */
 document.addEventListener('keydown', e => {
+  // ⌘⌫ removes in the session view: its text box always has focus, so every letter is text.
+  if (S.route.name === 'session' && !S.overlay && e.metaKey && e.key === 'Backspace') {
+    e.preventDefault();
+    if (S.session) removeSession(S.session, renderSession, '⌘⌫');
+    return;
+  }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'Tab') {
     e.preventDefault();
