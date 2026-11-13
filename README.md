@@ -97,14 +97,16 @@ flowchart TD
 | | `⇧←` / `⇧→`, `H` / `L` | move project left / right (order saved) |
 | | `[` / `]` | previous / next 3 projects |
 | | `1`–`9` | open to-do ticket 1–9 |
+| | `t` | new session in the app with `/ticket <selected ticket>` prefilled |
 | | `s` | new session: fix new Sentry errors (when there are any) |
 | | `d` | new session: Dependabot review (when there are new PRs) |
 | | `r` | refresh briefing |
 | | `c` | clock screen |
-| | jump key | run the project's jump (to-do done: press twice) |
+| | `n` | mark the note with the `n` badge done (press twice) |
 | ticket | `↑` `↓` / `j` `k` | move session selection |
 | | `space` | open the selected session in the app; no sessions yet: new session with `/ticket <id>` prefilled |
-| | `←` | back, while the ticket has no sessions |
+| | `←` | back, while the ticket has no live sessions |
+| | `→` | while the ticket has no live sessions: type extra input, `⏎` starts `/ticket <id> <input>`, `esc` cancels |
 
 ## Install
 

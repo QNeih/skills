@@ -346,9 +346,6 @@ def project_view(name, briefing, sessions):
         traceback.print_exc()
         errors.append(str(e))
     view["error"] = "; ".join(errors) or None
-    if view["next"]:
-        top = view["next"][0]["id"]
-        view["jumps"].append({"key": "t", "label": "start /ticket " + top, "action": "copy", "arg": "/ticket " + top})
     view["jumps"] += briefing_jumps(name, briefing)
     if view["dir"]:
         mine = [s for s in sessions if in_dir(s, view["dir"])]

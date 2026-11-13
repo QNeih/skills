@@ -101,8 +101,8 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 .today .r { flex: none; color: var(--dim); font-size: var(--fs-s); }
 .cols { flex: 1; display: grid; gap: 15px; min-height: 0; }
 /* rows: head, tickets, to-do, jumps, spacer, sentry/dependabot */
-.cols.proj { grid-template-rows: auto minmax(0, max-content) minmax(0, max-content) auto 1fr auto; row-gap: 0; overflow: hidden; }
-.panel.proj { display: grid; grid-row: span 6; grid-template-rows: subgrid; min-width: 0; overflow: hidden; }
+.cols.proj { grid-template-rows: auto minmax(0, max-content) minmax(0, max-content) 1fr auto; row-gap: 0; overflow: hidden; }
+.panel.proj { display: grid; grid-row: span 5; grid-template-rows: subgrid; min-width: 0; overflow: hidden; }
 .panel.proj > .scroll { display: contents; }
 .panel.proj > .label { padding: 15px 15px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .pname { color: var(--head); font-size: var(--fs); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -120,10 +120,17 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .goal::before, .tgoal::before { content: '\23BF  '; color: var(--dim); }
 .page { color: var(--dim); }
-.jump .k { width: auto; min-width: 1ch; }
-.jump .arg { font-size: var(--fs-s); color: var(--dim); max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jump.armed { background: #221b0f; }
-.jump.armed::before { content: '❯'; color: var(--wait); }
+.jk { margin-left: auto; flex: none; color: var(--clay); border: 1px solid var(--clay-line); border-radius: 4px;
+  padding: 0 6px; font-size: var(--fs-xs); line-height: 1.5; }
+.jk.off { color: var(--dim); border-color: var(--line2); }
+.armed { background: #221b0f; }
+.armed .jk { color: var(--wait); border-color: var(--wait); }
+.extra { display: flex; gap: 12px; margin: 12px 15px; padding: 10px 14px; border: 1px solid var(--clay); border-radius: var(--rad); }
+.extra .prompt { color: var(--clay); line-height: 1.5; }
+.extra textarea { flex: 1; resize: none; height: 96px; background: none; color: var(--text); border: 0; padding: 0;
+  font: var(--fs)/1.5 var(--mono); outline: none; }
+.extra textarea::placeholder { color: var(--dim); }
+.extra-hint { padding: 0 15px; color: var(--dim); font-size: var(--fs-s); }
 
 /* ticket */
 .head { flex: none; display: flex; align-items: baseline; gap: 14px; padding: 2px 4px 0; min-width: 0; }
@@ -213,7 +220,7 @@ const PAGE = 3, TICKETS = 9;
 const S = {
   route: { name: 'home' }, gen: 0, timer: null, overlay: false, armed: null,
   briefing: null, briefingErr: null, projects: null, projectsErr: null, focus: 0, homeSel: 0,
-  ticket: null, ticketErr: null, ticketSel: 0, flat: [],
+  ticket: null, ticketErr: null, ticketSel: 0, flat: [], extra: null, // extra: text for /ticket while the input is open
 };
 
 /* ---------- api ---------- */
@@ -281,12 +288,16 @@ function updateMeta() {
 }
 const HINTS = {
   start: [],
-  home: [['↑↓', 'select'], ['space', 'open'], ['⏎', 'new session'], ['1–9', 'ticket'], ['← →', 'project'], ['⇧← →', 'move'], ['[ ]', 'page'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
+  home: [['↑↓', 'select'], ['space', 'open'], ['⏎', 'new session'], ['1–9', 'ticket'], ['t', '/ticket selected'], ['← →', 'project'], ['⇧← →', 'move'], ['[ ]', 'page'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
   ticket: [['↑↓', 'select'], ['space', 'new /ticket session'], ['esc', 'back'], ['←', 'back']],
 };
 function updateHints() {
   let h = HINTS[S.route.name].slice();
-  if (S.route.name === 'ticket' && S.flat.length) { h[1] = ['space', 'open session']; h = h.filter(([k]) => k !== '←'); }
+  if (S.route.name === 'ticket') {
+    if (S.extra !== null) h = [['⏎', 'start session'], ['⇧⏎', 'new line'], ['esc', 'cancel']];
+    else if (aliveSessions()) { h[1] = ['space', 'open session']; h = h.filter(([k]) => k !== '←'); }
+    else h.push(['→', 'add input']);
+  }
   if (S.route.name === 'home') {
     const p = focusedProject();
     for (const j of (p && p.jumps) || []) h.push([j.key, j.label]);
@@ -310,8 +321,8 @@ function toggleOverlay(force) {
   const groups = [
     ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
-    ['home', [['space', 'open selected ticket'], ['⏎', 'blank new session in the project'], ['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open to-do ticket 1–9'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
-    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: new session with /ticket <id> prefilled']]],
+    ['home', [['space', 'open selected ticket'], ['⏎', 'blank new session in the project'], ['t', 'new session with /ticket <selected ticket>'], ['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open to-do ticket 1–9'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
+    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: new session with /ticket <id> prefilled'], ['→', 'no live sessions: type extra input for /ticket, ⏎ starts it'], ['←', 'no live sessions: back']]],
   ];
   const p = focusedProject();
   if (p && (p.jumps || []).length) groups.push([`jumps · ${p.name}`, p.jumps.map(j => [j.key, j.label])]);
@@ -347,6 +358,7 @@ function route() {
   else if (r.name === 'ticket') {
     setCrumbs([{ text: 'home', href: '#/' }, { text: r.id, id: true }]);
     if (!S.ticket || S.ticket.id !== r.id) { S.ticket = null; S.ticketSel = 0; S.flat = []; }
+    S.extra = null;
     S.ticketErr = null; renderTicket(); loadTicket();
   }
   updateHints();
@@ -430,34 +442,40 @@ function renderHome() {
 function projectColumn(p, idx, lines, pageInfo) {
   const focused = idx === S.focus;
   const items = homeItems(p);
+  const armed = key => S.armed && S.armed.idx === idx && S.armed.key === key ? ' armed' : '';
+  const jump = key => (p.jumps || []).find(j => j.key === key);
+  const badge = key => `<span class="jk${focused ? '' : ' off'}">${esc(key)}</span>`;
   const row = (t, i) => {
+    const sel = focused && i === S.homeSel;
     const tags = [];
     if ((t.blockedBy || []).length) tags.push(`<span class="tag block">blocked by ${esc(t.blockedBy.join(', '))}</span>`);
     if (t.urgent) tags.push('<span class="tag urgent">urgent</span>');
-    return `<div class="row${focused && i === S.homeSel ? ' sel' : ''}" data-act="ticket" data-project="${esc(p.name)}" data-id="${esc(t.id)}">
+    return `<div class="row${sel ? ' sel' : ''}" data-act="ticket" data-project="${esc(p.name)}" data-id="${esc(t.id)}">
       <span class="k${focused ? '' : ' off'}">${t.num}</span><span class="id">${esc(t.id)}</span>
-      <span class="t" title="${esc(t.title)}">${esc(t.title)}</span>${tags.join('')}</div>${t.goal ? `<div class="goal" title="${esc(t.goal)}">${esc(t.goal)}</div>` : ''}`;
+      <span class="t" title="${esc(t.title)}">${esc(t.title)}</span>${tags.join('')}${sel ? badge('t') : ''}</div>${t.goal ? `<div class="goal" title="${esc(t.goal)}">${esc(t.goal)}</div>` : ''}`;
   };
   const todo = lines.filter(l => ['jira', 'note', 'error'].includes(l.kind));
   // Sentry and Dependabot always show at the bottom; zero stays quiet.
   const ids = (txt, k) => ((txt.match(new RegExp(k + ': ([^,]+)')) || [])[1] || '').split(/\s+/).filter(Boolean).length;
   const sentry = lines.filter(l => l.kind === 'sentry').reduce((n, l) => n + ids(l.text, 'new') + ids(l.text, 'regressed'), 0);
   const dep = lines.filter(l => l.kind === 'dependabot').reduce((n, l) => n + Number((l.text.match(/(\d+) new/) || [])[1] || 0), 0);
-  const sig = (name, n, cls) => `<div class="line sig${n ? '' : ' zero'}"><span class="dot ${n ? cls : ''}"></span><span class="tx">${name}</span><span class="n">${n}</span></div>`;
-  const jumps = p.jumps || [];
+  const sig = (name, n, cls, key) => `<div class="line sig${n ? '' : ' zero'}"${jump(key) ? ` data-act="jump" data-idx="${idx}" data-key="${key}"` : ''}><span class="dot ${n ? cls : ''}"></span><span class="tx">${name}</span><span class="n">${n}</span>${jump(key) ? badge(key) : ''}</div>`;
+  // The note the n jump marks done carries the n badge.
+  const nj = jump('n');
+  const todoLine = l => {
+    const html = dotLine(l.kind, l.text);
+    if (!nj || l.kind !== 'note' || !new RegExp(`^note ${nj.arg}:`).test(l.text)) return html;
+    return html.replace('<div class="line">', `<div class="line${armed('n')}" data-act="jump" data-idx="${idx}" data-key="n">`).replace(/<\/div>$/, badge('n') + '</div>');
+  };
   // Every section is always drawn and the columns share row heights (subgrid), so sections line up across projects.
   return `<section class="panel proj${focused ? ' focused' : ''}" data-act="focus" data-idx="${idx}">
     <div class="label"><span class="pname">${esc(p.name)}</span>${p.key ? `<span class="pkey">${esc(p.key)}</span>` : ''}
       <span class="r">${pageInfo ? `<span class="page">${pageInfo}</span> ` : ''}${esc(relTime(p.lastActivityAt))}</span></div>
     <div class="scroll">
       <div class="section fill"><div class="label">tickets${items.length ? `<span class="r">${items.length}</span>` : ''}</div>${p.error ? `<div class="errtext">${esc(p.error)}</div>` : ''}${items.length ? items.map(row).join('') : '<div class="empty">—</div>'}</div>
-      <div class="section fill"><div class="label">to-do</div>${todo.length ? todo.map(l => dotLine(l.kind, l.text)).join('') : '<div class="empty">—</div>'}</div>
-      <div class="section"><div class="label">jumps</div>${!jumps.length ? '<div class="empty">—</div>' : jumps.map(j =>
-        `<div class="row jump${S.armed && S.armed.idx === idx && S.armed.key === j.key ? ' armed' : ''}" data-act="jump" data-idx="${idx}" data-key="${esc(j.key)}">
-          <span class="k${focused ? '' : ' off'}">${esc(j.key)}</span><span class="t">${esc(j.label)}</span>
-          ${j.arg !== undefined && j.arg !== null && j.action === 'copy' ? `<span class="arg" title="${esc(j.arg)}">${esc(j.arg)}</span>` : ''}</div>`).join('')}</div>
+      <div class="section fill"><div class="label">to-do</div>${todo.length ? todo.map(todoLine).join('') : '<div class="empty">—</div>'}</div>
       <div></div>
-      <div class="section sigs">${sig('sentry', sentry, 'sentry')}${sig('dependabot', dep, 'dependabot')}</div>
+      <div class="section sigs">${sig('sentry', sentry, 'sentry', 's')}${sig('dependabot', dep, 'dependabot', 'd')}</div>
     </div></section>`;
 }
 function focusProject(idx) {
@@ -537,6 +555,7 @@ function homeKey(e) {
   if (k === 'ArrowUp' || k === 'k') { S.homeSel = Math.max(S.homeSel - 1, 0); renderHome(); return true; }
   if (k === ' ') { const t = items[S.homeSel]; if (t) openTicket(focusedProject().name, t.id); return true; }
   if (k === 'Enter') { const p = focusedProject(); if (p) newSession(p.name, ''); return true; }
+  if (k === 't') { const t = items[S.homeSel]; if (t) newSession(focusedProject().name, '/ticket ' + t.id); return true; }
   if ((e.shiftKey && k === 'ArrowLeft') || k === 'H') { moveProject(-1); return true; }
   if ((e.shiftKey && k === 'ArrowRight') || k === 'L') { moveProject(1); return true; }
   if (k === 'ArrowLeft' || k === 'ArrowRight') {
@@ -594,6 +613,7 @@ function renderTicket() {
     return;
   }
   const sc = t.scratch || {};
+  const old = $('#extra'), typing = old && document.activeElement === old, caret = old ? old.selectionStart : 0;
   const keepScroll = [...main.querySelectorAll('.scroll')].map(x => x.scrollTop);
   const wf = (t.workflow || []).map(w => `<div class="step ${esc(w.state)}"><span class="dot"></span><span>${esc(w.step)}</span>${w.state === 'now' ? '<span class="cur">current</span>' : ''}</div>`).join('');
   const issues = (t.issues || []).map(i => `<div class="line"><span class="n">#${esc(i.n)}</span><span class="tx">${esc(i.title)}</span>
@@ -633,9 +653,17 @@ function renderTicket() {
         ${(t.card || []).length ? `<div class="section"><div class="label">card</div><div class="text dim">${t.card.map(l => hlIds(inline(l))).join('\n')}</div></div>` : ''}
       </div></section>
       <section class="panel"><div class="label">sessions<span class="r">${S.flat.length || ''}</span></div>
-        <div class="scroll tree">${sessions || '<div class="empty">no sessions</div>'}</div></section>
+        ${S.extra === null ? '' : `<div class="extra"><span class="prompt">&gt;</span><textarea id="extra" placeholder="/ticket ${esc(r.id)} …"></textarea></div>
+        <div class="extra-hint">⏎ start /ticket ${esc(r.id)} with this text · ⇧⏎ new line · esc cancel</div>`}
+        <div class="scroll tree">${sessions || (S.extra === null ? '<div class="empty">no sessions</div>' : '')}</div></section>
     </div></div>`;
   main.querySelectorAll('.scroll').forEach((x, i) => { if (keepScroll[i]) x.scrollTop = keepScroll[i]; });
+  const ta = $('#extra');
+  if (ta) {
+    ta.value = S.extra;
+    ta.addEventListener('input', () => { S.extra = ta.value; });
+    if (typing || !old) { ta.focus(); ta.setSelectionRange(old ? caret : ta.value.length, old ? caret : ta.value.length); }
+  }
   const selEl = main.querySelector('.tree .row.sel');
   if (selEl) selEl.scrollIntoView({ block: 'nearest' });
 }
@@ -646,6 +674,16 @@ async function openInApp(sessionId) {
 async function newSession(project, text) {
   try { await api('/api/new-session', { project, text }); toast(text ? 'New session: ' + text : 'New session'); } catch (e) { fail(e); }
 }
+const aliveSessions = () => S.flat.some(f => f.s.state !== 'archived');
+function closeExtra() { S.extra = null; renderTicket(); updateHints(); }
+function extraKey(e, ta) {
+  if (e.key === 'Escape') { e.preventDefault(); closeExtra(); }
+  else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    newSession(S.route.project, `/ticket ${S.route.id} ${ta.value.trim()}`.trim());
+    closeExtra();
+  }
+}
 function ticketKey(e) {
   const k = e.key;
   if (k === 'ArrowDown' || k === 'j') { S.ticketSel = Math.min(S.ticketSel + 1, Math.max(S.flat.length - 1, 0)); renderTicket(); return true; }
@@ -655,7 +693,8 @@ function ticketKey(e) {
     if (f) openInApp(f.s.sessionId); else newSession(S.route.project, '/ticket ' + S.route.id);
     return true;
   }
-  if (k === 'ArrowLeft' && !S.flat.length) { back(); return true; }
+  if (k === 'ArrowLeft' && !aliveSessions()) { back(); return true; }
+  if (k === 'ArrowRight' && !aliveSessions()) { S.extra = S.extra || ''; renderTicket(); updateHints(); return true; }
   return false;
 }
 
@@ -752,6 +791,7 @@ async function loadWeather() {
 document.addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (S.route.name === 'start') { e.preventDefault(); go('#/'); return; }
+  if (e.target && e.target.id === 'extra') { extraKey(e, e.target); return; }
   if (e.key === '?') { e.preventDefault(); toggleOverlay(); return; }
   if (S.overlay) {
     if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); toggleOverlay(false); }
