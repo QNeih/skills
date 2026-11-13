@@ -6,9 +6,11 @@ Quinn edits the board in Obsidian at any time: Read it again right before every 
 
 ## Pick
 
-Rank the cards in `To do`: those tagged `#urgent` first, then board order. The list is one `<KEY>-<n> · <title>` line per card, in that order.
+A card is **blocked** when its indented `Braucht:` or `Needs:` line names a `<KEY>-<n>` that is not a card in `Done`. `Braucht: nichts` or no such line → not blocked.
 
-`To do` empty or missing → print the cards in `In progress` and ask which one; wait for the answer.
+Rank the unblocked cards in `To do`: those tagged `#urgent` first, then board order. The list is one `<KEY>-<n> · <title>` line per card, in that order.
+
+`To do` empty or missing → print the cards in `In progress` and ask which one; wait for the answer. Every `To do` card blocked → print each with the ids blocking it and ask which one; wait for the answer.
 
 ## Find
 
