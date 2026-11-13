@@ -956,16 +956,22 @@ def as_request(text):
     return "Run /{}{}: read ~/.claude/skills/{}/SKILL.md and follow it.".format(m.group(1), m.group(2), m.group(1))
 
 
+def new_session_url(folder, text):
+    """claude://code/new?q=…&folder=…: the new Code session screen in the folder, the text
+    prefilled (none → a blank prompt). A link can't pick the sidebar group."""
+    params = {"q": as_request(text)} if text else {}
+    params["folder"] = folder
+    return "claude://code/new?" + urllib.parse.urlencode(params)
+
+
 def post_new_session(body):
-    """Opens the Claude app's new Code session screen in the project's folder with the text
-    prefilled (claude://code/new?q=…&folder=…); Quinn presses Enter there. A link can't pick the
-    sidebar group."""
-    project, text = need(body, "project", "text")
+    """Opens the Claude app's new Code session screen in the project's folder; Quinn presses Enter there."""
+    project = need(body, "project")[0]
+    text = body.get("text") or ""
     d = lookup(project).get("dir", "none")
     if d == "none" or not Path(d).is_dir():
         raise ApiError(404, "no folder for project " + project)
-    url = "claude://code/new?" + urllib.parse.urlencode({"q": as_request(text), "folder": d})
-    code, out = run(["open", url])
+    code, out = run(["open", new_session_url(d, text)])
     if code != 0:
         raise ApiError(500, "open: " + out.strip())
     return {"ok": True}

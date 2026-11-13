@@ -281,7 +281,7 @@ function updateMeta() {
 }
 const HINTS = {
   start: [],
-  home: [['↑↓', 'select'], ['⏎', 'open'], ['1–9', 'ticket'], ['← →', 'project'], ['⇧← →', 'move'], ['[ ]', 'page'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
+  home: [['↑↓', 'select'], ['space', 'open'], ['⏎', 'new session'], ['1–9', 'ticket'], ['← →', 'project'], ['⇧← →', 'move'], ['[ ]', 'page'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
   ticket: [['↑↓', 'select'], ['space', 'new /ticket session'], ['esc', 'back'], ['←', 'back (no sessions)']],
 };
 function updateHints() {
@@ -307,9 +307,9 @@ function toggleOverlay(force) {
   const o = $('#overlay');
   if (!S.overlay) { o.className = ''; return; }
   const groups = [
-    ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection'], ['⏎ / space', 'open']]],
+    ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
-    ['home', [['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open to-do ticket 1–9'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
+    ['home', [['space', 'open selected ticket'], ['⏎', 'blank new session in the project'], ['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open to-do ticket 1–9'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
     ['ticket', [['↑↓ / j k', 'select session'], ['space', 'new session in the app with /ticket <id> prefilled']]],
   ];
   const p = focusedProject();
@@ -534,7 +534,8 @@ function homeKey(e) {
   const items = homeItems(focusedProject());
   if (k === 'ArrowDown' || k === 'j') { S.homeSel = Math.min(S.homeSel + 1, Math.max(items.length - 1, 0)); renderHome(); return true; }
   if (k === 'ArrowUp' || k === 'k') { S.homeSel = Math.max(S.homeSel - 1, 0); renderHome(); return true; }
-  if (k === 'Enter' || k === ' ') { const t = items[S.homeSel]; if (t) openTicket(focusedProject().name, t.id); return true; }
+  if (k === ' ') { const t = items[S.homeSel]; if (t) openTicket(focusedProject().name, t.id); return true; }
+  if (k === 'Enter') { const p = focusedProject(); if (p) newSession(p.name, ''); return true; }
   if ((e.shiftKey && k === 'ArrowLeft') || k === 'H') { moveProject(-1); return true; }
   if ((e.shiftKey && k === 'ArrowRight') || k === 'L') { moveProject(1); return true; }
   if (k === 'ArrowLeft' || k === 'ArrowRight') {
@@ -638,7 +639,7 @@ function renderTicket() {
 }
 // Opens a new Code session in the project's folder with the command prefilled; Enter in the app starts it.
 async function newSession(project, text) {
-  try { await api('/api/new-session', { project, text }); toast('New session: ' + text); } catch (e) { fail(e); }
+  try { await api('/api/new-session', { project, text }); toast(text ? 'New session: ' + text : 'New session'); } catch (e) { fail(e); }
 }
 function ticketKey(e) {
   const k = e.key;

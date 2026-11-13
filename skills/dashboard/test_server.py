@@ -102,6 +102,10 @@ class NewSession(unittest.TestCase):
                          "Run /ticket SKL-15: read ~/.claude/skills/ticket/SKILL.md and follow it.")
         self.assertEqual(server.as_request("hello"), "hello")
 
+    def test_url(self):
+        self.assertEqual(server.new_session_url("/p/x", ""), "claude://code/new?folder=%2Fp%2Fx")
+        self.assertEqual(server.new_session_url("/p", "hi there"), "claude://code/new?q=hi+there&folder=%2Fp")
+
 
 class Fixture(unittest.TestCase):
     def setUp(self):
