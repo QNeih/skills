@@ -552,6 +552,95 @@ def session_chat(path):
     return out
 
 
+ESCAPE_RE = re.compile(r"\x1b(?:\[([0-9;?<>=]*)[ -/]*([@-~])|\][^\x07\x1b]*(?:\x07|\x1b\\)|([78])|[@-_])")
+
+
+def render_screen(raw):
+    """The text of the terminal's final screen after `claude logs` output: a grid that follows
+    cursor position (H, f), relative moves (A, B, C, D, G, E, F), erase (K, J), save and restore
+    (ESC 7/8), CR, LF, BS and tab. Colours and other sequences are ignored. Every code point takes
+    one cell. Lines lose trailing spaces; trailing blank lines are trimmed."""
+    grid, row, col, saved = [], 0, 0, (0, 0)
+
+    def line(r):
+        while len(grid) <= r:
+            grid.append([])
+        return grid[r]
+
+    def put(ch):
+        nonlocal col
+        cells = line(row)
+        if len(cells) < col:
+            cells.extend(" " * (col - len(cells)))
+        if col < len(cells):
+            cells[col] = ch
+        else:
+            cells.append(ch)
+        col += 1
+
+    pos = 0
+    for m in ESCAPE_RE.finditer(raw + "\x1b@"):  # the sentinel flushes the text after the last escape
+        for ch in raw[pos:m.start()]:
+            if ch == "\r":
+                col = 0
+            elif ch == "\n":
+                row += 1
+            elif ch == "\b":
+                col = max(col - 1, 0)
+            elif ch == "\t":
+                col = col // 8 * 8 + 8
+            elif ch >= " ":
+                put(ch)
+        pos = m.end()
+        params, cmd = m.group(1), m.group(2)
+        if m.group(3) == "7":
+            saved = (row, col)
+        elif m.group(3) == "8":
+            row, col = saved
+        if not cmd or params[:1] in ("?", "<", ">", "="):  # private modes (cursor shown, paste mode, …)
+            continue
+        nums = [int(n) if n else 0 for n in params.split(";")]
+        n = max(nums[0], 1)
+        if cmd in "Hf":
+            row, col = max(nums[0], 1) - 1, max(nums[1] if len(nums) > 1 else 1, 1) - 1
+        elif cmd == "A":
+            row = max(row - n, 0)
+        elif cmd == "B":
+            row += n
+        elif cmd == "C":
+            col += n
+        elif cmd == "D":
+            col = max(col - n, 0)
+        elif cmd == "G":
+            col = n - 1
+        elif cmd == "E":
+            row, col = row + n, 0
+        elif cmd == "F":
+            row, col = max(row - n, 0), 0
+        elif cmd == "K":
+            cells = line(row)
+            if nums[0] == 0:
+                del cells[col:]
+            elif nums[0] == 1:
+                cells[:col + 1] = " " * min(col + 1, len(cells))
+            else:
+                cells.clear()
+        elif cmd == "J":
+            if nums[0] == 0:
+                del line(row)[col:]
+                del grid[row + 1:]
+            elif nums[0] == 1:
+                for r in range(row):
+                    line(r).clear()
+                line(row)[:col + 1] = " " * min(col + 1, len(line(row)))
+            else:
+                grid.clear()
+    lines = ["".join(cells).rstrip() for cells in grid]
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines)
+
+
 END_REASONS = {"end_turn", "stop_sequence", "max_tokens", "refusal"}
 
 
@@ -1189,16 +1278,29 @@ def get_ticket(q):
     return ticket_view(project, tid)
 
 
+def find_background(sid):
+    s = next((s for s in background_sessions() if s["sessionId"] == sid), None)
+    if not s:
+        raise ApiError(404, "no background session " + str(sid))
+    return s
+
+
+def session_screen(s):
+    """The terminal screen of a live background session (its question while blocked)."""
+    return render_screen(claude_ok(["logs", s["id"]]))
+
+
 def get_session(q):
-    """A background session's brief plus its chat, for the session view."""
+    """A background session's brief plus its chat, for the session view; plus its terminal screen while blocked."""
     sid = q.get("id")
     if not sid:
         raise ApiError(400, "id is required")
-    s = next((s for s in background_sessions() if s["sessionId"] == sid), None)
-    if not s:
-        raise ApiError(404, "no background session " + sid)
+    s = find_background(sid)
     path = transcript_path(s)
-    return dict(session_brief(s), chat=session_chat(path) if path else [])
+    view = dict(session_brief(s), chat=session_chat(path) if path else [])
+    if view["state"] == "blocked":
+        view["screen"] = session_screen(s)
+    return view
 
 
 def post_open(body):
@@ -1251,7 +1353,18 @@ def claude_ok(args, cwd=None):
     return out
 
 
-BG_ID = re.compile(r"backgrounded · (\S+) ·")
+BG_ID = re.compile(r"backgrounded · (\S+)")  # `· <name>` follows unless the session has none
+STOP_WAIT = 15  # seconds a stopped session's process gets to exit
+
+
+def process_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def bg_session_name(project, text):
@@ -1275,6 +1388,40 @@ def post_bg_session(body):
     return {"ok": True, "id": m.group(1)}
 
 
+def post_session_send(body):
+    """Sends a follow-up to a background session that isn't running: `claude stop` (when its process
+    is alive), then `claude --bg --resume <sessionId> <text>` in its folder. Resuming a stopped
+    session keeps its id; resuming a live one would fork a new session, so a different id is an error."""
+    sid, text = need(body, "sessionId", "text")
+    text = text.strip()
+    if not text:
+        raise ApiError(400, "text is empty")
+    s = find_background(sid)
+    state = background_state(s["agent"])
+    if state == "running":
+        raise ApiError(409, "session is running")
+    if state == "blocked":  # stopping drops the unanswered question, so read it first
+        text = "Answering your question:\n{}\n\nMy answer: {}".format(session_screen(s), text)
+    pid = s["agent"].get("pid")
+    if pid:
+        claude_ok(["stop", s["id"]])
+        # `claude stop` returns while the process still shuts down; a resume before it's gone forks.
+        deadline = time.time() + STOP_WAIT
+        while process_alive(pid):
+            if time.time() > deadline:
+                raise ApiError(500, "session {} is still running {} s after claude stop (pid {})".format(
+                    s["id"], STOP_WAIT, pid))
+            time.sleep(0.1)
+    out = claude_ok(["--bg", "--resume", sid, text], cwd=s["cwd"])
+    m = BG_ID.search(out)
+    if not m:
+        raise ApiError(500, "claude --bg --resume printed no session id: " + out.strip())
+    if m.group(1) != s["id"]:
+        raise ApiError(500, "claude forked session {} into a new session {} instead of resuming it".format(
+            s["id"], m.group(1)))
+    return {"ok": True, "id": m.group(1)}
+
+
 def post_copy(body):
     pbcopy(need(body, "text")[0])
     if body.get("app"):
@@ -1286,7 +1433,7 @@ GETS = {"/api/briefing": lambda q: BRIEFING.get(), "/api/projects": lambda q: pr
         "/api/ticket": get_ticket, "/api/session": get_session, "/api/weather": lambda q: weather(),
         "/api/order": lambda q: {"order": read_order()}}
 POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/open-url": post_open_url,
-         "/api/bg-session": post_bg_session,
+         "/api/bg-session": post_bg_session, "/api/session/send": post_session_send,
          "/api/copy": post_copy, "/api/note-done": lambda b: note_done(need(b, "n")[0]),
          "/api/order": save_order}
 

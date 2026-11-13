@@ -160,7 +160,12 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 .tree .summary::before { content: '\23BF'; color: var(--dim); flex: none; }
 
 /* session */
-.screen.session > .panel { flex: 1; }
+.screen.session > .panel.chatp { flex: 1; }
+.screen.session > .panel.needs { flex: none; max-height: 45vh; border-color: var(--wait); }
+.needs > .label { color: var(--wait); }
+.term { margin: 0; padding: 0 15px 12px; overflow: auto; white-space: pre; font: var(--fs-s)/1.35 var(--mono); color: var(--text); }
+.screen.session > .extra { flex: none; margin: 0; }
+.screen.session > .extra.sending { opacity: .5; }
 .head .st { font-size: var(--fs-s); color: var(--label); flex: none; }
 .chat { padding: 8px 0 14px; }
 .msg { display: flex; gap: var(--gap); padding: 4px 15px 4px calc(var(--c1) - 2px); min-width: 0; }
@@ -247,7 +252,7 @@ const S = {
   briefing: null, briefingErr: null, projects: null, projectsErr: null, focus: 0, homeSel: 0,
   ticket: null, ticketErr: null, ticketSel: 0, flat: [], extra: null, // extra: the prompt box's text while it is open
   last: {}, // project name → hash of the screen Quinn was last on in it
-  drafts: {}, // hash (or 'ask:<project>') → unsent prompt text, kept while tab is on another project
+  drafts: {}, // hash (or 'ask:<project>', 'session:<sessionId>') → unsent prompt text, kept while tab is on another project
   promptNext: null, // hash of the ticket whose prompt box opens with its next command once it loads (⏎ on home)
   selBy: {}, // project name → id of the ticket selected on its home
 };
@@ -319,7 +324,7 @@ const HINTS = {
   start: [],
   home: [['↑↓', 'select'], ['→', 'next command'], ['⏎', 'edit next command'], ['space / 1–9', 'open'], ['tab', 'project'], ['⇧↑↓', 'move project'], ['b', 'bg session'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
   ticket: [['↑↓', 'select'], ['space', 'new /work bg session'], ['⏎', 'edit next command'], ['tab', 'project'], ['esc', 'back'], ['←', 'back']],
-  session: [['↑↓', 'scroll'], ['← / esc', 'back'], ['tab', 'project']],
+  session: [['⏎', 'send'], ['⇧⏎', 'new line'], ['↑↓ empty', 'scroll'], ['← empty / esc', 'back'], ['tab', 'project']],
 };
 function updateHints() {
   let h = HINTS[S.route.name].slice();
@@ -333,6 +338,7 @@ function updateHints() {
     }
     else h.push(['→', 'edit prompt']);
   }
+  if (S.route.name === 'session' && S.session && S.session.state === 'blocked') h[0] = ['⏎', 'answer'];
   if (S.route.name === 'home') {
     const p = focusedProject();
     for (const j of (p && p.jumps) || []) h.push([j.key, j.label]);
@@ -358,7 +364,7 @@ function toggleOverlay(force) {
     ['start', [['any key or click', 'go to briefing (home)']]],
     ['home', [['space / 1–9', 'open the selected / numbered ticket (in progress first, then to do)'], ['→', 'background session with the ticket\'s next command: /work <id>, then /send'], ['⏎', 'ticket view with the next command in its prompt box; ⏎ again starts it in the background'], ['b', 'prompt box: start a background session (claude --bg) in the project with your text'], ['⇧↑ / ⇧↓', 'move project up / down in the rail'], ['s', 'background session: fix new Sentry errors'], ['d', 'background session: Dependabot review'], ['c', 'clock screen'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
     ['ticket', [['↑↓ / j k', 'select session'], ['→ / space', 'on a background session: open its session view'], ['space', 'open the selected app session in the app; no sessions yet: background session with /work <id>'], ['⏎', 'prompt box with the next command; ⏎ again starts a background session with it'], ['→ / space / click', 'on a server row: open it in a new tab of your normal Chrome'], ['→', 'no live sessions: prompt box'], ['←', 'no live sessions: back']]],
-    ['session', [['↑↓ / j k', 'scroll the chat'], ['← / esc', 'back to the ticket view']]],
+    ['session', [['⏎', 'send the text box: a follow-up, or the answer to the question under "needs you" (refused while the session runs)'], ['⇧⏎', 'new line'], ['↑↓', 'empty box: scroll the chat'], ['← / esc', 'empty box or esc: back to the ticket view; the box keeps its draft']]],
   ];
   const p = focusedProject();
   if (p && (p.jumps || []).length) groups.push([`jumps · ${p.name}`, p.jumps.map(j => [j.key, j.label])]);
@@ -877,7 +883,7 @@ async function loadSession() {
     const s = await api(`/api/session?id=${encodeURIComponent(r.sid)}`);
     if (gen !== S.gen) return;
     S.session = s; S.sessionErr = null;
-    sessionCrumbs();
+    sessionCrumbs(); updateHints();
   } catch (e) {
     if (gen !== S.gen) return;
     S.sessionErr = e.message;
@@ -892,9 +898,20 @@ function renderSession() {
   const content = $('#content'), r = S.route, s = S.session;
   if (!content.querySelector(`.screen.session[data-sid="${CSS.escape(r.sid)}"]`)) {
     content.innerHTML = `<div class="screen session" data-sid="${esc(r.sid)}"><div class="head" id="s-head"></div>
-      <div class="errtext" id="s-err" hidden></div><section class="panel"><div class="scroll chat" id="chat"></div></section></div>`;
+      <div class="errtext" id="s-err" hidden></div><section class="panel chatp"><div class="scroll chat" id="chat"></div></section>
+      <section class="panel needs" id="s-needs" hidden><div class="label">needs you</div><pre class="term" id="s-screen"></pre></section>
+      <div class="extra"><span class="prompt">&gt;</span><textarea id="s-text"></textarea></div></div>`;
     S.chatHtml = null;
+    const ta = $('#s-text'), key = 'session:' + r.sid;
+    ta.value = S.drafts[key] || '';
+    ta.addEventListener('input', () => { if (ta.value) S.drafts[key] = ta.value; else delete S.drafts[key]; });
+    ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
   }
+  // A blocked session's question as its terminal shows it; the answer goes out with it quoted in front.
+  const blocked = !!(s && s.state === 'blocked' && s.screen);
+  $('#s-needs').hidden = !blocked;
+  if (blocked && $('#s-screen').textContent !== s.screen) $('#s-screen').textContent = s.screen;
+  $('#s-text').placeholder = blocked ? 'Answer …' : s && s.state === 'running' ? 'Follow-up, once it stops running …' : 'Follow-up …';
   $('#s-head').innerHTML = s ? `<span class="dot ${esc(s.state)}"></span><h1 title="${esc(s.title)}">${esc(s.title || s.sessionId)}</h1>
     ${s.id ? `<span class="tag">bg ${esc(s.id)}</span>` : ''}<span class="st">${esc(s.state === 'blocked' ? 'needs you' : s.state)}</span>` : '';
   const err = $('#s-err');
@@ -916,6 +933,28 @@ function sessionKey(e) {
   if (box && (k === 'ArrowDown' || k === 'j')) { box.scrollBy(0, 60); return true; }
   if (box && (k === 'ArrowUp' || k === 'k')) { box.scrollBy(0, -60); return true; }
   return false;
+}
+// The session view's text box: ⏎ sends, ⇧⏎ adds a line; while it's empty the view's keys work.
+function sessionTextKey(e, ta) {
+  if (e.key === 'Escape') { e.preventDefault(); back(); return; }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendToSession(ta); return; }
+  if (ta.value) return;
+  if (e.key === '?') { e.preventDefault(); toggleOverlay(); return; }
+  if (['ArrowLeft', 'ArrowUp', 'ArrowDown'].includes(e.key) && sessionKey(e)) e.preventDefault();
+}
+// A follow-up, or while blocked the answer (the server quotes the question in front of it).
+async function sendToSession(ta) {
+  const text = ta.value.trim(), sid = S.route.sid, box = ta.parentElement;
+  if (!text || box.classList.contains('sending')) return;
+  box.classList.add('sending'); ta.readOnly = true;
+  try {
+    const j = await api('/api/session/send', { sessionId: sid, text });
+    delete S.drafts['session:' + sid];
+    ta.value = '';
+    toast(`Sent to ${j.id}`);
+    if (S.route.name === 'session' && S.route.sid === sid) { clearTimeout(S.timer); loadSession(); }
+  } catch (e) { fail(e); }
+  finally { box.classList.remove('sending'); ta.readOnly = false; }
 }
 
 /* ---------- start ---------- */
@@ -1020,6 +1059,7 @@ document.addEventListener('keydown', e => {
   if (S.route.name === 'start') { e.preventDefault(); go('#/'); return; }
   if (e.target && e.target.id === 'extra') { extraKey(e, e.target); return; }
   if (e.target && e.target.id === 'ask-text') { askKey(e, e.target); return; }
+  if (e.target && e.target.id === 's-text' && !S.overlay) { sessionTextKey(e, e.target); return; }
   if (e.key === '?') { e.preventDefault(); toggleOverlay(); return; }
   if (S.overlay) {
     if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); toggleOverlay(false); }

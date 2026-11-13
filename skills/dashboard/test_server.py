@@ -241,8 +241,8 @@ def agent(sid, cwd, name, started, **fields):
     return {k: v for k, v in a.items() if v is not None}
 
 
-class BackgroundSessions(Fixture):
-    """Background sessions come from `claude agents --json --all` and join a ticket by the same rules as app sessions."""
+class BackgroundFixture(Fixture):
+    """Fixture plus a fake `claude agents --json --all` listing self.agents and a one-ticket vault board."""
 
     def setUp(self):
         super().setUp()
@@ -269,6 +269,10 @@ class BackgroundSessions(Fixture):
             t.parent.mkdir(parents=True, exist_ok=True)
             t.write_text("".join(json.dumps(l) + "\n" for l in lines))
             return t
+
+
+class BackgroundSessions(BackgroundFixture):
+    """Background sessions come from `claude agents --json --all` and join a ticket by the same rules as app sessions."""
 
     def test_ticket_view_lists_matching_background_sessions_after_app_sessions(self):
         self.session("local_1", title="A-2 app")
@@ -335,6 +339,110 @@ class BackgroundSessions(Fixture):
         self.assertEqual((view["running"], view["background"]), (3, 2))
 
 
+class FollowUp(BackgroundFixture):
+    """POST /api/session/send: stop the session, then resume it with the text, keeping its id."""
+
+    def setUp(self):
+        super().setUp()
+        self.calls = []
+        # Like the real CLI: `claude stop` returns while the process still shuts down, and a resume
+        # while it runs starts a copy with a new id. A stopped process is gone after `exit_after` checks.
+        self.alive, self.stopping, self.exit_after, self.fork = set(), {}, 1, False
+        saved = server.process_alive, server.STOP_WAIT
+        self.addCleanup(lambda: (setattr(server, "process_alive", saved[0]), setattr(server, "STOP_WAIT", saved[1])))
+        server.process_alive, server.STOP_WAIT = self.process_alive, 2
+
+    def process_alive(self, pid):
+        if pid in self.alive and self.stopping.get(pid, 0) > 0:
+            self.stopping[pid] -= 1
+            if not self.stopping[pid]:
+                self.alive.discard(pid)
+            return True
+        return pid in self.alive
+
+    def bg(self, sid, name, started, **fields):
+        out = super().bg(sid, name, started, **fields)
+        if self.agents[-1].get("pid"):
+            self.alive.add(self.agents[-1]["pid"])
+        return out
+
+    def fake_cli(self, args, cwd=None):
+        if args == ["agents", "--json", "--all"]:
+            return 0, json.dumps(self.agents)
+        self.calls.append((args, cwd))
+        a = next((a for a in self.agents if a["id"] in args or a["sessionId"] in args), None)
+        if args[0] == "logs":
+            return 0, "\x1b[2J\x1b[H Pick one\r\n\x1b[2C1. Red\r\n\x1b[2C2. Blue\r\n\r\n"
+        if args[0] == "stop":
+            self.stopping = {a["pid"]: self.exit_after}
+            return 0, "stopped {}\n".format(args[1])
+        if args[:2] == ["--bg", "--resume"]:
+            if self.fork or a.get("pid") in self.alive:
+                return 0, ("note: session {0} is already running in the background, so this started a copy as bbbbbbbb. "
+                           "`claude attach {0}` opens the original.\nbackgrounded · bbbbbbbb\n"
+                           "  claude agents             list sessions\n").format(a["id"])
+            return 0, "Starting background service…\nbackgrounded · {} · {}\n  claude agents  list sessions\n".format(
+                a["id"], a["name"])
+        raise AssertionError("unexpected claude call: {}".format(args))
+
+    def send(self, sid, text):
+        return server.POSTS["/api/session/send"]({"sessionId": sid, "text": text})
+
+    def test_a_waiting_session_is_stopped_then_resumed_in_its_folder(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100, status="idle", state="done", cwd="/work/here")
+        got = self.send("aaaaaaaa-1", "now the tests\n")
+        self.assertEqual(self.calls, [(["stop", "aaaaaaaa"], None),
+                                      (["--bg", "--resume", "aaaaaaaa-1", "now the tests"], "/work/here")])
+        self.assertEqual(got, {"ok": True, "id": "aaaaaaaa"})
+
+    def test_an_exited_session_is_resumed_without_a_stop(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100, pid=None, status=None, state="done")
+        self.send("aaaaaaaa-1", "go on")
+        self.assertEqual([a[:2] for a, _ in self.calls], [["--bg", "--resume"]])
+
+    def test_a_running_session_is_refused(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100, status="busy", state="running")
+        with self.assertRaises(server.ApiError) as e:
+            self.send("aaaaaaaa-1", "stop that")
+        self.assertEqual((e.exception.status, str(e.exception)), (409, "session is running"))
+        self.assertEqual(self.calls, [])
+
+    def test_the_resume_waits_until_the_stopped_process_has_exited(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100)
+        self.exit_after = 3
+        self.assertEqual(self.send("aaaaaaaa-1", "go on")["id"], "aaaaaaaa")
+
+    def test_a_process_that_outlives_the_wait_is_an_error_and_nothing_is_resumed(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100)
+        self.exit_after, server.STOP_WAIT = 10 ** 6, 0.3
+        with self.assertRaises(server.ApiError) as e:
+            self.send("aaaaaaaa-1", "go on")
+        self.assertIn("still running", str(e.exception))
+        self.assertEqual([a[0] for a, _ in self.calls], ["stop"])
+
+    def test_a_forked_session_is_an_error(self):
+        self.bg("aaaaaaaa-1", "skills: fix it", 100, pid=None, status=None, state="done")
+        self.fork = True
+        with self.assertRaises(server.ApiError) as e:
+            self.send("aaaaaaaa-1", "go on")
+        self.assertIn("bbbbbbbb", str(e.exception))
+        self.assertIn("aaaaaaaa", str(e.exception))
+
+    def test_an_answer_to_a_blocked_session_quotes_its_question_read_before_the_stop(self):
+        self.bg("aaaaaaaa-1", "skills: probe", 100, status="waiting", waitingFor="input needed", state="blocked")
+        self.send("aaaaaaaa-1", "Blue")
+        self.assertEqual([a[0] for a, _ in self.calls], ["logs", "stop", "--bg"])
+        self.assertEqual(self.calls[0][0], ["logs", "aaaaaaaa"])
+        self.assertEqual(self.calls[2][0][3], "Answering your question:\n Pick one\n  1. Red\n  2. Blue\n\nMy answer: Blue")
+
+    def test_session_endpoint_shows_the_screen_only_while_blocked(self):
+        self.bg("aaaaaaaa-1", "skills: probe", 100, status="waiting", waitingFor="input needed", state="blocked")
+        self.bg("aaaaaaaa-2", "skills: idle", 100)
+        self.assertEqual(server.GETS["/api/session"]({"id": "aaaaaaaa-1"})["screen"], " Pick one\n  1. Red\n  2. Blue")
+        self.assertNotIn("screen", server.GETS["/api/session"]({"id": "aaaaaaaa-2"}))
+        self.assertEqual(self.calls, [(["logs", "aaaaaaaa"], None)])
+
+
 class Chat(Fixture):
     """The session view's chat: prompts, replies and one line per tool call, read from the transcript."""
 
@@ -391,6 +499,43 @@ class Chat(Fixture):
         big = "x" * (server.CHAT_TAIL // 2)
         got = self.chat([user("first " + big), user("second " + big), user("third")])
         self.assertEqual([e["text"][:6] for e in got], ["second", "third"])
+
+class Screen(unittest.TestCase):
+    """render_screen turns `claude logs` output into the text of the terminal's final screen."""
+
+    def test_a_blocked_session_shows_its_question_and_options(self):
+        raw = Path(__file__).with_name("fixtures").joinpath("logs-blocked-question.ansi").read_bytes().decode("utf-8")  # bytes: CRs kept
+        lines = server.render_screen(raw).split("\n")
+        rule = "─" * 200
+        start = lines.index(" ☐ Color")
+        self.assertEqual(lines[start - 1], rule)
+        self.assertEqual(lines[start:start + 13], [
+            " ☐ Color",
+            "",
+            "Red or blue?",
+            "",
+            "❯ 1. Red",
+            "     Pick red.",
+            "  2. Blue",
+            "     Pick blue.",
+            "  3. Type something.",
+            rule,
+            "  4. Chat about this",
+            "",
+            "Enter to select · ↑/↓ to navigate · Esc to cancel"])
+        self.assertEqual(lines[0], "")  # the header starts one row down
+        self.assertIn("Claude Code", lines[1])
+        self.assertEqual(lines[-1], "─" * 192 + " probe ─")  # trailing blank rows trimmed
+        self.assertEqual(len(lines), 50)
+        self.assertNotIn("\x1b", "".join(lines))
+        self.assertNotIn("Creating…", "".join(lines))  # overwritten spinner text is gone
+
+    def test_moves_and_erases(self):
+        raw = "abcdef\x1b[3D\x1b[KX\r\n\x1b[2;4Hyz\x1b[1A\x1b[2Cq\x1b[1G\x1b[1B\x1b[31m!\x1b[0m\x1b7\x1b[5;1H\x1b8?\n\n\n"
+        self.assertEqual(server.render_screen(raw), "abcX   q\n!? yz")
+        self.assertEqual(server.render_screen("old\x1b[2J\x1b[Hnew"), "new")
+        self.assertEqual(server.render_screen("one\r\ntwo\r\nthree\x1b[2;1H\x1b[J"), "one")
+
 
 class Transcript(Fixture):
     def test_fallback_glob(self):
