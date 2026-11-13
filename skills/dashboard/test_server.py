@@ -73,6 +73,29 @@ class Goal(unittest.TestCase):
         self.assertEqual(server.card_goal(["Braucht: BGH-1"]), "")
 
 
+class PullRequests(unittest.TestCase):
+    def test_checks_summary(self):
+        rollup = [{"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "SUCCESS"},
+                  {"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "SKIPPED"},
+                  {"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "FAILURE"},
+                  {"__typename": "CheckRun", "status": "IN_PROGRESS"},
+                  {"__typename": "StatusContext", "state": "PENDING"}]
+        self.assertEqual(server.checks_summary(rollup), {"passed": 2, "failed": 1, "pending": 2})
+
+    def test_pr_urls_from_card_and_sessions(self):
+        card = ["SKL-15 · x", "PR https://github.com/o/r/pull/3"]
+        tree = [{"prs": ["https://github.com/o/r/pull/3"], "children": [{"prs": ["https://github.com/o/r/pull/4"]}]}]
+        self.assertEqual(server.ticket_pr_urls(card, tree, None, None),
+                         ["https://github.com/o/r/pull/3", "https://github.com/o/r/pull/4"])
+
+    def test_pr_steps(self):
+        steps = [{"step": "/ticket", "state": "done"}, {"step": "/send", "state": "todo"}]
+        out = server.with_pr_steps(steps, [{"number": 3, "state": "open"}])
+        self.assertEqual([s["state"] for s in out], ["done", "done", "now"])
+        self.assertEqual(out[-1]["step"], "PR #3 open")
+        self.assertEqual(server.with_pr_steps(steps, []), steps)
+
+
 class Fixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

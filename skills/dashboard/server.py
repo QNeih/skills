@@ -565,7 +565,8 @@ def session_summary(s):
 def session_brief(s, transcripts=None):
     return {"sessionId": s["sessionId"], "title": s.get("title"), "name": (s.get("spawnedFrom") or {}).get("name"),
             "state": session_state(s, transcripts), "lastActivityAt": s.get("lastActivityAt"),
-            "summary": session_summary(s), "link": LINK.format(s["sessionId"])}
+            "summary": session_summary(s), "link": LINK.format(s["sessionId"]),
+            "prs": [p["url"] for p in s.get("prs") or [] if p.get("url")]}
 
 
 def mentions(text, ticket_id):
@@ -655,6 +656,95 @@ def read_issues(folder):
                        "status": (field(text, "**Status:**") or "").strip("` "),
                        "blockedBy": [int(x) for x in re.findall(r"\d+", blocked)]})
     return issues
+
+
+# --- pull requests ---------------------------------------------------------------------------
+
+PR_URL_RE = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+")
+PR_TTL = 20  # seconds; the ticket view polls, gh is slow and rate-limited
+_pr_cache = {}
+_pr_lock = threading.Lock()
+
+
+def ticket_pr_urls(card_lines, session_tree, branch, project_dir):
+    """PR links of a ticket: `PR <url>` lines on the card (/send adds one), PRs the ticket's
+    sessions opened, and PRs whose head is the ticket's branch."""
+    urls = []
+    for line in card_lines:
+        urls += PR_URL_RE.findall(line)
+
+    def walk(nodes):
+        for n in nodes:
+            urls.extend(n.get("prs") or [])
+            walk(n.get("children") or [])
+    walk(session_tree)
+    if branch and project_dir:
+        code, origin = run(["git", "-C", project_dir, "remote", "get-url", "origin"])
+        m = re.search(r"github\.com[:/]([^/]+/[^/\s]+?)(?:\.git)?\s*$", origin) if code == 0 else None
+        if m:
+            urls += branch_pr_urls(m.group(1), branch)
+    return list(dict.fromkeys(urls))
+
+
+def branch_pr_urls(repo, branch):
+    key = "list:{}:{}".format(repo, branch)
+    with _pr_lock:
+        hit = _pr_cache.get(key)
+        if hit and time.time() - hit[0] < PR_TTL:
+            return hit[1]
+    code, out = run(["gh", "pr", "list", "-R", repo, "--head", branch, "--state", "all", "--json", "url"])
+    if code != 0:
+        raise ApiError(502, "gh pr list: " + out.strip())
+    urls = [p["url"] for p in json.loads(out)]
+    with _pr_lock:
+        _pr_cache[key] = (time.time(), urls)
+    return urls
+
+
+def checks_summary(rollup):
+    """statusCheckRollup → counts: passed | failed | pending (skipped and neutral count as passed)."""
+    out = {"passed": 0, "failed": 0, "pending": 0}
+    for c in rollup or []:
+        if c.get("__typename") == "StatusContext":
+            st = (c.get("state") or "").upper()
+            key = "passed" if st == "SUCCESS" else "pending" if st in ("PENDING", "EXPECTED") else "failed"
+        elif (c.get("status") or "").upper() != "COMPLETED":
+            key = "pending"
+        else:
+            key = "passed" if (c.get("conclusion") or "").upper() in ("SUCCESS", "SKIPPED", "NEUTRAL") else "failed"
+        out[key] += 1
+    return out
+
+
+def pr_status(url):
+    with _pr_lock:
+        hit = _pr_cache.get(url)
+        if hit and time.time() - hit[0] < PR_TTL:
+            return hit[1]
+    code, out = run(["gh", "pr", "view", url, "--json",
+                     "number,title,state,isDraft,reviewDecision,mergeStateStatus,statusCheckRollup,url"])
+    if code != 0:
+        raise ApiError(502, "gh pr view {}: {}".format(url, out.strip()))
+    d = json.loads(out)
+    pr = {"url": d["url"], "number": d["number"], "title": d["title"],
+          "state": "draft" if d["isDraft"] and d["state"] == "OPEN" else d["state"].lower(),
+          "review": (d.get("reviewDecision") or "").lower().replace("_", " "),
+          "merge": (d.get("mergeStateStatus") or "").lower(), "checks": checks_summary(d.get("statusCheckRollup"))}
+    with _pr_lock:
+        _pr_cache[url] = (time.time(), pr)
+    return pr
+
+
+def with_pr_steps(steps, prs):
+    """Once a PR exists, /send has run: every step up to it is done, then one `PR #n` step per PR,
+    done when merged or closed, else now."""
+    if not prs:
+        return steps
+    steps = [dict(s, state="done") for s in steps]
+    for pr in prs:
+        steps.append({"step": "PR #{} {}".format(pr["number"], pr["state"]),
+                      "state": "done" if pr["state"] in ("merged", "closed") else "now"})
+    return steps
 
 
 def workflow(column, scratch, issues):
@@ -750,11 +840,13 @@ def ticket_view(project, ticket_id):
                    "next": field(text, "Next:")}
         issues = read_issues(folders[0].parent)
     handoff = Path(d, ".handoffs", "HANDOFF-{}.md".format(ticket_id))
+    sessions = ticket_sessions(ticket_id, d, load_sessions())
+    prs = [pr_status(u) for u in ticket_pr_urls(lines, sessions, (scratch or {}).get("branch"), d)]
     return {"id": ticket_id, "title": title, "column": column, "goal": card_goal(lines[1:]), "card": lines,
             "scratch": scratch,
             "handoff": str(handoff) if handoff.is_file() else None, "issues": issues,
-            "workflow": workflow(column, scratch, issues),
-            "sessions": ticket_sessions(ticket_id, d, load_sessions())}
+            "workflow": with_pr_steps(workflow(column, scratch, issues), prs),
+            "sessions": sessions, "prs": prs}
 
 
 # --- weather ---------------------------------------------------------------------------------
@@ -929,15 +1021,27 @@ def post_open(body):
     return {"ok": True}
 
 
+def post_open_pr(body):
+    url = need(body, "url")[0]
+    if not PR_URL_RE.fullmatch(url):
+        raise ApiError(400, "not a GitHub PR link: " + url)
+    code, out = run(["open", url])
+    if code != 0:
+        raise ApiError(500, "open: " + out.strip())
+    return {"ok": True}
+
+
 def post_copy(body):
     pbcopy(need(body, "text")[0])
+    if body.get("app"):
+        subprocess.run(["open", "-a", "Claude"], check=True)
     return {"ok": True}
 
 
 GETS = {"/api/briefing": lambda q: BRIEFING.get(), "/api/projects": lambda q: projects_view(),
         "/api/ticket": get_ticket, "/api/session": get_session, "/api/weather": lambda q: weather(),
         "/api/order": lambda q: {"order": read_order()}}
-POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/reply": post_reply,
+POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/open-pr": post_open_pr, "/api/reply": post_reply,
          "/api/copy": post_copy, "/api/note-done": lambda b: note_done(need(b, "n")[0]),
          "/api/order": save_order}
 

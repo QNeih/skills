@@ -84,6 +84,9 @@ main { min-height: 0; padding: 12px; overflow: hidden; }
 .panel.proj { display: grid; grid-row: span 6; grid-template-rows: subgrid; min-width: 0; overflow: hidden; }
 .panel.proj .section { min-width: 0; }
 .panel.proj > .scroll { display: contents; }
+.tag.fail { color: var(--err); }
+.dot.pr-open { background: var(--run); } .dot.pr-draft { background: var(--label); } .dot.pr-merged { background: #a371f7; } .dot.pr-closed { background: var(--err); }
+.line.pr { cursor: pointer; }
 .tgoal { flex: none; padding: 0 2px; color: var(--text); font-size: 13.5px; }
 .goal { padding: 0 12px 4px 30px; color: var(--label); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .page { font: 11px var(--mono); color: var(--dim); }
@@ -295,7 +298,7 @@ function updateMeta() {
 const HINTS = {
   start: [],
   home: [['↑↓', 'select'], ['⏎', 'open'], ['tab', 'project'], ['⇧← →', 'move project'], ['[ ]', 'page'], ['1–3', 'next ticket'], ['r', 'refresh briefing'], ['s', 'start']],
-  ticket: [['↑↓', 'select'], ['⏎', 'open session'], ['o', 'open in app'], ['esc', 'back']],
+  ticket: [['↑↓', 'select'], ['⏎', 'open session'], ['o', 'open in app'], ['g', 'open PR'], ['t', 'copy /ticket'], ['esc', 'back']],
   session: [['i', 'reply'], ['↑↓', 'scroll'], ['o', 'open in app'], ['esc', 'back']],
   reply: [['⏎', 'send'], ['⇧⏎', 'new line'], ['esc', 'leave box']],
 };
@@ -326,7 +329,7 @@ function toggleOverlay(force) {
     ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection'], ['⏎', 'open']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
     ['home', [['s', 'back to start screen'],['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–3', 'open next ticket'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
-    ['ticket', [['⏎', 'open session'], ['o', 'open session in Claude app']]],
+    ['ticket', [['⏎', 'open session'], ['o', 'open session in Claude app'], ['g', 'open the PR'], ['t', 'copy /ticket <id> to start it in the app']]],
     ['session', [['i / /', 'focus reply box'], ['⏎ (in box)', 'copy reply, open in app'], ['esc (in box)', 'leave box'], ['↑↓ / j k', 'scroll chat'], ['o', 'open in Claude app']]],
   ];
   const p = focusedProject();
@@ -530,8 +533,7 @@ async function runJump(idx, key) {
   if (!j) return false;
   try {
     if (j.action === 'copy') {
-      await api('/api/copy', { text: j.arg });
-      toast(`Copied: ${j.arg}`);
+      await copyText(j.arg);
     } else if (j.action === 'note-done') {
       const now = Date.now();
       if (!(S.armed && S.armed.idx === idx && S.armed.key === key && now < S.armed.until)) {
@@ -600,6 +602,8 @@ async function loadTicket() {
     S.ticketErr = e.message;
   }
   renderTicket();
+  // Live: re-read every 5 s so steps, sessions and PR checks move while the ticket's sessions work.
+  if (gen === S.gen && S.route.name === 'ticket') { clearTimeout(S.timer); S.timer = setTimeout(loadTicket, 5000); }
 }
 function renderTicket() {
   if (S.route.name !== 'ticket') return;
@@ -613,6 +617,14 @@ function renderTicket() {
   const wf = (t.workflow || []).map(w => `<div class="step ${esc(w.state)}"><span class="dot"></span><span>${esc(w.step)}</span>${w.state === 'now' ? '<span class="cur">current</span>' : ''}</div>`).join('');
   const issues = (t.issues || []).map(i => `<div class="line"><span class="n">#${esc(i.n)}</span><span class="tx">${esc(i.title)}</span>
     <span class="tag">${esc(i.status || '')}</span>${(i.blockedBy || []).length ? `<span class="tag block">blocked by ${esc([].concat(i.blockedBy).map(x => '#' + x).join(', '))}</span>` : ''}</div>`).join('');
+  const prs = (t.prs || []).map(pr => {
+    const c = pr.checks || {};
+    const checks = [c.failed ? `<span class="tag fail">✗ ${c.failed}</span>` : '', c.pending ? `<span class="tag block">● ${c.pending}</span>` : '',
+      c.passed ? `<span class="tag prog">✓ ${c.passed}</span>` : ''].join('');
+    return `<div class="line pr" data-act="open-pr" data-url="${esc(pr.url)}"><span class="dot pr-${esc(pr.state)}"></span>
+      <span class="n">#${esc(pr.number)}</span><span class="tx">${esc(pr.title)}</span>
+      <span class="tag">${esc(pr.state)}</span>${pr.review ? `<span class="tag">${esc(pr.review)}</span>` : ''}${checks}</div>`;
+  }).join('');
   const sel = S.flat[S.ticketSel];
   const sessions = S.flat.map((f, i) => {
     const s = f.s;
@@ -633,6 +645,7 @@ function renderTicket() {
     <div class="two">
       <section class="panel"><div class="scroll">
         <div class="section"><div class="label">Workflow</div>${wf || '<div class="empty">no workflow</div>'}</div>
+        ${prs ? `<div class="section"><div class="label">Pull requests<span class="r"><kbd>g</kbd> open</span></div>${prs}</div>` : ''}
         ${sc.next ? `<div class="section"><div class="label">Next</div><div class="text">${hlIds(inline(sc.next))}</div></div>` : ''}
         ${issues ? `<div class="section"><div class="label">Build issues</div>${issues}</div>` : ''}
         ${t.handoff ? `<div class="section"><div class="label">Handoff</div><div class="text dim">${esc(t.handoff)}</div></div>` : ''}
@@ -656,12 +669,21 @@ async function openInApp(sessionId) {
   if (!sessionId) { toast('No session selected', true); return; }
   try { await api('/api/open', { sessionId }); toast('Opened in the Claude app'); } catch (e) { fail(e); }
 }
+// Copies a command and brings the Claude app forward; the app has no way to start a session from outside.
+async function copyText(text) {
+  try { await api('/api/copy', { text, app: true }); toast('Copied: ' + text + ' — paste it in a new session'); } catch (e) { fail(e); }
+}
+async function openPr(url) {
+  try { await api('/api/open-pr', { url }); toast('Opened PR'); } catch (e) { fail(e); }
+}
 function ticketKey(e) {
   const k = e.key;
   if (k === 'ArrowDown' || k === 'j') { S.ticketSel = Math.min(S.ticketSel + 1, Math.max(S.flat.length - 1, 0)); renderTicket(); return true; }
   if (k === 'ArrowUp' || k === 'k') { S.ticketSel = Math.max(S.ticketSel - 1, 0); renderTicket(); return true; }
   if (k === 'Enter') { openSession(S.ticketSel); return true; }
   if (k === 'o') { const f = S.flat[S.ticketSel]; openInApp(f && f.s.sessionId); return true; }
+  if (k === 'g') { const pr = (S.ticket && S.ticket.prs || [])[0]; if (pr) openPr(pr.url); else toast('No PR yet', true); return true; }
+  if (k === 't') { copyText('/ticket ' + S.route.id); return true; }
   return false;
 }
 
@@ -863,6 +885,7 @@ document.addEventListener('click', e => {
   } else if (a === 'jump') runJump(Number(el.dataset.idx), el.dataset.key);
   else if (a === 'focus') { if (Number(el.dataset.idx) !== S.focus) focusProject(Number(el.dataset.idx)); }
   else if (a === 'session') openSession(Number(el.dataset.i));
+  else if (a === 'open-pr') openPr(el.dataset.url);
   else if (a === 'open-app') {
     if (S.route.name === 'ticket') { const f = S.flat[S.ticketSel]; openInApp(f && f.s.sessionId); }
     else openInApp((S.session && S.session.sessionId) || S.route.id);
