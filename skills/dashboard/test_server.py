@@ -174,6 +174,14 @@ class TicketSessions(Fixture):
         self.assertEqual(kids[0]["name"], "kid")
         self.assertEqual(tree[0]["link"], "claude://claude.ai/epitaxy/local_1")
 
+    def test_states(self):
+        self.session("local_1", title="A-2 running", lines=[user("go")])
+        self.session("local_2", title="A-2 done", lines=[user("go"), assistant([{"type": "text", "text": "ok"}], stop="end_turn")])
+        self.session("local_3", title="A-2 old", isArchived=True)
+        self.session("local_4", title="A-3 other", lines=[user("go")])
+        states = server.ticket_states("A-2", self.project, server.load_sessions(self.sessions), self.transcripts)
+        self.assertEqual(states, {"running": 1, "waiting": 1, "archived": 1})
+
     def test_word_boundary(self):
         self.assertTrue(server.mentions("Grill BGH-2 x", "BGH-2"))
         self.assertTrue(server.mentions("feature/BGH-2", "BGH-2"))

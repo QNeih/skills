@@ -69,7 +69,7 @@ flowchart TD
 | | Skill | What it does | Uses |
 | --- | --- | --- | --- |
 | **Daily** | `briefing` | One whole-day briefing across every project: what I did last workday, what's next, Jira changes, new Sentry errors and Dependabot PRs, mail and Teams messages waiting on me, today's meetings. | vault, Jira, Sentry, GitHub, Microsoft 365 |
-| | `dashboard` | Full-screen local web app: clock and Köln weather, then the next tickets, briefing to-dos and jumps of up to 3 projects (up to 9 in-progress and to-do tickets each, order saved), and each ticket's workflow, PR status and session tree. Keyboard-driven, no model calls. | vault, Claude app sessions, Jira, Sentry, GitHub, Open-Meteo |
+| | `dashboard` | Full-screen local web app: clock and Köln weather, then one project at a time beside a rail of project cards (open tickets, new Sentry errors, new Dependabot PRs; order saved): its next tickets with their sessions' state (running, waiting on you, archived), briefing to-dos and jumps, and each ticket's workflow, PR status and session tree. Keyboard-driven, no model calls. | vault, Claude app sessions, Jira, Sentry, GitHub, Open-Meteo |
 | | `note` | Saves a to-do for the briefing, tagged with the project I'm in. | vault |
 | **Ticket flow** | `ticket` | Adds one card to the project's vault board, in the language and line pattern of the cards already there, with the next free id. Given only an id, points to `/work`. | vault |
 | | `work` | Claims a ticket on the project's board (Jira, an Obsidian Kanban board, or any tracker with a connector), cuts its branch, imports it, and starts the route that works on it. | board (vault, Jira, other), repo |
@@ -89,17 +89,16 @@ flowchart TD
 | Screen | Key | What it does |
 | --- | --- | --- |
 | home, ticket | `?` | toggle the key list (`esc` / `⌫` also close it) |
+| | `tab` / `⇧tab` | next / previous project: opens the screen you were last on in it (home, or a ticket still on its home list); unsent prompt text stays |
 | ticket | `esc` / `⌫` | back |
 | start (clock) | any key or click | go to home |
 | home | `↑` `↓` / `j` `k` | move ticket selection |
 | | `space` | open selected ticket |
-| | `⏎` | prompt box; `⏎` there starts a background session (`claude --bg`, auto mode) in the project's folder with the text as its prompt, without the app's link confirmation; the column's "new bg session" line shows how many are running. `←` (empty) or `esc` closes |
-| | `←` / `→` | previous / next project |
-| | `tab` / `p` | next project (`⇧tab` back) |
-| | `⇧←` / `⇧→`, `H` / `L` | move project left / right (order saved) |
-| | `[` / `]` | previous / next 3 projects |
+| | `→` | new session in the app with the selected ticket's next command prefilled: `/work <id>` until it is imported, then `/send` until it has a PR |
+| | `⏎` | open the selected ticket with its next command in the prompt box to edit; `⏎` again starts it |
+| | `b` | prompt box; `⏎` there starts a background session (`claude --bg`, auto mode) in the project's folder with the text as its prompt, without the app's link confirmation. `←` (empty) or `esc` closes |
+| | `⇧↑` / `⇧↓` | move project up / down in the rail (order saved) |
 | | `1`–`9` | open ticket 1–9 (in progress first, then to do) |
-| | `t` | new session in the app with `/work <selected ticket>` prefilled |
 | | `s` | new session: fix new Sentry errors (when there are any) |
 | | `d` | new session: Dependabot review (when there are new PRs) |
 | | `r` | refresh briefing |
@@ -108,7 +107,8 @@ flowchart TD
 | ticket | `↑` `↓` / `j` `k` | move session selection |
 | | `space` | open the selected session in the app; no sessions yet: new session with `/work <id>` prefilled |
 | | `←` | back, while the ticket has no live sessions |
-| | `→` | while the ticket has no live sessions: edit the prompt (prefilled `/work <id> `), `⏎` starts it, `←` while unchanged or `esc` closes |
+| | `⏎` | prompt box with the next command; `⏎` there starts a new session with it, `←` while unchanged or `esc` closes |
+| | `→` | while the ticket has no live sessions: the same prompt box |
 
 ## Install
 

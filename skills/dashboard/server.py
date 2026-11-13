@@ -363,6 +363,8 @@ def project_view(name, briefing, sessions, agents=()):
         view["lastActivityAt"] = max(acts) if acts else None
         view["running"] = sum(1 for s in mine if session_state(s) == "running")
         view["background"] = sum(1 for a in agents if a.get("status") == "busy" and in_dir(a, view["dir"]))
+        for t in view["next"]:
+            t["sessions"] = ticket_states(t["id"], view["dir"], mine)
     return view
 
 
@@ -565,10 +567,9 @@ def ticket_prompt_matches(prompt, ticket_id):
     return arg.upper() == ticket_id.upper() if "-" in arg else int(arg) == int(num)
 
 
-def ticket_sessions(ticket_id, project_dir, sessions, transcripts=None):
-    """Sessions of the project for the ticket, each with its spawnedFrom descendants nested.
-    A session matches when its title, branch (stored, or any recorded in its transcript) or
-    spawnedFrom.title names the id, or its first prompt is `/work <id>` / `/work <number>`."""
+def matched_sessions(ticket_id, project_dir, sessions, transcripts=None):
+    """Ids of the project's sessions for the ticket: its title, branch (stored, or any recorded in
+    its transcript) or spawnedFrom.title names the id, or its first prompt is `/work <id>` / `/work <number>`."""
     matched = set()
     for s in sessions:
         if not in_dir(s, project_dir):
@@ -583,6 +584,22 @@ def ticket_sessions(ticket_id, project_dir, sessions, transcripts=None):
         facts = transcript_facts(path)
         if ticket_prompt_matches(facts["firstPrompt"], ticket_id) or any(mentions(b, ticket_id) for b in facts["branches"]):
             matched.add(s["sessionId"])
+    return matched
+
+
+def ticket_states(ticket_id, project_dir, sessions, transcripts=None):
+    """How many of the ticket's sessions are running, waiting and archived (the home row's marks)."""
+    ids = matched_sessions(ticket_id, project_dir, sessions, transcripts)
+    counts = {"running": 0, "waiting": 0, "archived": 0}
+    for s in sessions:
+        if s["sessionId"] in ids:
+            counts[session_state(s, transcripts)] += 1
+    return counts
+
+
+def ticket_sessions(ticket_id, project_dir, sessions, transcripts=None):
+    """Sessions of the project for the ticket (matched_sessions), each with its spawnedFrom descendants nested."""
+    matched = matched_sessions(ticket_id, project_dir, sessions, transcripts)
     by_id = {s["sessionId"]: s for s in sessions}
     kids = {}
     for s in sessions:
