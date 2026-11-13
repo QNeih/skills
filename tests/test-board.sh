@@ -2,7 +2,7 @@
 # Board step file parts: board.sh creates a vault board and saves a board override,
 # checked through the project lookup.
 . "$(dirname "$0")/lib.sh"
-SK="$REPO_DIR/skills/ticket"
+SK="$REPO_DIR/skills/work"
 fixture_new
 lookup() { (cd "$1" && bash "$SK/project.sh"); }
 colors='{"kanban-plugin":"board","tag-colors":[{"tagKey":"#urgent","color":"#ffffff","backgroundColor":"#e03131"}]}'

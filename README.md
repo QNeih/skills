@@ -1,15 +1,16 @@
 # skills
 
-My Claude Code skills. Per ticket I type two commands, `/ticket` and `/send`;
+My Claude Code skills. Per ticket I type two commands, `/work` and `/send`;
 everything in between runs on its own and stops only where I have to decide.
 
     /briefing     what's new or waiting on me, across all projects
     /dashboard    full-screen, keyboard-driven: next tickets, ticket workflow, session tree
-    /ticket KEY   claim the ticket, pick a route (fix, grill, build, wayfinder), start it
+    /ticket TEXT  add a card to the project's vault board
+    /work KEY     claim the ticket, pick a route (fix, grill, build, wayfinder), start it
     /build        spec → tickets → test-first build in subagents → review
     /send         lint, commit, push, open the PR, move the board card
 
-Built on Matt Pocock's skills (separate install): `/build` and `/ticket` hand off
+Built on Matt Pocock's skills (separate install): `/build` and `/work` hand off
 to his `to-spec`, `to-tickets`, `implement-spec`, `implement`, `wayfinder`,
 `grill-with-docs` and `diagnosing-bugs`.
 
@@ -27,7 +28,7 @@ flowchart TD
     reply -- "done n / add all" --> vaultnotes["Notes ticked,<br/>contacts added"]
     reply -- "pick a ticket" --> ticket
 
-    ticket(["/ticket KEY"]):::cmd --> claim["Claim on the board<br/>Jira, vault Kanban or other tracker"]
+    ticket(["/work KEY"]):::cmd --> claim["Claim on the board<br/>Jira, vault Kanban or other tracker"]
     claim --> branch["Cut branch from base"]
     branch --> import[".scratch/KEY-slug/ticket.md<br/>.handoffs/HANDOFF-KEY.md"]
     import --> route{"Route by<br/>ticket shape"}
@@ -70,9 +71,9 @@ flowchart TD
 | **Daily** | `briefing` | One whole-day briefing across every project: what I did last workday, what's next, Jira changes, new Sentry errors and Dependabot PRs, mail and Teams messages waiting on me, today's meetings. | vault, Jira, Sentry, GitHub, Microsoft 365 |
 | | `dashboard` | Full-screen local web app: clock and Köln weather, then the next tickets, briefing to-dos and jumps of up to 3 projects (up to 9 to-do tickets each, order saved), and each ticket's workflow, PR status and session tree. Keyboard-driven, no model calls. | vault, Claude app sessions, Jira, Sentry, GitHub, Open-Meteo |
 | | `note` | Saves a to-do for the briefing, tagged with the project I'm in. | vault |
-| **Ticket flow** | `ticket` | Claims a ticket on the project's board (Jira, an Obsidian Kanban board, or any tracker with a connector), cuts its branch, imports it, and starts the route that works on it. | board (vault, Jira, other), repo |
+| **Ticket flow** | `ticket` | Adds one card to the project's vault board, in the language and line pattern of the cards already there, with the next free id. Given only an id, points to `/work`. | vault |
+| | `work` | Claims a ticket on the project's board (Jira, an Obsidian Kanban board, or any tracker with a connector), cuts its branch, imports it, and starts the route that works on it. | board (vault, Jira, other), repo |
 | | `build` | Runs a multi-session feature in one session: spec, tickets, test-first build in subagents, code review. | repo |
-| | `create-ticket` | Adds one card to the project's vault board, in the language and line pattern of the cards already there, with the next free id. | vault |
 | | `send` | Ships the branch: lint, commit, push, PR with the tracker link, board card moved, branch cleaned up. | GitHub, board, repo |
 | **Maintenance** | `sentry-fix` | Fixes Sentry errors in their own worktrees and opens draft PRs; finds the Sentry projects from the DSNs in the code. | Sentry, GitHub |
 | | `dependabot-review` | Checks every open Dependabot PR in parallel: does it break the build, could it change behaviour. | GitHub |
@@ -98,16 +99,16 @@ flowchart TD
 | | `⇧←` / `⇧→`, `H` / `L` | move project left / right (order saved) |
 | | `[` / `]` | previous / next 3 projects |
 | | `1`–`9` | open to-do ticket 1–9 |
-| | `t` | new session in the app with `/ticket <selected ticket>` prefilled |
+| | `t` | new session in the app with `/work <selected ticket>` prefilled |
 | | `s` | new session: fix new Sentry errors (when there are any) |
 | | `d` | new session: Dependabot review (when there are new PRs) |
 | | `r` | refresh briefing |
 | | `c` | clock screen |
 | | `n` | mark the note with the `n` badge done (press twice) |
 | ticket | `↑` `↓` / `j` `k` | move session selection |
-| | `space` | open the selected session in the app; no sessions yet: new session with `/ticket <id>` prefilled |
+| | `space` | open the selected session in the app; no sessions yet: new session with `/work <id>` prefilled |
 | | `←` | back, while the ticket has no live sessions |
-| | `→` | while the ticket has no live sessions: edit the prompt (prefilled `/ticket <id> `), `⏎` starts it, `←` while unchanged or `esc` closes |
+| | `→` | while the ticket has no live sessions: edit the prompt (prefilled `/work <id> `), `⏎` starts it, `←` while unchanged or `esc` closes |
 
 ## Install
 

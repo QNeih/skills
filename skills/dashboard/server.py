@@ -27,7 +27,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SKILLS = HERE.parent
 GATHER = SKILLS / "briefing" / "gather.sh"
-PROJECT_SH = SKILLS / "ticket" / "project.sh"
+PROJECT_SH = SKILLS / "work" / "project.sh"
 HOME = Path.home()
 VAULT = os.environ.get("VAULT", str(HOME / "Library/Mobile Documents/iCloud~md~obsidian/Documents/lise"))
 PROJECTS_ROOT = os.environ.get("PROJECTS_ROOT", str(HOME / "Projects"))
@@ -468,7 +468,7 @@ _facts_cache = {}
 
 def transcript_facts(path):
     """First real user prompt and every git branch the transcript recorded (a worktree session
-    starts on claude/<name>; /ticket then cuts feature/<id> there). Cached per file version."""
+    starts on claude/<name>; /work then cuts feature/<id> there). Cached per file version."""
     st = path.stat()
     key = (str(path), st.st_mtime_ns, st.st_size)
     if key not in _facts_cache:
@@ -533,8 +533,9 @@ def mentions(text, ticket_id):
 
 
 def ticket_prompt_matches(prompt, ticket_id):
-    """`/ticket <id>` or `/ticket <number>` (for the ticket's key) as the first prompt."""
-    m = re.match(r"/ticket\s+([A-Za-z][A-Za-z0-9]*-\d+|\d+)\b", prompt or "")
+    """`/work <id>` or `/work <number>` (for the ticket's key) as the first prompt. `/ticket` counts
+    too: it started tickets before it was renamed to `/work`."""
+    m = re.match(r"/(?:work|ticket)\s+([A-Za-z][A-Za-z0-9]*-\d+|\d+)\b", prompt or "")
     if not m:
         return False
     arg, num = m.group(1), ticket_id.rsplit("-", 1)[1]
@@ -544,7 +545,7 @@ def ticket_prompt_matches(prompt, ticket_id):
 def ticket_sessions(ticket_id, project_dir, sessions, transcripts=None):
     """Sessions of the project for the ticket, each with its spawnedFrom descendants nested.
     A session matches when its title, branch (stored, or any recorded in its transcript) or
-    spawnedFrom.title names the id, or its first prompt is `/ticket <id>` / `/ticket <number>`."""
+    spawnedFrom.title names the id, or its first prompt is `/work <id>` / `/work <number>`."""
     matched = set()
     for s in sessions:
         if not in_dir(s, project_dir):
@@ -698,12 +699,12 @@ def with_pr_steps(steps, prs):
 
 def workflow(column, scratch, issues):
     """Steps of the ticket's route, each done | now | next | todo.
-    Card in Done → every step done. /ticket is done once ticket.md exists. The route is the first
+    Card in Done → every step done. /work is done once ticket.md exists. The route is the first
     `/skill` in `Next:`; a `Status:` starting with "blocked" puts a `blocked: <reason>` step before
     it. With build issues the route is done and each issue is a step: done by its Status, now when
     on the frontier (every blocker done), else todo. Then /code-review and /send. The first todo
     after the last now (or after the last done) becomes next; without ticket.md nothing is next."""
-    steps = [{"step": "/ticket", "state": "done" if scratch else "now"}]
+    steps = [{"step": "/work", "state": "done" if scratch else "now"}]
     route = None
     if scratch:
         m = re.search(r"/[\w-]+", scratch.get("next") or "")
@@ -734,7 +735,7 @@ def workflow(column, scratch, issues):
     if column == "done":
         return [dict(s, state="done") for s in steps]
     if not scratch:
-        return steps  # the route is unknown until /ticket ran, so nothing is next
+        return steps  # the route is unknown until /work ran, so nothing is next
     last = max(i for i, s in enumerate(steps) if s["state"] in ("now", "done"))
     for s in steps[last + 1:]:
         if s["state"] == "todo":
@@ -948,7 +949,7 @@ def get_ticket(q):
 
 def as_request(text):
     """The app swaps a leading `/` in link-prefilled text for a look-alike so a link can't run a
-    command, so a command gets a word in front: `/ticket SKL-15` → `Run /ticket SKL-15`."""
+    command, so a command gets a word in front: `/work SKL-15` → `Run /work SKL-15`."""
     return "Run " + text.strip() if text.strip().startswith("/") else text
 
 

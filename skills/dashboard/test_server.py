@@ -89,7 +89,7 @@ class PullRequests(unittest.TestCase):
                          ["https://github.com/o/r/pull/3", "https://github.com/o/r/pull/4"])
 
     def test_pr_steps(self):
-        steps = [{"step": "/ticket", "state": "done"}, {"step": "/send", "state": "todo"}]
+        steps = [{"step": "/work", "state": "done"}, {"step": "/send", "state": "todo"}]
         out = server.with_pr_steps(steps, [{"number": 3, "state": "open"}])
         self.assertEqual([s["state"] for s in out], ["done", "done", "now"])
         self.assertEqual(out[-1]["step"], "PR #3 open")
@@ -98,7 +98,7 @@ class PullRequests(unittest.TestCase):
 
 class NewSession(unittest.TestCase):
     def test_command_becomes_request(self):
-        self.assertEqual(server.as_request("/ticket SKL-15"), "Run /ticket SKL-15")
+        self.assertEqual(server.as_request("/work SKL-15"), "Run /work SKL-15")
         self.assertEqual(server.as_request("hello"), "hello")
 
     def test_url(self):
@@ -143,11 +143,11 @@ class TicketSessions(Fixture):
         wt = self.project + "/.claude/worktrees/x"
         self.session("local_1", title="Grill A-2 design")
         self.session("local_2", title="A-23 other ticket")
-        self.session("local_3", lines=[user("/ticket 2")])
-        self.session("local_4", lines=[user("<command-message>ticket</command-message>\n"
-                                            "<command-name>/ticket</command-name>\n<command-args>a-2</command-args>")])
-        self.session("local_5", cwd=wt, title="Ticket", lines=[user("/ticket"), dict(user("go"), gitBranch="feature/A-2")])
-        self.session("local_6", lines=[user("/ticket 23")])
+        self.session("local_3", lines=[user("/work 2")])
+        self.session("local_4", lines=[user("<command-message>work</command-message>\n"
+                                            "<command-name>/work</command-name>\n<command-args>a-2</command-args>")])
+        self.session("local_5", cwd=wt, title="Ticket", lines=[user("/work"), dict(user("go"), gitBranch="feature/A-2")])
+        self.session("local_6", lines=[user("/work 23")])
         self.session("local_7", title="Child", spawnedFrom={"sessionId": "local_1", "title": "Child", "name": "kid"})
         self.session("local_8", title="Grandchild", spawnedFrom={"sessionId": "local_7", "title": "Grandchild"})
         self.session("local_9", cwd="/elsewhere", title="A-2 elsewhere")
@@ -166,9 +166,11 @@ class TicketSessions(Fixture):
         self.assertTrue(server.mentions("feature/BGH-2", "BGH-2"))
         self.assertFalse(server.mentions("Grill BGH-23 x", "BGH-2"))
         self.assertFalse(server.mentions("XBGH-2", "BGH-2"))
-        self.assertTrue(server.ticket_prompt_matches("/ticket 2 please", "BGH-2"))
-        self.assertFalse(server.ticket_prompt_matches("/ticket 23", "BGH-2"))
-        self.assertFalse(server.ticket_prompt_matches("/ticket OBO-2", "BGH-2"))
+        self.assertTrue(server.ticket_prompt_matches("/work 2 please", "BGH-2"))
+        self.assertFalse(server.ticket_prompt_matches("/work 23", "BGH-2"))
+        self.assertFalse(server.ticket_prompt_matches("/work OBO-2", "BGH-2"))
+        self.assertTrue(server.ticket_prompt_matches("/ticket BGH-2", "BGH-2"))  # sessions from before the rename
+        self.assertFalse(server.ticket_prompt_matches("/ticket fix BGH-2 login", "BGH-2"))
 
 
 class Transcript(Fixture):
@@ -197,7 +199,7 @@ class Workflow(unittest.TestCase):
     def test_blocked(self):
         scratch = {"status": "blocked (BGH-104)", "next": "`/implement` after BGH-104"}
         self.assertEqual(self.states(server.workflow("in progress", scratch, [])), [
-            ("/ticket", "done"), ("blocked: BGH-104", "now"), ("/implement", "next"),
+            ("/work", "done"), ("blocked: BGH-104", "now"), ("/implement", "next"),
             ("/code-review", "todo"), ("/send", "todo")])
 
     def test_build_issues(self):
@@ -205,13 +207,13 @@ class Workflow(unittest.TestCase):
         issues = [dict(n=1, title="a", status="done", blockedBy=[]), dict(n=2, title="b", status="", blockedBy=[1]),
                   dict(n=3, title="c", status="", blockedBy=[2])]
         self.assertEqual(self.states(server.workflow("in progress", scratch, issues)), [
-            ("/ticket", "done"), ("/build", "done"), ("#1 a", "done"), ("#2 b", "now"), ("#3 c", "next"),
+            ("/work", "done"), ("/build", "done"), ("#1 a", "done"), ("#2 b", "now"), ("#3 c", "next"),
             ("/code-review", "todo"), ("/send", "todo")])
 
     def test_done_card_and_not_started(self):
         self.assertTrue(all(s["state"] == "done" for s in server.workflow("done", None, [])))
         self.assertEqual(self.states(server.workflow("to do", None, [])),
-                         [("/ticket", "now"), ("/code-review", "todo"), ("/send", "todo")])
+                         [("/work", "now"), ("/code-review", "todo"), ("/send", "todo")])
 
 
 class Briefing(unittest.TestCase):

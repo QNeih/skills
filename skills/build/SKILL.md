@@ -1,6 +1,6 @@
 ---
 name: build
-description: Build a multi-session feature end to end in this session — spec, tickets, test-first build in subagents, code review — on the current ticket branch. Use after a wayfinder map, for a spec or a ticket too big for one session, when /ticket routes to /build, or to resume a stopped build.
+description: Build a multi-session feature end to end in this session — spec, tickets, test-first build in subagents, code review — on the current ticket branch. Use after a wayfinder map, for a spec or a ticket too big for one session, when /work routes to /build, or to resume a stopped build.
 argument-hint: "[spec, map or ticket path, or an idea]"
 ---
 
@@ -13,9 +13,9 @@ The only gates are the ones inside those skills: to-spec's seam check and to-tic
 ## Terms
 
 - **Main checkout**: `dir` = parent of `git rev-parse --path-format=absolute --git-common-dir`. `.scratch/` lives there, also when you run from a worktree. Pass subagents absolute paths into it.
-- **Feature folder**: `<dir>/.scratch/<feature>/`. `/ticket` already made `.scratch/<id>-<slug>/` with `ticket.md` for the current branch → that folder. Else a short kebab-case slug from the input.
+- **Feature folder**: `<dir>/.scratch/<feature>/`. `/work` already made `.scratch/<id>-<slug>/` with `ticket.md` for the current branch → that folder. Else a short kebab-case slug from the input.
 - **Tracker**: local markdown in the feature folder, whatever the project's docs name as tracker. Spec at `spec.md`, tickets at `issues/<NN>-<slug>.md` with `**Blocked by:**` and `**Status:**` lines, labels as Pocock writes them (`ready-for-agent`, …). The vault board or Jira only holds the parent ticket; leave it alone.
-- **Integration branch**: the branch checked out when `/build` starts (`/ticket`'s `feature/<KEY>`). On `main`, `develop` or a detached HEAD → create `feature/<feature>` from HEAD and say so.
+- **Integration branch**: the branch checked out when `/build` starts (`/work`'s `feature/<KEY>`). On `main`, `develop` or a detached HEAD → create `feature/<feature>` from HEAD and say so.
 - **Done ticket**: its `**Status:**` line reads `done`.
 - **Frontier**: tickets that aren't done and whose every `Blocked by` ticket is done; lowest number first.
 

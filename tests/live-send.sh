@@ -14,7 +14,7 @@ run_send() {
   CLAUDE_OUT=$(jq -rR 'fromjson? | select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' <<<"$CLAUDE_OUT")
 }
 column() { awk -v h="$2" '/^## / { on = tolower($0) ~ h; next } /^%% kanban/ { on = 0 } on && NF' "$1"; }
-# ticket <dir> <id> <slug> <branch> [base]: .scratch ticket.md and handoff, as /ticket writes them
+# ticket <dir> <id> <slug> <branch> [base]: .scratch ticket.md and handoff, as /work writes them
 ticket() {
   mkdir -p "$1/.scratch/$2-$3" "$1/.handoffs"
   { echo "# $2: Card $2"; echo; echo "ref: $2"; echo "branch: $4"; [ -z "${5:-}" ] || echo "base: $5"

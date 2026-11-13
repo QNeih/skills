@@ -1,6 +1,6 @@
 # Board step
 
-Shared by `/ticket` and `/new-project`. Input: the project lookup's lines (`project.sh`). Output: the project's board. `${CLAUDE_SKILL_DIR}` is the folder this file is in.
+Shared by `/work`, `/ticket` and `/new-project`. Input: the project lookup's lines (`project.sh`). Output: the project's board. `${CLAUDE_SKILL_DIR}` is the folder this file is in.
 
 Read the lookup's `board:` line:
 

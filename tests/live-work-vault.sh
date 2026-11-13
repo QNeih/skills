@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# /ticket on a vault board, through claude -p: picks the card, claims it, cuts the branch,
+# /work on a vault board, through claude -p: picks the card, claims it, cuts the branch,
 # writes ticket.md and the handoff in the main checkout, prints the route.
 . "$(dirname "$0")/lib.sh"
 fixture_new
@@ -7,11 +7,11 @@ export CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
 export ALLOWED_TOOLS="Skill,Read,Glob,Grep,Edit,Write,Bash(git *),Bash(bash *),Bash(VAULT=*),Bash(mkdir *),Bash(ls *)"
 export CLAUDE_BUDGET=${CLAUDE_BUDGET:-2}
 
-# setup <project dir>: fixture CLAUDE.md that stops after the route, skill installed as t-ticket
+# setup <project dir>: fixture CLAUDE.md that stops after the route, skill installed as t-work
 setup() {
   fixture_claude_md "$1"
-  echo 'This is a test run: stop right after /t-ticket prints its `Route:` line, without starting the route.' >> "$1/CLAUDE.md"
-  install_skill "$REPO_DIR/skills/ticket" ticket "$1"
+  echo 'This is a test run: stop right after /t-work prints its `Route:` line, without starting the route.' >> "$1/CLAUDE.md"
+  install_skill "$REPO_DIR/skills/work" work "$1"
 }
 # run_ticket <dir> <prompt>: CLAUDE_OUT = every text the assistant printed, not only the last one
 run_ticket() {
@@ -61,7 +61,7 @@ wt="$FIX/acme-wt"
 git -C "$acme" worktree add -q -b wt "$wt" main
 setup "$wt"
 
-run_ticket "$wt" "/t-ticket"
+run_ticket "$wt" "/t-work"
 
 # first ranked row, not the first key anywhere ("ACM-3 is blocked by ACM-1" may come before the list)
 [ "$(grep -E '^[[:space:]]*([0-9]+[.)]|[-*]) .*ACM-[123]' <<<"$CLAUDE_OUT" | grep -oE 'ACM-[123]' | head -1)" = ACM-2 ] && grep -q 'ACM-1' <<<"$CLAUDE_OUT" \
@@ -90,7 +90,7 @@ beta="$PROJECTS_ROOT/beta"
 mkdir -p "$beta"
 setup "$beta"
 
-run_ticket "$beta" "/t-ticket 3"
+run_ticket "$beta" "/t-work 3"
 
 grep -qE '^Route: /' <<<"$CLAUDE_OUT" && pass "no git: route line printed" || { fail "no git: route line printed"; echo "$CLAUDE_OUT" | tail -20; }
 [ "$(column "$board" 'in progress')" = $'- [ ] **BET-3 · Write the intro**\n\tTwo paragraphs for the landing page.' ] \

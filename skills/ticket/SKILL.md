@@ -1,21 +1,18 @@
 ---
 name: ticket
-description: Start a ticket from the project's board — claim it, cut its branch, import it to .scratch, then start the route that works on it.
-argument-hint: "[KEY-12 | 12], or nothing for the top unblocked ticket"
+description: Add one ticket card to the project's Obsidian Kanban board, written in the board's own conventions.
+argument-hint: "<what the ticket is about>"
 disable-model-invocation: true
 ---
 
 # Ticket
 
-`/ticket [KEY-12|12]` starts one ticket: claim it on the project's board, cut its branch, import it to `ticket.md`, write the handoff, then print the route and start it. `/send` ships the work later.
+`/ticket <text>` adds one card to the end of `To do` on the project's vault board, shaped like the cards already there, so `/work` can pick it up.
 
-The steps are the same on every board. What a board does at a step lives in its **board file**, read once in step 1:
+## 0. Arguments
 
-| Board | Board file |
-| --- | --- |
-| Vault Kanban file (`board: vault`) | `${CLAUDE_SKILL_DIR}/VAULT.md` |
-| Jira (`board: jira-candidate`, or a link on an Atlassian site) | `${CLAUDE_SKILL_DIR}/JIRA.md` |
-| Any other link or text, e.g. Azure DevOps | `${CLAUDE_SKILL_DIR}/OTHER.md` |
+- Only a ticket id (`KEY-12`, `12` or `AB#1234`, nothing else) → stop: "/ticket creates a ticket. To start <id>, run `/work <id>`."
+- Empty → ask "What is the ticket about?" and stop.
 
 ## 1. Project and board
 
@@ -26,100 +23,61 @@ VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
 ```
 
 - `project: none` → stop and print its `reason:`.
-- Then follow `${CLAUDE_SKILL_DIR}/BOARD.md` to get the board (on a Jira candidate it checks the key first), and read its board file.
-- `<dir>` is the `dir:` line: the main checkout, or the project folder without git. **Git** means `git -C <dir> rev-parse` succeeds; without git, skip every git step and write no branch anywhere.
+- Follow `${CLAUDE_SKILL_DIR}/BOARD.md` to get the board.
+- The board is not a vault file → stop: "/ticket writes vault boards only; <project>'s board is <board>."
 
-**Done when:** project, `<dir>`, board and git-or-not are known, and the board file is read.
+**Done when:** the board is a vault Kanban file.
 
-## 2. Pick the ticket
+## 2. Conventions
 
-- `$ARGUMENTS` matches `[A-Z][A-Z0-9]+-[0-9]+` → that id.
-- Digits only → on a number-only tracker (`OTHER.md` › Ids) the digits are the id; else `<key>-<digits>`, `<key>` from the board file (vault: the lookup's `key:`). No key → stop and ask for the full id.
-- A number-only tracker's ref (`AB#1234`) → its number is the id.
-- Empty → the board file's **Pick**: print the ranked list of unblocked tickets to Quinn, then take its top ticket.
-- Anything else → stop and ask for a ticket.
+Read the whole board file. A **card block** is a `- [ ]` or `- [x]` line starting with `**<KEY>-<n> · <title>**`, plus the tab-indented lines under it. Cards linking a note (`**[[<KEY>-<n> <title>]]**`) count for ids only: their shape is a different format.
 
-Then the board file's **Find**.
+From the card blocks, newest ids weighted most, take:
 
-**Done when:** one ticket id and its ref, found on the board; with no argument, the ranked list is printed.
+- **Language** of titles and lines (e.g. German on BGH).
+- **Title style**: length, verb or noun phrase.
+- **Line pattern**: the indented lines most cards carry, in their order, e.g. a description line, `Must · Angebot 3.1.4 · 8 h · Nutzen hoch`, `Goal: …`, `Braucht: …` / `Needs: …`. Note which labels and separators each line uses.
+- **Tags** the board uses (`#bug`, `#urgent`, …).
 
-## 3. Claim
+No card blocks on the board → English, one description line, no tags.
 
-The board file's **Claim**.
+**Done when:** you can name the language, the line pattern and the tags, each read off actual cards.
 
-**Done when:** the ticket is in progress on the board, or a stop or loose end says why not.
+## 3. Next id
 
-## 4. Branch (git only)
+`<KEY>` is the lookup's `key:`. No `key:` → ask Quinn for the key and stop.
 
-1. `git status --porcelain --untracked-files=no` prints anything → stop and ask: stash, commit, or discard.
-2. Branch name and `<base>` from the board file's **Branch**.
-3. `origin` exists → `git fetch origin` (`cannot open '.git/FETCH_HEAD'` → rerun unsandboxed). Cut from `origin/<base>` when it exists, else from `<base>`:
-   ```bash
-   git checkout -b <branch> <start point>
-   git push -u origin HEAD   # only with an origin
-   ```
-   Branch exists → check it out and say so. Base missing → stop and ask.
-4. Note the branch on the board, as the board file's **Branch** says.
-
-**Done when:** `git branch --show-current` prints the branch (tracking `origin` when there is one), and the board shows it if the board file notes branches.
-
-## 5. Import
-
-Folder: `<dir>/.scratch/<id>-<slug>/`, `<slug>` a 2–4 word kebab-case English gist of the title. A folder starting with `<id>-` exists → reuse it.
-
-Write `ticket.md` there from `${CLAUDE_SKILL_DIR}/TICKET-TEMPLATE.md`, filled as the board file's **Import** says. `<dir>/CONTEXT-MAP.md` exists → name the contexts the ticket touches and write the agent sections in their glossary terms. Leave `Status:` and `Next:` for step 6.
-
-**Done when:** `ticket.md` has the title, `ref:`, `branch:`, `board:` and the ticket's full text, with every comment and attachment the board file's **Import** asks for.
-
-## 6. Route
-
-Take the first row that fits and write its status and route into `ticket.md`'s `Status:` and `Next:`.
-
-| Ticket shape | Status | Route |
-| --- | --- | --- |
-| Only the reporter can answer (missing acceptance criteria, comments disagree) | `needs-info` | none: list the questions for the reporter |
-| Bug, cause not obvious | `ready-for-agent` | `/diagnosing-bugs` |
-| Concrete acceptance criteria, one area, one session | `ready-for-agent` | `/implement` |
-| One session, open design questions | `needs-triage` | `/grill-with-docs` |
-| Multi-session build | `needs-triage` | `/build` |
-| Too big or foggy to see the way | `needs-triage` | `/wayfinder` |
-
-No row fits → `needs-triage`, `/grill-with-docs`.
-
-**Done when:** `ticket.md` has both lines filled.
-
-## 7. Handoff
-
-Write `<dir>/.handoffs/HANDOFF-<id>.md`. Pointers only, every path absolute:
-
-- id, title, board (file path or link)
-- branch and base, or "no git"
-- the `ticket.md` path
-- route and why
-- loose ends from every step
-
-**Done when:** the handoff exists and every line is a pointer or a loose end.
-
-## 8. Start the route
-
-Print the loose ends, then this line:
-
-```
-Route: /<skill> — <one-line reason>
+```bash
+grep -rhoE --include='*.md' '\b<KEY>-[0-9]+\b' "<board file>" "$(dirname "<board file>")/tickets" 2>/dev/null \
+  | sed 's/.*-//' | sort -n | tail -1
 ```
 
-Then start the route in this session, with the `ticket.md` path as its input:
+Next id: `<KEY>-<printed number + 1>`; nothing printed → `<KEY>-1`.
 
-- `/implement` → read `~/.claude/skills/implement/SKILL.md` and follow it. Start coding right away.
-- `/diagnosing-bugs`, `/grill-with-docs`, `/wayfinder` → read `~/.claude/skills/<name>/SKILL.md` and follow it, opening with a question to Quinn.
-- `/wayfinder` adds, while this session orchestrates its map:
-  - When the vault shows the current ticket `status: closed`, start the next frontier ticket in a new session without asking, and post one line naming it and why so Quinn can stop it. A report that only says "waiting on user" is not a close.
-  - One ticket session at a time; research tickets go to background subagents alongside.
-  - Archive the closed ticket's session right away: Quinn's session-nav mod hides archived sessions and shows idle unarchived ones as waiting on him.
-  - Still ask before writing tickets for "Not yet specified" items and before starting `/to-spec`.
-  - Each brief tells the child to read `~/.claude/skills/wayfinder/SKILL.md` by path; it may not be in the child's skill list.
-- `/diagnosing-bugs` ends, once the fix is in, with the Skill tool `code-review`: fixed point `origin/<base>`, spec the `ticket.md` path.
-- `/build` → the Skill tool `build`.
-- `needs-info` → print the questions for the reporter and stop.
+**Done when:** the id is one higher than every `<KEY>-<n>` on the board and in its `tickets/` folder.
 
-**Done when:** the route line is printed and the route has started, or `needs-info` stopped with its questions.
+## 4. Draft
+
+Write the card block from the ticket text, in the board's language and line pattern:
+
+```
+- [ ] **<id> · <title>** <tags>
+	<line>
+	<line>
+```
+
+- Quinn's text is a rough dictation. Rewrite it as clean board text: correct spelling and grammar, drop filler and repeats, split run-on thoughts into the pattern's lines, and turn questions into what is to be found out ("Find out why /send fails from the app"). Keep every point and its meaning; add none.
+- Fill a line only from what the text says; drop the lines it gives nothing for, and list each dropped line as a loose end. Effort, priority, offer item and benefit values come from Quinn, verbatim.
+- Dependencies line: the ids the text names, checked to exist on the board; text names none → drop the line.
+- Tags: `#bug` when the text describes a defect, `#urgent` when it says urgent, `hotfix` in the title when it says hotfix (`/work` reads these for the branch name). Only tags the board already uses, plus `#bug`.
+- Lines start with one tab.
+
+**Done when:** every point of the ticket text is on the card in clean wording, every line traces to the text, and every pattern line without a source is a loose end.
+
+## 5. Write
+
+Read the board file again right before the edit: Quinn edits it in Obsidian at any time. Insert the card block at the end of `## To do` (case-insensitive): after that column's last card, before the blank lines that end the column. Change nothing else. No `To do` column → stop: "no To do column on <board file>".
+
+Print the card block and the loose ends.
+
+**Done when:** the board file has the new card as the last card in `To do`, every other line unchanged, and the card and loose ends are printed.

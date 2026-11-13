@@ -8,7 +8,7 @@ fixture_repo "$PROJECTS_ROOT/acme"
 fixture_claude_md "$PROJECTS_ROOT/acme"
 
 src="$FIX/src"; mkdir -p "$src"
-cp "$REPO_DIR/skills/ticket/project.sh" "$src/"
+cp "$REPO_DIR/skills/work/project.sh" "$src/"
 cat > "$src/SKILL.md" <<'MD'
 ---
 name: probe

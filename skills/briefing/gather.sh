@@ -277,7 +277,7 @@ jira() {
     | if $p == null then "jira added: \(.key) [\(.status)] \($tail)"
       elif $p.status != .status and $p.cat != "new" and (.cat == "new" or (.status | ascii_downcase) == "in progress")
       then "jira back: \(.key) \($p.status) → \(.status) \($tail)" else empty end' <<<"$new"
-  # Next: my tickets in In progress; none → the one /ticket would pick (hotfix, priority, type, status; JQL order breaks ties)
+  # Next: my tickets in In progress; none → the one /work would pick (hotfix, priority, type, status; JQL order breaks ties)
   jq -r 'def bucket: (.type // "" | ascii_downcase) as $t
       | if $t | IN("bug", "defect", "bugfix", "sub-bug") then 0 elif $t | IN("story", "user story") then 1
         elif $t == "epic" then 2 elif $t == "task" then 3 elif $t | IN("spike", "research", "investigation") then 4 else 5 end;
