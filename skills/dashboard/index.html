@@ -115,6 +115,7 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 .line.sig .tx { color: var(--text); }
 .line.sig .n { color: var(--text); }
 .line.sig.zero .tx, .line.sig.zero .n { color: var(--dim); }
+.line.sig.new .tx { color: var(--label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .line.sig.new .dot { color: var(--clay); } .line.sig.new .dot::before { content: '+'; }
 .line.sig.zero .dot { color: var(--arch); } .line.sig.zero .dot::before { content: '\25CB'; }
 .goal { padding: 0 15px 7px calc(var(--c1) + 1ch + var(--gap)); color: var(--label); font-size: var(--fs-s);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -301,7 +302,7 @@ function updateMeta() {
 }
 const HINTS = {
   start: [],
-  home: [['↑↓', 'select'], ['space', 'open'], ['⏎', 'ask'], ['1–9', 'ticket'], ['t', '/work selected'], ['← →', 'project'], ['⇧← →', 'move'], ['[ ]', 'page'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
+  home: [['↑↓', 'select'], ['space', 'open'], ['⏎', 'new bg session'], ['1–9', 'ticket'], ['t', '/work selected'], ['← →', 'project'], ['⇧← →', 'move'], ['[ ]', 'page'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
   ticket: [['↑↓', 'select'], ['space', 'new /work session'], ['esc', 'back'], ['←', 'back']],
 };
 function updateHints() {
@@ -338,7 +339,7 @@ function toggleOverlay(force) {
   const groups = [
     ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
-    ['home', [['space', 'open selected ticket'], ['⏎', 'prompt box: new session in the project with your text'], ['t', 'new session with /work <selected ticket>'], ['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open ticket 1–9 (in progress first, then to do)'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
+    ['home', [['space', 'open selected ticket'], ['⏎', 'prompt box: start a background session (claude --bg) in the project with your text'], ['t', 'new session with /work <selected ticket>'], ['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open ticket 1–9 (in progress first, then to do)'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
     ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: new session with /work <id> prefilled'], ['→ / space / click', 'on a server row: open it in a new tab of your normal Chrome'], ['→', 'no live sessions: edit the /work prompt, ⏎ starts it, ← (unchanged) closes'], ['←', 'no live sessions: back']]],
   ];
   const p = focusedProject();
@@ -479,6 +480,8 @@ function projectColumn(p, idx, lines, pageInfo) {
   const sentry = lines.filter(l => l.kind === 'sentry').reduce((n, l) => n + ids(l.text, 'new') + ids(l.text, 'regressed'), 0);
   const dep = lines.filter(l => l.kind === 'dependabot').reduce((n, l) => n + Number((l.text.match(/(\d+) new/) || [])[1] || 0), 0);
   const sig = (name, n, cls, key) => `<div class="line sig${n ? '' : ' zero'}"${jump(key) ? ` data-act="jump" data-idx="${idx}" data-key="${key}"` : ''}><span class="dot ${n ? cls : ''}"></span><span class="tx">${name}</span><span class="n">${n}</span>${jump(key) ? badge(key) : ''}</div>`;
+  // ⏎ starts a new background session in this project; the count is its sessions working right now.
+  const newLine = `<div class="line sig new" data-act="ask" data-idx="${idx}"><span class="dot"></span><span class="tx">new bg session</span>${p.background ? `<span class="n">${p.background} running</span>` : ''}${badge('⏎')}</div>`;
   // The note the n jump marks done carries the n badge.
   const nj = jump('n');
   const todoLine = l => {
@@ -494,7 +497,7 @@ function projectColumn(p, idx, lines, pageInfo) {
       <div class="section fill"><div class="label">tickets${items.length ? `<span class="r">${items.length}</span>` : ''}</div>${p.error ? `<div class="errtext">${esc(p.error)}</div>` : ''}${items.length ? items.map(row).join('') : '<div class="empty">—</div>'}</div>
       <div class="section fill"><div class="label">to-do</div>${todo.length ? todo.map(todoLine).join('') : '<div class="empty">—</div>'}</div>
       <div></div>
-      <div class="section sigs">${sig('sentry', sentry, 'sentry', 's')}${sig('dependabot', dep, 'dependabot', 'd')}</div>
+      <div class="section sigs">${newLine}${sig('sentry', sentry, 'sentry', 's')}${sig('dependabot', dep, 'dependabot', 'd')}</div>
     </div></section>`;
 }
 function focusProject(idx) {
@@ -567,12 +570,12 @@ async function runJump(idx, key) {
   } catch (e) { fail(e); }
   return true;
 }
-// Enter on a project: a prompt box; ⏎ opens a new session with the text prefilled.
+// Enter on a project: a prompt box; ⏎ starts a background session (claude --bg) in the project's folder.
 function openAsk(project) {
   const a = $('#ask');
-  a.innerHTML = `<div class="panel"><div class="label"><span class="spark">✻</span>new session · ${esc(project)}</div>
+  a.innerHTML = `<div class="panel"><div class="label"><span class="spark">✻</span>new background session · ${esc(project)}</div>
     <div class="extra"><span class="prompt">&gt;</span><textarea id="ask-text" placeholder="Ask about ${esc(project)} …"></textarea></div>
-    <div class="extra-hint">⏎ start session · ⇧⏎ new line · ← (empty) or esc close</div></div>`;
+    <div class="extra-hint">⏎ start in the background · ⇧⏎ new line · ← (empty) or esc close</div></div>`;
   a.dataset.project = project;
   a.className = 'show';
   $('#ask-text').focus();
@@ -582,7 +585,8 @@ function askKey(e, ta) {
   if (e.key === 'Escape' || (e.key === 'ArrowLeft' && !ta.value.trim())) { e.preventDefault(); closeAsk(); }
   else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
-    newSession($('#ask').dataset.project, ta.value.trim());
+    if (!ta.value.trim()) return;
+    bgSession($('#ask').dataset.project, ta.value.trim());
     closeAsk();
   }
 }
@@ -727,6 +731,10 @@ async function openInApp(sessionId) {
 // Opens a new Code session (in the app's last-used folder) with the command prefilled; Enter in the app starts it.
 async function newSession(project, text) {
   try { await api('/api/new-session', { project, text }); toast(text ? 'New session: ' + text : 'New session'); } catch (e) { fail(e); }
+}
+// Starts a `claude --bg` session in the project's folder; the app stays where it is.
+async function bgSession(project, text) {
+  try { const j = await api('/api/bg-session', { project, text }); toast(`Background session ${j.id} started`); loadProjects(); } catch (e) { fail(e); }
 }
 const aliveSessions = () => S.flat.some(f => f.s && f.s.state !== 'archived');
 const ticketPrompt = () => `/work ${S.route.id} `;
@@ -874,6 +882,7 @@ document.addEventListener('click', e => {
   } else if (a === 'jump') runJump(Number(el.dataset.idx), el.dataset.key);
   else if (a === 'focus') { if (Number(el.dataset.idx) !== S.focus) focusProject(Number(el.dataset.idx)); }
   else if (a === 'extra') openExtra();
+  else if (a === 'ask') { const p = S.projects[Number(el.dataset.idx)]; if (p) openAsk(p.name); }
   else if (a === 'session') {
     S.ticketSel = Number(el.dataset.i); renderTicket();
     const f = S.flat[S.ticketSel];

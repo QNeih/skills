@@ -60,10 +60,10 @@ def script_env():
     return dict(os.environ, VAULT=VAULT, PROJECTS_ROOT=PROJECTS_ROOT)
 
 
-def run(cmd, env=None, timeout=60):
+def run(cmd, env=None, timeout=60, cwd=None):
     """Run a command; returns (exit code, stdout+stderr)."""
     p = subprocess.run(cmd, env=env or script_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                       stdin=subprocess.DEVNULL, timeout=timeout, cwd=tempfile.gettempdir())
+                       stdin=subprocess.DEVNULL, timeout=timeout, cwd=cwd or tempfile.gettempdir())
     return p.returncode, p.stdout.decode("utf-8", "replace")
 
 
@@ -335,11 +335,11 @@ def briefing_jumps(name, briefing):
     return jumps
 
 
-def project_view(name, briefing, sessions):
+def project_view(name, briefing, sessions, agents=()):
     info = lookup(name)
     d = info.get("dir", "none")
     view = {"name": name, "dir": None if d == "none" else d, "board": info.get("board"), "key": info.get("key"),
-            "error": None, "next": [], "jumps": [], "lastActivityAt": None, "running": 0}
+            "error": None, "next": [], "jumps": [], "lastActivityAt": None, "running": 0, "background": 0}
     errors = []
     if d == "none":
         errors.append("folder: " + info.get("reason", "not found"))
@@ -362,6 +362,7 @@ def project_view(name, briefing, sessions):
         acts = [s.get("lastActivityAt") or 0 for s in mine]
         view["lastActivityAt"] = max(acts) if acts else None
         view["running"] = sum(1 for s in mine if session_state(s) == "running")
+        view["background"] = sum(1 for a in agents if a.get("status") == "busy" and in_dir(a, view["dir"]))
     return view
 
 
@@ -400,9 +401,9 @@ def save_order(body):
 
 
 def projects_view():
-    briefing, sessions = BRIEFING.get(), load_sessions()
+    briefing, sessions, agents = BRIEFING.get(), load_sessions(), background_agents()
     with ThreadPoolExecutor() as pool:  # lookups and acli are slow; run the projects side by side
-        views = list(pool.map(lambda n: project_view(n, briefing, sessions), active_projects()))
+        views = list(pool.map(lambda n: project_view(n, briefing, sessions, agents), active_projects()))
     return sort_projects(views, read_order())
 
 
@@ -1155,6 +1156,46 @@ def post_new_session(body):
     return {"ok": True}
 
 
+def claude_cli():
+    path = shutil.which("claude") or str(HOME / ".local/bin/claude")
+    if not Path(path).is_file():
+        raise ApiError(500, "claude CLI not found on PATH or in ~/.local/bin")
+    return path
+
+
+def background_agents():
+    """The background sessions `claude --bg` started, from `claude agents --json`."""
+    code, out = run([claude_cli(), "agents", "--json"])
+    if code != 0:
+        raise ApiError(500, "claude agents: " + out.strip())
+    return [a for a in json.loads(out) if a.get("kind") == "background"]
+
+
+BG_ID = re.compile(r"backgrounded · (\S+) ·")
+
+
+def bg_session_name(project, text):
+    first = text.strip().splitlines()[0]
+    return project + ": " + (first[:47] + "…" if len(first) > 48 else first)
+
+
+def post_bg_session(body):
+    """Starts a background session (`claude --bg`) in the project's folder with the text as its
+    first prompt. No claude:// link, so the app shows no confirmation and stays in the background."""
+    project, text = need(body, "project", "text")
+    if not text.strip():
+        raise ApiError(400, "text is empty")
+    d = lookup(project).get("dir", "none")
+    if d == "none" or not Path(d).is_dir():
+        raise ApiError(404, "no folder for project " + project)
+    code, out = run([claude_cli(), "--bg", "--permission-mode", "auto", "-n", bg_session_name(project, text),
+                     text.strip()], cwd=d)
+    m = BG_ID.search(out)
+    if code != 0 or not m:
+        raise ApiError(500, "claude --bg: " + out.strip())
+    return {"ok": True, "id": m.group(1)}
+
+
 def post_copy(body):
     pbcopy(need(body, "text")[0])
     if body.get("app"):
@@ -1166,6 +1207,7 @@ GETS = {"/api/briefing": lambda q: BRIEFING.get(), "/api/projects": lambda q: pr
         "/api/ticket": get_ticket, "/api/weather": lambda q: weather(),
         "/api/order": lambda q: {"order": read_order()}}
 POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/open-url": post_open_url, "/api/new-session": post_new_session,
+         "/api/bg-session": post_bg_session,
          "/api/copy": post_copy, "/api/note-done": lambda b: note_done(need(b, "n")[0]),
          "/api/order": save_order}
 

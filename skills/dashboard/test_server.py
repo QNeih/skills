@@ -111,6 +111,14 @@ class NewSession(unittest.TestCase):
         self.assertEqual(server.new_session_url("hi there"), "claude://code/new?q=hi+there")
 
 
+class BackgroundSession(unittest.TestCase):
+    def test_name_and_id(self):
+        self.assertEqual(server.bg_session_name("skills", "fix the clock\nmore"), "skills: fix the clock")
+        self.assertEqual(len(server.bg_session_name("p", "x" * 80)), len("p: ") + 48)
+        out = "Starting background service…\nbackgrounded · 36e71ce8 · skills: hi\n  claude agents  list sessions"
+        self.assertEqual(server.BG_ID.search(out).group(1), "36e71ce8")
+
+
 class Fixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

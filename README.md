@@ -93,7 +93,7 @@ flowchart TD
 | start (clock) | any key or click | go to home |
 | home | `↑` `↓` / `j` `k` | move ticket selection |
 | | `space` | open selected ticket |
-| | `⏎` | prompt box; `⏎` there opens a new session with the text prefilled (in the folder the app used last: a link naming the folder makes the app ask to trust it every time), `←` (empty) or `esc` closes |
+| | `⏎` | prompt box; `⏎` there starts a background session (`claude --bg`, auto mode) in the project's folder with the text as its prompt, without the app's link confirmation; the column's "new bg session" line shows how many are running. `←` (empty) or `esc` closes |
 | | `←` / `→` | previous / next project |
 | | `tab` / `p` | next project (`⇧tab` back) |
 | | `⇧←` / `⇧→`, `H` / `L` | move project left / right (order saved) |
