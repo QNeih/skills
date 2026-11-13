@@ -72,7 +72,13 @@ Write the brief from the lines of steps 1 and 2; every fact comes from them, the
 **Acme**
 - Did: <2–4 bullets>; left off: feature/ACM-12, clean
 - Next: ACM-12 Export grounding
-- Jira: added ACM-40 New thing — Max · back: ACM-31 Review → In Progress
+- Jira:
+
+  | Change | Key | Title | Status | Assignee |
+  |---|---|---|---|---|
+  | added | ACM-40 | New thing | To Do | Max |
+  | back | ACM-31 | Fix login | Review → In Progress | Ann |
+
 - Sentry staging: 3 issues, new: ACME-4F2 · regressed: ACME-3A1
 - Dependabot: 2 new — Bump left-pad, Bump zod
 - Teams · max@acme.test · Fri 11:02: wants a date for the release
@@ -87,6 +93,7 @@ Reply: "fix all" (Sentry) · "/dependabot-review" · "add all" · "done 2"
 - In a project section: Did, Next, Jira, Sentry, Dependabot, messages, notes, errors.
 - **Did**: 2–4 bullets condensed from the `prompt` and `commit` lines, grouped by ticket or topic, then the `left off` value. No `prompt`/`commit` lines (or `later run today`) → no Did line.
 - **Next**: every `next:` line, key and title.
+- **Jira**: one table per project, one row per `jira` line; `added` rows first, then `back`. Status is the `[status]` of an added line or the `<from> → <to>` of a back line.
 - **Sentry**: one line per `sentry` line; name the Sentry project when the section has several.
 - Every `jira`, `sentry`, `dependabot`, `note` and `error` line and every step 2 line appears; step 2 lines verbatim without their `today:`/`<project>:` prefix, `unmatched:` lines as `Unmatched: …` after the last section. Notes keep their number, so `done <n>` hits the right one. Errors keep their fix verbatim.
 - **Reply** line: only the offers that apply: `"fix all"` when a `sentry` line has new or regressed ids, `"/dependabot-review"` when a `dependabot` line exists, `"add all"` when `Unmatched:` lines are shown, `"done <n>"` when notes are shown.
