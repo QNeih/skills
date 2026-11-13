@@ -282,10 +282,11 @@ function updateMeta() {
 const HINTS = {
   start: [],
   home: [['↑↓', 'select'], ['space', 'open'], ['⏎', 'new session'], ['1–9', 'ticket'], ['← →', 'project'], ['⇧← →', 'move'], ['[ ]', 'page'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
-  ticket: [['↑↓', 'select'], ['space', 'new /ticket session'], ['esc', 'back'], ['←', 'back (no sessions)']],
+  ticket: [['↑↓', 'select'], ['space', 'new /ticket session'], ['esc', 'back'], ['←', 'back']],
 };
 function updateHints() {
   let h = HINTS[S.route.name].slice();
+  if (S.route.name === 'ticket' && S.flat.length) { h[1] = ['space', 'open session']; h = h.filter(([k]) => k !== '←'); }
   if (S.route.name === 'home') {
     const p = focusedProject();
     for (const j of (p && p.jumps) || []) h.push([j.key, j.label]);
@@ -310,7 +311,7 @@ function toggleOverlay(force) {
     ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
     ['home', [['space', 'open selected ticket'], ['⏎', 'blank new session in the project'], ['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open to-do ticket 1–9'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
-    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'new session in the app with /ticket <id> prefilled']]],
+    ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: new session with /ticket <id> prefilled']]],
   ];
   const p = focusedProject();
   if (p && (p.jumps || []).length) groups.push([`jumps · ${p.name}`, p.jumps.map(j => [j.key, j.label])]);
@@ -345,7 +346,7 @@ function route() {
   else if (r.name === 'home') { setCrumbs([{ text: 'home' }]); renderHome(); loadHome(); }
   else if (r.name === 'ticket') {
     setCrumbs([{ text: 'home', href: '#/' }, { text: r.id, id: true }]);
-    if (!S.ticket || S.ticket.id !== r.id) { S.ticket = null; S.ticketSel = 0; }
+    if (!S.ticket || S.ticket.id !== r.id) { S.ticket = null; S.ticketSel = 0; S.flat = []; }
     S.ticketErr = null; renderTicket(); loadTicket();
   }
   updateHints();
@@ -575,6 +576,7 @@ async function loadTicket() {
     S.flat = flatten(t.sessions || []);
     const at = S.flat.findIndex(f => f.s.sessionId === prevId);
     S.ticketSel = at >= 0 ? at : Math.min(S.ticketSel, Math.max(S.flat.length - 1, 0));
+    updateHints();
     updateMeta();
   } catch (e) {
     if (gen !== S.gen) return;
@@ -637,6 +639,9 @@ function renderTicket() {
   const selEl = main.querySelector('.tree .row.sel');
   if (selEl) selEl.scrollIntoView({ block: 'nearest' });
 }
+async function openInApp(sessionId) {
+  try { await api('/api/open', { sessionId }); toast('Opened in the Claude app'); } catch (e) { fail(e); }
+}
 // Opens a new Code session in the project's folder with the command prefilled; Enter in the app starts it.
 async function newSession(project, text) {
   try { await api('/api/new-session', { project, text }); toast(text ? 'New session: ' + text : 'New session'); } catch (e) { fail(e); }
@@ -645,7 +650,11 @@ function ticketKey(e) {
   const k = e.key;
   if (k === 'ArrowDown' || k === 'j') { S.ticketSel = Math.min(S.ticketSel + 1, Math.max(S.flat.length - 1, 0)); renderTicket(); return true; }
   if (k === 'ArrowUp' || k === 'k') { S.ticketSel = Math.max(S.ticketSel - 1, 0); renderTicket(); return true; }
-  if (k === ' ') { newSession(S.route.project, '/ticket ' + S.route.id); return true; }
+  if (k === ' ') {
+    const f = S.flat[S.ticketSel];
+    if (f) openInApp(f.s.sessionId); else newSession(S.route.project, '/ticket ' + S.route.id);
+    return true;
+  }
   if (k === 'ArrowLeft' && !S.flat.length) { back(); return true; }
   return false;
 }

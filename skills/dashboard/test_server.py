@@ -98,8 +98,7 @@ class PullRequests(unittest.TestCase):
 
 class NewSession(unittest.TestCase):
     def test_command_becomes_request(self):
-        self.assertEqual(server.as_request("/ticket SKL-15"),
-                         "Run /ticket SKL-15: read ~/.claude/skills/ticket/SKILL.md and follow it.")
+        self.assertEqual(server.as_request("/ticket SKL-15"), "Run /ticket SKL-15")
         self.assertEqual(server.as_request("hello"), "hello")
 
     def test_url(self):

@@ -275,10 +275,13 @@ def jira_search(jql):
 
 
 def jira_board(key):
-    """Active-sprint tickets (openSprints() alone also matches future sprints) in the To Do category that are mine or unassigned, ranked.
+    """To Do tickets of the active sprint that are mine or unassigned, ranked. openSprints() alone
+    also matches future sprints. Epics are left out: they can carry a sprint but don't show in the
+    sprint backlog.
     Not checked: blocking links. acli's search refuses the `issuelinks` field, so PICKING's
     blocked check is skipped and blockedBy stays empty."""
-    jql = ("project = {} AND sprint in openSprints() AND sprint not in futureSprints() AND resolution = Unresolved AND statusCategory = \"To Do\""
+    jql = ("project = {} AND sprint in openSprints() AND sprint not in futureSprints()"
+           " AND resolution = Unresolved AND statusCategory = \"To Do\" AND issuetype != Epic"
            " AND (assignee = currentUser() OR assignee is EMPTY) ORDER BY updated DESC").format(key)
     return [dict(id=i["id"], title=i["title"], column=i["column"], blockedBy=[], urgent=False)
             for i in rank_jira(jira_search(jql))]
@@ -948,12 +951,8 @@ def get_ticket(q):
 
 def as_request(text):
     """The app swaps a leading `/` in link-prefilled text for a look-alike so a link can't run a
-    command; a skill command becomes a plain request naming the skill file. Quinn still reads and
-    sends it. `/ticket SKL-15` → `Run /ticket SKL-15: read ~/.claude/skills/ticket/SKILL.md and follow it.`"""
-    m = re.match(r"/([\w-]+)(.*)$", text.strip(), re.S)
-    if not m:
-        return text
-    return "Run /{}{}: read ~/.claude/skills/{}/SKILL.md and follow it.".format(m.group(1), m.group(2), m.group(1))
+    command, so a command gets a word in front: `/ticket SKL-15` → `Run /ticket SKL-15`."""
+    return "Run " + text.strip() if text.strip().startswith("/") else text
 
 
 def new_session_url(folder, text):
@@ -962,6 +961,16 @@ def new_session_url(folder, text):
     params = {"q": as_request(text)} if text else {}
     params["folder"] = folder
     return "claude://code/new?" + urllib.parse.urlencode(params)
+
+
+def post_open(body):
+    session_id = need(body, "sessionId")[0]
+    if not any(s["sessionId"] == session_id for s in load_sessions()):
+        raise ApiError(404, "no session " + str(session_id))
+    code, out = run(["open", LINK.format(session_id)])
+    if code != 0:
+        raise ApiError(500, "open: " + out.strip())
+    return {"ok": True}
 
 
 def post_new_session(body):
@@ -987,7 +996,7 @@ def post_copy(body):
 GETS = {"/api/briefing": lambda q: BRIEFING.get(), "/api/projects": lambda q: projects_view(),
         "/api/ticket": get_ticket, "/api/weather": lambda q: weather(),
         "/api/order": lambda q: {"order": read_order()}}
-POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/new-session": post_new_session,
+POSTS = {"/api/briefing/refresh": lambda b: BRIEFING.start(), "/api/open": post_open, "/api/new-session": post_new_session,
          "/api/copy": post_copy, "/api/note-done": lambda b: note_done(need(b, "n")[0]),
          "/api/order": save_order}
 

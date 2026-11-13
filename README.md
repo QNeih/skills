@@ -103,7 +103,7 @@ flowchart TD
 | | `c` | clock screen |
 | | jump key | run the project's jump (to-do done: press twice) |
 | ticket | `↑` `↓` / `j` `k` | move session selection |
-| | `space` | new session in the app with `/ticket <id>` prefilled |
+| | `space` | open the selected session in the app; no sessions yet: new session with `/ticket <id>` prefilled |
 | | `←` | back, while the ticket has no sessions |
 
 ## Install
