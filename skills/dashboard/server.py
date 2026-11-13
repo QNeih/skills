@@ -275,10 +275,10 @@ def jira_search(jql):
 
 
 def jira_board(key):
-    """Open sprint tickets in the To Do category that are mine or unassigned, ranked.
+    """Active-sprint tickets (openSprints() alone also matches future sprints) in the To Do category that are mine or unassigned, ranked.
     Not checked: blocking links. acli's search refuses the `issuelinks` field, so PICKING's
     blocked check is skipped and blockedBy stays empty."""
-    jql = ("project = {} AND sprint in openSprints() AND resolution = Unresolved AND statusCategory = \"To Do\""
+    jql = ("project = {} AND sprint in openSprints() AND sprint not in futureSprints() AND resolution = Unresolved AND statusCategory = \"To Do\""
            " AND (assignee = currentUser() OR assignee is EMPTY) ORDER BY updated DESC").format(key)
     return [dict(id=i["id"], title=i["title"], column=i["column"], blockedBy=[], urgent=False)
             for i in rank_jira(jira_search(jql))]
