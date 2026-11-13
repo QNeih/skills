@@ -364,7 +364,7 @@ def project_view(name, briefing, sessions, agents=()):
         view["running"] = sum(1 for s in mine if session_state(s) == "running")
         view["background"] = sum(1 for a in agents if a.get("status") == "busy" and in_dir(a, view["dir"]))
         for t in view["next"]:
-            t["sessions"] = ticket_states(t["id"], view["dir"], mine)
+            t["sessionCounts"] = ticket_states(t["id"], view["dir"], mine)
     return view
 
 

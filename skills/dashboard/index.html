@@ -67,7 +67,6 @@ main { min-height: 0; padding: 15px 20px; overflow: hidden; }
 .row .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row.sel .t { color: var(--head); }
 .row .k { color: var(--clay); width: 1ch; flex: none; }
-.row .k.off { color: var(--dim); }
 .id { color: var(--clay); flex: none; }
 .tag { font-size: var(--fs-s); color: var(--label); flex: none; white-space: nowrap; }
 .tag.block { color: var(--wait); }
@@ -123,7 +122,6 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 .goal::before, .tgoal::before { content: '\23BF  '; color: var(--dim); }
 .jk { margin-left: auto; flex: none; color: var(--clay); border: 1px solid var(--clay-line); border-radius: 4px;
   padding: 0 6px; font-size: var(--fs-xs); line-height: 1.5; }
-.jk.off { color: var(--dim); border-color: var(--line2); }
 .armed { background: #221b0f; }
 .armed .jk { color: var(--wait); border-color: var(--wait); }
 .extra { display: flex; gap: 12px; margin: 12px 15px; padding: 10px 14px; border: 1px solid var(--clay); border-radius: var(--rad); }
@@ -237,7 +235,8 @@ const S = {
   ticket: null, ticketErr: null, ticketSel: 0, flat: [], extra: null, // extra: the prompt box's text while it is open
   last: {}, // project name → hash of the screen Quinn was last on in it
   drafts: {}, // hash (or 'ask:<project>') → unsent prompt text, kept while tab is on another project
-  promptNext: false, // ⏎ on home: open the ticket view's prompt box with the next command once the ticket loads
+  promptNext: null, // hash of the ticket whose prompt box opens with its next command once it loads (⏎ on home)
+  selBy: {}, // project name → id of the ticket selected on its home
 };
 
 /* ---------- api ---------- */
@@ -364,7 +363,8 @@ function parseHash() {
   return { name: 'home' };
 }
 const ticketHash = (project, id) => `#/ticket/${encodeURIComponent(project)}/${encodeURIComponent(id)}`;
-function go(h) { if (location.hash === h) route(); else location.hash = h; }
+// Routes at once: waiting for hashchange lets keys pressed in between act on the old screen.
+function go(h) { if (location.hash !== h) history.pushState(null, '', h); route(); }
 function back() {
   const r = S.route;
   if (r.name === 'ticket') go('#/');
@@ -376,6 +376,7 @@ function route() {
   S.armed = null;
   if (S.route.name === 'ticket' && S.extra !== null) S.drafts[S.route.hash] = S.extra;
   S.route = parseHash();
+  if (S.route.hash !== S.promptNext) S.promptNext = null;
   closeAsk();
   const r = S.route;
   $('#app').classList.toggle('start', r.name === 'start');
@@ -388,6 +389,8 @@ function route() {
   else if (r.name === 'ticket') {
     S.last[r.project] = r.hash;
     syncFocus();
+    const at = homeItems(focusedProject()).findIndex(t => t.id === r.id);
+    if (at >= 0) S.homeSel = at;
     setCrumbs([{ text: 'home', href: '#/' }, { text: r.id, id: true }]);
     if (!S.ticket || S.ticket.id !== r.id) { S.ticket = null; S.ticketSel = 0; S.flat = []; }
     S.extra = r.hash in S.drafts ? S.drafts[r.hash] : null;
@@ -413,7 +416,10 @@ function showProject(idx) {
   const p = (S.projects || [])[idx];
   if (!p) return;
   if (S.route.name === 'ticket' && S.extra !== null) { S.drafts[S.route.hash] = S.extra; S.extra = null; }
-  S.focus = idx; S.homeSel = 0; S.armed = null;
+  const cur = focusedProject(), sel = homeItems(cur)[S.homeSel];
+  if (cur && sel) S.selBy[cur.name] = sel.id;
+  S.focus = idx; S.armed = null;
+  S.homeSel = Math.max(0, homeItems(p).findIndex(t => t.id === S.selBy[p.name]));
   let to = S.last[p.name] || '#/';
   const m = to.match(/^#\/ticket\/[^/]+\/(.+)$/);
   if (m && !(p.next || []).some(t => t.id === decodeURIComponent(m[1]))) to = '#/';
@@ -524,21 +530,20 @@ function renderHome() {
 }
 const STATES = [['running', 'running'], ['waiting', 'waiting on you'], ['archived', 'archived']];
 function projectPanel(p, idx, lines) {
-  const focused = true;
   const items = homeItems(p);
   const armed = key => S.armed && S.armed.idx === idx && S.armed.key === key ? ' armed' : '';
   const jump = key => (p.jumps || []).find(j => j.key === key);
-  const badge = key => `<span class="jk${focused ? '' : ' off'}">${esc(key)}</span>`;
+  const badge = key => `<span class="jk">${esc(key)}</span>`;
   const row = (t, i) => {
-    const sel = focused && i === S.homeSel;
+    const sel = i === S.homeSel;
     const tags = [];
     if ((t.blockedBy || []).length) tags.push(`<span class="tag block">blocked by ${esc(t.blockedBy.join(', '))}</span>`);
     if (t.urgent) tags.push('<span class="tag urgent">urgent</span>');
     if (t.active) tags.push('<span class="tag prog">in progress</span>');
-    const ss = t.sessions || {};
+    const ss = t.sessionCounts || {};
     for (const [k, label] of STATES) if (ss[k]) tags.push(`<span class="tag ss"><span class="dot ${k}"></span>${ss[k] > 1 ? ss[k] + ' ' : ''}${label}</span>`);
     return `<div class="row${sel ? ' sel' : ''}" data-act="ticket" data-project="${esc(p.name)}" data-id="${esc(t.id)}">
-      <span class="k${focused ? '' : ' off'}">${t.num}</span><span class="id">${esc(t.id)}</span>
+      <span class="k">${t.num}</span><span class="id">${esc(t.id)}</span>
       <span class="t" title="${esc(t.title)}">${esc(t.title)}</span>${tags.join('')}${sel ? badge('→') : ''}</div>${t.goal ? `<div class="goal" title="${esc(t.goal)}">${esc(t.goal)}</div>` : ''}`;
   };
   const todo = lines.filter(l => ['jira', 'note', 'error'].includes(l.kind));
@@ -645,7 +650,7 @@ function homeKey(e) {
   if (k === 'ArrowUp' || k === 'k') { S.homeSel = Math.max(S.homeSel - 1, 0); renderHome(); return true; }
   if (k === ' ') { if (t) openTicket(p.name, t.id); return true; }
   if (k === 'ArrowRight') { if (t) runNext(p.name, t.id); return true; }
-  if (k === 'Enter') { if (t) { S.promptNext = true; openTicket(p.name, t.id); } return true; }
+  if (k === 'Enter') { if (t) { S.promptNext = ticketHash(p.name, t.id); openTicket(p.name, t.id); } return true; }
   if (k === 'b') { if (p) openAsk(p.name); return true; }
   if (/^[1-9]$/.test(k)) { const n = items.find(x => x.num === Number(k)); if (n) openTicket(p.name, n.id); return true; }
   if (k === 'r') { refreshBriefing(); return true; }
@@ -678,12 +683,18 @@ async function loadTicket() {
     S.flat = flatten(t.sessions || []);
     const at = S.flat.findIndex(f => flatKey(f) === prevId);
     S.ticketSel = at >= 0 ? at : Math.min(S.ticketSel, Math.max(S.flat.length - 1, 0));
-    if (S.promptNext) { S.promptNext = false; if (S.extra === null) S.extra = S.extraInit = nextCommand(t).cmd || ''; }
+    if (S.promptNext === r.hash) {
+      S.promptNext = null;
+      const n = nextCommand(t);
+      if (!n.cmd) toast(n.why);
+      else if (S.extra === null) S.extra = S.extraInit = n.cmd;
+    }
     updateHints();
     updateMeta();
   } catch (e) {
     if (gen !== S.gen) return;
     S.ticketErr = e.message;
+    if (S.promptNext === r.hash) S.promptNext = null;
   }
   renderTicket();
   // Live: re-read every 5 s so steps, sessions and PR checks move while the ticket's sessions work.
@@ -792,7 +803,8 @@ async function runNext(project, id) {
   } catch (e) { fail(e); }
 }
 function openExtra() {
-  if (S.extra === null) S.extra = S.extraInit = S.ticket ? nextCommand(S.ticket).cmd || '' : `/work ${S.route.id}`;
+  if (!S.ticket) return; // the next command is known once the ticket has loaded
+  if (S.extra === null) S.extra = S.extraInit = nextCommand(S.ticket).cmd || ''; // empty: any prompt for a new session
   renderTicket(); updateHints();
 }
 function closeExtra() { S.extra = null; renderTicket(); updateHints(); }
@@ -914,13 +926,14 @@ async function loadWeather() {
 /* ---------- input ---------- */
 document.addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if (S.route.name === 'start') { e.preventDefault(); go('#/'); return; }
-  if (e.key === 'Tab' && !S.overlay) {
+  if (e.key === 'Tab') {
     e.preventDefault();
+    if (S.overlay) toggleOverlay(false);
     if ($('#ask').className) closeAsk(true);
     switchProject(e.shiftKey ? -1 : 1);
     return;
   }
+  if (S.route.name === 'start') { e.preventDefault(); go('#/'); return; }
   if (e.target && e.target.id === 'extra') { extraKey(e, e.target); return; }
   if (e.target && e.target.id === 'ask-text') { askKey(e, e.target); return; }
   if (e.key === '?') { e.preventDefault(); toggleOverlay(); return; }
