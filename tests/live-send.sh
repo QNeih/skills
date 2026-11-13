@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# /send through claude -p, against a local bare remote: nothing to send; lint commit, push
+# /send through claude -p, against a local bare remote: nothing to send; pushed commits still sent; lint commit, push
 # and the "PR on <host> not supported" stop; without git: card to Done, ticket files deleted.
 . "$(dirname "$0")/lib.sh"
 fixture_new
@@ -47,6 +47,15 @@ grep -qi 'nothing to send' <<<"$CLAUDE_OUT" && pass "nothing to send: says so" |
 [ "$(git -C "$acme" rev-parse HEAD)" = "$(git -C "$acme" rev-parse origin/main)" ] \
   && pass "nothing to send: no commit" || fail "nothing to send: no commit"
 grep -qF 'ACM-1 · Old work' <<<"$(column "$board" 'in progress')" && pass "nothing to send: card stays" || fail "nothing to send: card stays"
+
+# Committed and pushed, no PR yet: send goes on past preflight instead of saying nothing to send
+git -C "$acme" checkout -q main && git -C "$acme" checkout -q -b feature/ACM-3
+echo 'let d = 4' > "$acme/src/d.js"
+git -C "$acme" add src/d.js && git -C "$acme" commit -qm "Add d" && git -C "$acme" push -q -u origin HEAD 2>/dev/null
+ticket "$acme" ACM-3 pushed-work feature/ACM-3 main
+run_send "$acme"
+! grep -qi 'nothing to send' <<<"$CLAUDE_OUT" && grep -qE 'PR on .+ not supported' <<<"$CLAUDE_OUT" \
+  && pass "pushed commits: reach the PR step" || { fail "pushed commits: reach the PR step"; echo "$CLAUDE_OUT" | tail -20; }
 
 # Committed-but-unpushed work plus an uncommitted file; lint must cover both
 git -C "$acme" checkout -q main && git -C "$acme" checkout -q -b bugfix/ACM-2 && git -C "$acme" push -q -u origin HEAD 2>/dev/null

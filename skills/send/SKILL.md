@@ -48,14 +48,14 @@ Without git, go to step 7.
 3. `<base>`: `ticket.md`'s `base:`. Else a `hotfix/` branch → `main` or `master`, whichever is on `origin`; else `develop` if `origin/develop` exists, else `main` or `master`.
 4. `git diff --cached --quiet` fails → stop and ask: unstage (`git restore --staged .`) or say how to treat the staged hunks.
 5. **Change set**: `git status --porcelain --untracked-files=all`, minus every path under `.scratch/` or `.handoffs/`.
-6. **Unpushed commits**: `git rev-list origin/<branch>..HEAD`; without an upstream, `git rev-list origin/<base>..HEAD`.
-7. Change set and unpushed commits both empty → stop and print this line as is: `Nothing to send: <branch> is clean and pushed.`
+6. **Branch commits**: `git rev-list origin/<base>..HEAD`, pushed or not. Commits already on `origin` still need their PR, board move and cleanup.
+7. Change set and branch commits both empty → stop and print this line as is: `Nothing to send: <branch> has no changes against <base>.`
 
-**Done when:** no staged hunks, `<base>` is known, and the change set and unpushed commits are listed.
+**Done when:** no staged hunks, `<base>` is known, and the change set and branch commits are listed.
 
 ## 3. Commit
 
-Change set empty → skip and say "no uncommitted changes; sending the unpushed commits".
+Change set empty → skip and say "no uncommitted changes; sending the branch commits".
 
 1. Read `git diff`, the untracked files, and `git log -10 --format=%s` for the repo's subject style.
 2. Plan one commit per concern: refactor apart from behaviour, unrelated areas apart; prep (renames, moves) before what depends on it. Show the plan: ordered subjects, paths or hunks each.
