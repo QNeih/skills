@@ -96,6 +96,13 @@ class PullRequests(unittest.TestCase):
         self.assertEqual(server.with_pr_steps(steps, []), steps)
 
 
+class NewSession(unittest.TestCase):
+    def test_command_becomes_request(self):
+        self.assertEqual(server.as_request("/ticket SKL-15"),
+                         "Run /ticket SKL-15: read ~/.claude/skills/ticket/SKILL.md and follow it.")
+        self.assertEqual(server.as_request("hello"), "hello")
+
+
 class Fixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

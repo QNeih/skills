@@ -30,8 +30,13 @@ if ! running; then
   curl -fs -o /dev/null "$url" || { echo "error: server did not start — see $state/server.log"; tail -5 "$state/server.log"; exit 1; }
 fi
 
+# The dashboard's own Chrome (its own profile) already runs → bring it to the front, no second window.
+chrome=$(pgrep -f -- "--user-data-dir=$state/chrome" | while read -r p; do
+  ps -o command= -p "$p" | grep -q -- '--type=' || echo "$p"; done | head -1)
+if [ -n "$chrome" ]; then
+  osascript -l JavaScript -e "ObjC.import('AppKit'); \$.NSRunningApplication.runningApplicationWithProcessIdentifier($chrome).activateWithOptions(\$.NSApplicationActivateAllWindows)" >/dev/null
 # Chrome app mode: a window without tabs or address bar, full screen. No Chrome → default browser.
-if [ -d "/Applications/Google Chrome.app" ]; then
+elif [ -d "/Applications/Google Chrome.app" ]; then
   open -na "Google Chrome" --args --app="$url" --start-fullscreen --user-data-dir="$state/chrome"
 else
   open "$url"

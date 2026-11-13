@@ -93,8 +93,9 @@ Put your projects root and vault path in `~/.claude/CLAUDE.md`.
 
 ## Extras
 
-- **session-nav** (Claude desktop app only): a bar above the prompt that links
-  back to the parent session and to child sessions.
+- **session-nav** (Claude desktop app only): a bar above the prompt with a
+  dashboard button, a link back to the parent session and links to child
+  sessions, labelled by ticket id.
   `/plugin marketplace add QNeih/skills`, then `/plugin install session-nav@quinn`.
 - **break-reminder**: opens a small window every hour that reminds me to drink
   water and stretch; `/break` opens it right away.

@@ -1031,6 +1031,16 @@ def post_open_pr(body):
     return {"ok": True}
 
 
+def as_request(text):
+    """The app swaps a leading `/` in link-prefilled text for a look-alike so a link can't run a
+    command; a skill command becomes a plain request naming the skill file. Quinn still reads and
+    sends it. `/ticket SKL-15` → `Run /ticket SKL-15: read ~/.claude/skills/ticket/SKILL.md and follow it.`"""
+    m = re.match(r"/([\w-]+)(.*)$", text.strip(), re.S)
+    if not m:
+        return text
+    return "Run /{}{}: read ~/.claude/skills/{}/SKILL.md and follow it.".format(m.group(1), m.group(2), m.group(1))
+
+
 def post_new_session(body):
     """Opens the Claude app's new Code session screen in the project's folder with the text
     prefilled (claude://code/new?q=…&folder=…); Quinn presses Enter there. A link can't pick the
@@ -1039,7 +1049,7 @@ def post_new_session(body):
     d = lookup(project).get("dir", "none")
     if d == "none" or not Path(d).is_dir():
         raise ApiError(404, "no folder for project " + project)
-    url = "claude://code/new?" + urllib.parse.urlencode({"q": text, "folder": d})
+    url = "claude://code/new?" + urllib.parse.urlencode({"q": as_request(text), "folder": d})
     code, out = run(["open", url])
     if code != 0:
         raise ApiError(500, "open: " + out.strip())

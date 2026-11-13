@@ -14,7 +14,21 @@ async function callJson($: EngineInterface, tool: string, args: Record<string, u
   return text.startsWith('{') || text.startsWith('[') ? JSON.parse(text) : null
 }
 
-const label = (r: Row) => r.name ?? r.title ?? r.sessionId
+const TICKET = /\b([A-Z][A-Z0-9]+-\d+)\b/
+// The ticket id (BGH-23) when the title or name has one, else the short name.
+const ticketId = (r: Row) => (r.title?.match(TICKET) ?? r.name?.toUpperCase().match(TICKET))?.[1]
+const fallback = (r: Row) => r.name ?? r.title ?? r.sessionId
+// Ids only; a session whose id another shown session shares keeps its name, so every label stays unique.
+function labels(rows: Row[]): Map<string, string> {
+  const ids = rows.map(ticketId)
+  return new Map(rows.map((r, i) => {
+    const id = ids[i]
+    const shared = id !== undefined && ids.filter(x => x === id).length > 1
+    return [r.sessionId, id && !shared ? id : fallback(r)]
+  }))
+}
+// start.sh starts the dashboard if needed, else brings its Chrome window to the front.
+const DASHBOARD = ['/bin/bash', '-c', '"$HOME/.claude/skills/dashboard/start.sh"']
 const RUNNING = '#3fb950' // working
 const WAITING = '#d29922' // idle, not archived: waiting on Quinn
 const dot = (r: Row) => (r.isRunning ? RUNNING : WAITING)
@@ -61,19 +75,23 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, ($, e, next) => {
     const { parent, kids } = family
-    if (e.props.hasSurvey || (!parent && kids.length === 0)) return next(e)
+    if (e.props.hasSurvey) return next(e)
 
     // Desktop draws a Link plain unless it is https:, so claude:// links go through `open`.
     const { Box, Text, Button } = $.ui.resolve(e)
     const open = (r: Row) => () => { void $.process.run(['open', r.link!]) }
+    const name = labels([...(parent ? [parent] : []), ...kids])
 
     return (
       <Box flexDirection="row" justifyContent="space-between" width="100%">
-        <Box>{parent?.link ? <Button key={parent.sessionId} label={`← ${label(parent)}`} onPress={open(parent)} /> : null}</Box>
+        <Box gap={1}>
+          <Button key="dashboard" label="▦ dashboard" onPress={() => { void $.process.run(DASHBOARD) }} />
+          {parent?.link ? <Button key={parent.sessionId} label={`← ${name.get(parent.sessionId)}`} onPress={open(parent)} /> : null}
+        </Box>
         <Box gap={1}>
           {kids.filter(k => k.link).map(k => (
             <Button key={k.sessionId} onPress={open(k)}>
-              <Text color={dot(k)}>●</Text> {label(k)}
+              <Text color={dot(k)}>●</Text> {name.get(k.sessionId)}
             </Button>
           ))}
         </Box>
