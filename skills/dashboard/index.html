@@ -301,8 +301,8 @@ function updateMeta() {
 }
 const HINTS = {
   start: [],
-  home: [['↑↓', 'select'], ['← →', 'project'], ['⇧← →', 'move project'], ['1–3', 'open ticket'], ['s', 'sentry fixes'], ['d', 'dependabot'], ['[ ]', 'page'], ['r', 'refresh'], ['c', 'clock']],
-  ticket: [['↑↓', 'select'], ['⏎', 'open session'], ['o', 'open in app'], ['g', 'open PR'], ['t', 'new session /ticket'], ['esc', 'back']],
+  home: [['↑↓', 'select'], ['⏎ / space', 'open ticket'], ['← →', 'project'], ['⇧← →', 'move project'], ['1–3', 'open ticket'], ['s', 'sentry fixes'], ['d', 'dependabot'], ['[ ]', 'page'], ['r', 'refresh'], ['c', 'clock']],
+  ticket: [['↑↓', 'select'], ['⏎', 'chat'], ['space / o', 'go to session in app'], ['g', 'open PR'], ['t', 'new session /ticket'], ['esc', 'back']],
   session: [['i', 'reply'], ['↑↓', 'scroll'], ['o', 'open in app'], ['esc', 'back']],
   reply: [['⏎', 'send'], ['⇧⏎', 'new line'], ['esc', 'leave box']],
 };
@@ -333,7 +333,7 @@ function toggleOverlay(force) {
     ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection'], ['⏎', 'open']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
     ['home', [['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–3', 'open next ticket'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
-    ['ticket', [['⏎', 'open session'], ['o', 'open session in Claude app'], ['g', 'open the PR'], ['t', 'new session in the app with /ticket <id> prefilled']]],
+    ['ticket', [['⏎', 'show the chat here'], ['space / o', 'go to the session in the Claude app'], ['g', 'open the PR'], ['t', 'new session in the app with /ticket <id> prefilled']]],
     ['session', [['i / /', 'focus reply box'], ['⏎ (in box)', 'copy reply, open in app'], ['esc (in box)', 'leave box'], ['↑↓ / j k', 'scroll chat'], ['o', 'open in Claude app']]],
   ];
   const p = focusedProject();
@@ -569,7 +569,7 @@ function homeKey(e) {
   const items = homeItems(focusedProject());
   if (k === 'ArrowDown' || k === 'j') { S.homeSel = Math.min(S.homeSel + 1, Math.max(items.length - 1, 0)); renderHome(); return true; }
   if (k === 'ArrowUp' || k === 'k') { S.homeSel = Math.max(S.homeSel - 1, 0); renderHome(); return true; }
-  if (k === 'Enter') { const t = items[S.homeSel]; if (t) openTicket(focusedProject().name, t.id); return true; }
+  if (k === 'Enter' || k === ' ') { const t = items[S.homeSel]; if (t) openTicket(focusedProject().name, t.id); return true; }
   if ((e.shiftKey && k === 'ArrowLeft') || k === 'H') { moveProject(-1); return true; }
   if ((e.shiftKey && k === 'ArrowRight') || k === 'L') { moveProject(1); return true; }
   if (k === 'ArrowLeft' || k === 'ArrowRight') {
@@ -697,7 +697,7 @@ function ticketKey(e) {
   if (k === 'ArrowDown' || k === 'j') { S.ticketSel = Math.min(S.ticketSel + 1, Math.max(S.flat.length - 1, 0)); renderTicket(); return true; }
   if (k === 'ArrowUp' || k === 'k') { S.ticketSel = Math.max(S.ticketSel - 1, 0); renderTicket(); return true; }
   if (k === 'Enter') { openSession(S.ticketSel); return true; }
-  if (k === 'o') { const f = S.flat[S.ticketSel]; openInApp(f && f.s.sessionId); return true; }
+  if (k === 'o' || k === ' ') { const f = S.flat[S.ticketSel]; openInApp(f && f.s.sessionId); return true; }
   if (k === 'g') { const pr = (S.ticket && S.ticket.prs || [])[0]; if (pr) openPr(pr.url); else toast('No PR yet', true); return true; }
   if (k === 't') { newSession(S.route.project, '/ticket ' + S.route.id); return true; }
   return false;
