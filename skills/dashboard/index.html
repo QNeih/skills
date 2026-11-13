@@ -342,7 +342,7 @@ function updateMeta() {
 const HINTS = {
   start: [],
   home: [['↑↓', 'select'], ['⏎', 'open'], ['1–9', 'ticket'], ['← →', 'project'], ['⇧← →', 'move'], ['[ ]', 'page'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
-  ticket: [['↑↓', 'select'], ['⏎', 'chat'], ['space / o', 'session in app'], ['g', 'open PR'], ['t', 'new /ticket session'], ['esc', 'back']],
+  ticket: [['↑↓', 'select'], ['⏎', 'chat'], ['space', 'new /ticket session'], ['o', 'session in app'], ['g', 'open PR'], ['esc', 'back']],
   session: [['i', 'reply'], ['↑↓', 'scroll'], ['o', 'open in app'], ['esc', 'back']],
   reply: [['⏎', 'send'], ['⇧⏎', 'new line'], ['esc', 'leave box']],
 };
@@ -373,7 +373,7 @@ function toggleOverlay(force) {
     ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection'], ['⏎ / space', 'open']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
     ['home', [['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open to-do ticket 1–9'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
-    ['ticket', [['⏎', 'show the chat here'], ['space / o', 'go to the session in the Claude app'], ['g', 'open the PR'], ['t', 'new session in the app with /ticket <id> prefilled']]],
+    ['ticket', [['⏎', 'show the chat here'], ['space', 'new session in the app with /ticket <id> prefilled'], ['o', 'go to the session in the Claude app'], ['g', 'open the PR']]],
     ['session', [['i / /', 'focus reply box'], ['⏎ (in box)', 'copy reply, open in app'], ['esc (in box)', 'leave box'], ['↑↓ / j k', 'scroll chat'], ['o', 'open in Claude app']]],
   ];
   const p = focusedProject();
@@ -738,9 +738,9 @@ function ticketKey(e) {
   if (k === 'ArrowDown' || k === 'j') { S.ticketSel = Math.min(S.ticketSel + 1, Math.max(S.flat.length - 1, 0)); renderTicket(); return true; }
   if (k === 'ArrowUp' || k === 'k') { S.ticketSel = Math.max(S.ticketSel - 1, 0); renderTicket(); return true; }
   if (k === 'Enter') { openSession(S.ticketSel); return true; }
-  if (k === 'o' || k === ' ') { const f = S.flat[S.ticketSel]; openInApp(f && f.s.sessionId); return true; }
+  if (k === 'o') { const f = S.flat[S.ticketSel]; openInApp(f && f.s.sessionId); return true; }
   if (k === 'g') { const pr = (S.ticket && S.ticket.prs || [])[0]; if (pr) openPr(pr.url); else toast('No PR yet', true); return true; }
-  if (k === 't') { newSession(S.route.project, '/ticket ' + S.route.id); return true; }
+  if (k === ' ') { newSession(S.route.project, '/ticket ' + S.route.id); return true; }
   return false;
 }
 
