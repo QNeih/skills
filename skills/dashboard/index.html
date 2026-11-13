@@ -193,6 +193,12 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 #toast.show { display: block; }
 #overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, .75); display: none; align-items: center; justify-content: center; z-index: 10; }
 #overlay.show { display: flex; }
+#ask { position: fixed; inset: 0; background: rgba(0, 0, 0, .75); display: none; align-items: center; justify-content: center; z-index: 10; }
+#ask.show { display: flex; }
+#ask .panel { width: min(900px, 92vw); border-color: var(--line2); }
+#ask .panel > .label { color: var(--head); padding-top: 18px; }
+#ask .panel > .label .spark { color: var(--clay); }
+#ask .extra-hint { padding-bottom: 14px; }
 #overlay .panel { width: min(1000px, 92vw); max-height: 86vh; border-color: var(--line2); }
 #overlay .panel > .label { color: var(--head); padding-top: 18px; }
 #overlay .panel > .label .spark { color: var(--clay); }
@@ -213,6 +219,7 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 </div>
 <div id="toast"></div>
 <div id="overlay"></div>
+<div id="ask"></div>
 <script>
 'use strict';
 const $ = s => document.querySelector(s);
@@ -290,7 +297,7 @@ function updateMeta() {
 }
 const HINTS = {
   start: [],
-  home: [['↑↓', 'select'], ['space', 'open'], ['⏎', 'new session'], ['1–9', 'ticket'], ['t', '/ticket selected'], ['← →', 'project'], ['⇧← →', 'move'], ['[ ]', 'page'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
+  home: [['↑↓', 'select'], ['space', 'open'], ['⏎', 'ask'], ['1–9', 'ticket'], ['t', '/ticket selected'], ['← →', 'project'], ['⇧← →', 'move'], ['[ ]', 'page'], ['s', 'sentry'], ['d', 'dependabot'], ['r', 'refresh'], ['c', 'clock']],
   ticket: [['↑↓', 'select'], ['space', 'new /ticket session'], ['esc', 'back'], ['←', 'back']],
 };
 function updateHints() {
@@ -323,7 +330,7 @@ function toggleOverlay(force) {
   const groups = [
     ['everywhere', [['?', 'toggle this list'], ['esc / ⌫', 'back'], ['↑↓ / j k', 'move selection']]],
     ['start', [['any key or click', 'go to briefing (home)']]],
-    ['home', [['space', 'open selected ticket'], ['⏎', 'blank new session in the project'], ['t', 'new session with /ticket <selected ticket>'], ['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open to-do ticket 1–9'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
+    ['home', [['space', 'open selected ticket'], ['⏎', 'prompt box: new session in the project with your text'], ['t', 'new session with /ticket <selected ticket>'], ['← / →', 'previous / next project'], ['s', 'new session: fix new Sentry errors'], ['d', 'new session: Dependabot review'], ['c', 'clock screen'], ['tab / p', 'next project (⇧tab back)'], ['⇧← / ⇧→, H / L', 'move project left / right'], ['[ / ]', 'previous / next 3 projects'], ['1–9', 'open to-do ticket 1–9'], ['r', 'refresh briefing'], ['jump key', 'run jump (to-do done: press twice)']]],
     ['ticket', [['↑↓ / j k', 'select session'], ['space', 'open the selected session in the app; no sessions yet: new session with /ticket <id> prefilled'], ['→', 'no live sessions: edit the /ticket prompt, ⏎ starts it, ← (unchanged) closes'], ['←', 'no live sessions: back']]],
   ];
   const p = focusedProject();
@@ -353,6 +360,7 @@ function route() {
   S.gen++;
   S.armed = null;
   S.route = parseHash();
+  closeAsk();
   const r = S.route;
   $('#app').classList.toggle('start', r.name === 'start');
   if (r.name === 'start') { renderStart(); loadWeather(); loadHome(); }
@@ -550,13 +558,32 @@ async function runJump(idx, key) {
   } catch (e) { fail(e); }
   return true;
 }
+// Enter on a project: a prompt box; ⏎ opens a new session in the project's folder with the text prefilled.
+function openAsk(project) {
+  const a = $('#ask');
+  a.innerHTML = `<div class="panel"><div class="label"><span class="spark">✻</span>new session · ${esc(project)}</div>
+    <div class="extra"><span class="prompt">&gt;</span><textarea id="ask-text" placeholder="Ask about ${esc(project)} …"></textarea></div>
+    <div class="extra-hint">⏎ start session · ⇧⏎ new line · ← (empty) or esc close</div></div>`;
+  a.dataset.project = project;
+  a.className = 'show';
+  $('#ask-text').focus();
+}
+function closeAsk() { $('#ask').className = ''; $('#ask').innerHTML = ''; }
+function askKey(e, ta) {
+  if (e.key === 'Escape' || (e.key === 'ArrowLeft' && !ta.value.trim())) { e.preventDefault(); closeAsk(); }
+  else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    newSession($('#ask').dataset.project, ta.value.trim());
+    closeAsk();
+  }
+}
 function homeKey(e) {
   const k = e.key;
   const items = homeItems(focusedProject());
   if (k === 'ArrowDown' || k === 'j') { S.homeSel = Math.min(S.homeSel + 1, Math.max(items.length - 1, 0)); renderHome(); return true; }
   if (k === 'ArrowUp' || k === 'k') { S.homeSel = Math.max(S.homeSel - 1, 0); renderHome(); return true; }
   if (k === ' ') { const t = items[S.homeSel]; if (t) openTicket(focusedProject().name, t.id); return true; }
-  if (k === 'Enter') { const p = focusedProject(); if (p) newSession(p.name, ''); return true; }
+  if (k === 'Enter') { const p = focusedProject(); if (p) openAsk(p.name); return true; }
   if (k === 't') { const t = items[S.homeSel]; if (t) newSession(focusedProject().name, '/ticket ' + t.id); return true; }
   if ((e.shiftKey && k === 'ArrowLeft') || k === 'H') { moveProject(-1); return true; }
   if ((e.shiftKey && k === 'ArrowRight') || k === 'L') { moveProject(1); return true; }
@@ -798,6 +825,7 @@ document.addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (S.route.name === 'start') { e.preventDefault(); go('#/'); return; }
   if (e.target && e.target.id === 'extra') { extraKey(e, e.target); return; }
+  if (e.target && e.target.id === 'ask-text') { askKey(e, e.target); return; }
   if (e.key === '?') { e.preventDefault(); toggleOverlay(); return; }
   if (S.overlay) {
     if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); toggleOverlay(false); }
@@ -809,6 +837,7 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('click', e => {
   if (S.route.name === 'start') { go('#/'); return; }
+  if ($('#ask').className) { if (!e.target.closest('#ask .panel')) closeAsk(); return; }
   if (S.overlay) { if (!e.target.closest('#overlay .panel')) toggleOverlay(false); return; }
   const el = e.target.closest('[data-act]');
   if (!el || e.target.closest('a[href^="http"]')) return;

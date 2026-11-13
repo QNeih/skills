@@ -91,7 +91,7 @@ flowchart TD
 | start (clock) | any key or click | go to home |
 | home | `↑` `↓` / `j` `k` | move ticket selection |
 | | `space` | open selected ticket |
-| | `⏎` | blank new session in the project's folder |
+| | `⏎` | prompt box; `⏎` there opens a new session in the project's folder with the text prefilled, `←` (empty) or `esc` closes |
 | | `←` / `→` | previous / next project |
 | | `tab` / `p` | next project (`⇧tab` back) |
 | | `⇧←` / `⇧→`, `H` / `L` | move project left / right (order saved) |
