@@ -531,6 +531,8 @@ def transcript_facts(path):
 
 
 CHAT_TAIL = 2 * 1024 * 1024  # bytes of transcript the session view reads
+
+
 def session_chat(path):
     """The main thread of a transcript (its last 2 MB) as [{role, text, at}]: user prompts (user_text
     rules) and assistant text blocks. Tool calls, tool results, thinking, side threads, meta and
