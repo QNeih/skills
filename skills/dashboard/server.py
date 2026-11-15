@@ -531,24 +531,10 @@ def transcript_facts(path):
 
 
 CHAT_TAIL = 2 * 1024 * 1024  # bytes of transcript the session view reads
-GIST_KEYS = ("command", "file_path", "pattern", "url", "query", "skill", "description", "prompt")
-GIST_MAX = 120
-
-
-def tool_gist(block):
-    """`Name: <first of command, file path, pattern, … in its input>` on one line, the input cut to 120 chars."""
-    inp = block.get("input") or {}
-    gist = next((inp[k] for k in GIST_KEYS if isinstance(inp.get(k), str) and inp[k].strip()), "")
-    gist = " ".join(gist.split())
-    if len(gist) > GIST_MAX:
-        gist = gist[:GIST_MAX - 1] + "…"
-    return block.get("name", "?") + (": " + gist if gist else "")
-
-
 def session_chat(path):
     """The main thread of a transcript (its last 2 MB) as [{role, text, at}]: user prompts (user_text
-    rules), assistant text blocks, and one `tool` entry per tool call. Thinking, tool results,
-    side threads, meta and system lines are left out."""
+    rules) and assistant text blocks. Tool calls, tool results, thinking, side threads, meta and
+    system lines are left out."""
     out = []
     for e in read_lines(path, tail_bytes=CHAT_TAIL):
         if e.get("type") not in ("user", "assistant") or e.get("isSidechain") or e.get("isMeta"):
@@ -564,8 +550,6 @@ def session_chat(path):
                 continue
             if b.get("type") == "text" and (b.get("text") or "").strip():
                 out.append({"role": "assistant", "text": b["text"].strip(), "at": at})
-            elif b.get("type") == "tool_use":
-                out.append({"role": "tool", "text": tool_gist(b), "at": at})
     return out
 
 
@@ -656,6 +640,25 @@ def render_screen(raw):
     while lines and not lines[-1]:
         lines.pop()
     return "\n".join(lines)
+
+
+RULE_RE = re.compile(r"─{20,}")
+OPTION_RE = re.compile(r"\s*(?:❯\s*)?\d+\. ")
+
+
+def question_block(screen):
+    """The question dialog on a blocked session's screen: from its top rule to its `Esc to cancel`
+    hint. A rule followed by a numbered option is inside the dialog (AskUserQuestion's rule above
+    "Chat about this"), so the top rule is the nearest rule above the hint that is not. No dialog
+    → None: a question asked in plain text is the chat's last message."""
+    lines = screen.split("\n")
+    end = next((i for i in range(len(lines) - 1, -1, -1) if "Esc to cancel" in lines[i]), None)
+    if end is None:
+        return None
+    for i in range(end - 1, -1, -1):
+        if RULE_RE.fullmatch(lines[i]) and not (i + 1 < len(lines) and OPTION_RE.match(lines[i + 1])):
+            return "\n".join(lines[i:end + 1])
+    return None
 
 
 END_REASONS = {"end_turn", "stop_sequence", "max_tokens", "refusal"}
@@ -1330,12 +1333,12 @@ def get_ticket(q):
 
 
 def session_screen(s):
-    """The terminal screen of a live background session (its question while blocked)."""
-    return render_screen(claude_ok(["logs", s["id"]]))
+    """The question dialog a blocked background session shows on its terminal screen, or None."""
+    return question_block(render_screen(claude_ok(["logs", s["id"]])))
 
 
 def get_session(q):
-    """A background session's brief plus its chat, for the session view; plus its terminal screen while blocked."""
+    """A background session's brief plus its chat, for the session view; plus its question dialog while blocked."""
     sid = q.get("id")
     if not sid:
         raise ApiError(400, "id is required")
@@ -1478,8 +1481,9 @@ def post_session_send(body):
     state = background_state(s["agent"])
     if state == "running":
         raise ApiError(409, "session is running")
-    if state == "blocked":  # stopping drops the unanswered question, so read it first
-        text = "Answering your question:\n{}\n\nMy answer: {}".format(session_screen(s), text)
+    question = session_screen(s) if state == "blocked" else None
+    if question:  # stopping drops an unanswered dialog, so read it first
+        text = "Answering your question:\n{}\n\nMy answer: {}".format(question, text)
     stop_session(s)  # a resume while its process lives would fork
     out = claude_ok(["--bg", "--resume", sid, text], cwd=s["cwd"])
     short = printed_id(out)
