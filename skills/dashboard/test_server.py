@@ -456,7 +456,7 @@ class FollowUp(BackgroundFixture):
         self.calls.append((args, cwd))
         a = next((a for a in self.agents if a["id"] in args or a["sessionId"] in args), None)
         if args[0] == "logs":
-            return 0, "\x1b[2J\x1b[H Pick one\r\n\x1b[2C1. Red\r\n\x1b[2C2. Blue\r\n\r\n"
+            return 0, self.logs
         if args[0] == "stop":
             self.stopping = {a["pid"]: self.exit_after}
             return 0, "stopped {}\n".format(args[1])
@@ -519,17 +519,27 @@ class FollowUp(BackgroundFixture):
         self.colour = True
         self.assertEqual(self.send("aaaaaaaa-1", "go on")["id"], "aaaaaaaa")
 
+    logs = "\x1b[2J\x1b[H⏺ Asking.\r\n" + "─" * 30 + "\r\n Pick one\r\n\x1b[2C1. Red\r\n\x1b[2C2. Blue\r\nEsc to cancel\r\n\r\n"
+    question = "─" * 30 + "\n Pick one\n  1. Red\n  2. Blue\nEsc to cancel"
+
     def test_an_answer_to_a_blocked_session_quotes_its_question_read_before_the_stop(self):
         self.bg("aaaaaaaa-1", "skills: probe", 100, status="waiting", waitingFor="input needed", state="blocked")
         self.send("aaaaaaaa-1", "Blue")
         self.assertEqual([a[0] for a, _ in self.calls], ["logs", "stop", "--bg"])
         self.assertEqual(self.calls[0][0], ["logs", "aaaaaaaa"])
-        self.assertEqual(self.calls[2][0][3], "Answering your question:\n Pick one\n  1. Red\n  2. Blue\n\nMy answer: Blue")
+        self.assertEqual(self.calls[2][0][3], "Answering your question:\n" + self.question + "\n\nMy answer: Blue")
+
+    def test_an_answer_to_a_question_in_plain_text_goes_out_as_is(self):
+        self.logs = "⏺ Merge #21 first?\r\n" + "─" * 30 + "\r\n❯ \r\n" + "─" * 30
+        self.bg("aaaaaaaa-1", "skills: probe", 100, status="idle", state="blocked")
+        self.send("aaaaaaaa-1", "yes")
+        self.assertEqual(self.calls[2][0][3], "yes")
+        self.assertIsNone(server.GETS["/api/session"]({"id": "aaaaaaaa-1"})["screen"])
 
     def test_session_endpoint_shows_the_screen_only_while_blocked(self):
         self.bg("aaaaaaaa-1", "skills: probe", 100, status="waiting", waitingFor="input needed", state="blocked")
         self.bg("aaaaaaaa-2", "skills: idle", 100)
-        self.assertEqual(server.GETS["/api/session"]({"id": "aaaaaaaa-1"})["screen"], " Pick one\n  1. Red\n  2. Blue")
+        self.assertEqual(server.GETS["/api/session"]({"id": "aaaaaaaa-1"})["screen"], self.question)
         self.assertNotIn("screen", server.GETS["/api/session"]({"id": "aaaaaaaa-2"}))
         self.assertEqual(self.calls, [(["logs", "aaaaaaaa"], None)])
 
@@ -640,13 +650,13 @@ class SessionRemoval(BackgroundFixture):
 
 
 class Chat(Fixture):
-    """The session view's chat: prompts, replies and one line per tool call, read from the transcript."""
+    """The session view's chat: prompts and replies, read from the transcript; no tool calls."""
 
     def chat(self, lines):
         self.session("local_1", lines=lines)
         return server.session_chat(server.transcript_path(server.load_sessions(self.sessions)[0], self.transcripts))
 
-    def test_prompts_replies_and_tool_calls_in_order(self):
+    def test_prompts_and_replies_in_order_without_tool_calls(self):
         def at(e, t):
             return dict(e, timestamp=t)
         got = self.chat([
@@ -662,7 +672,6 @@ class Chat(Fixture):
         self.assertEqual(got, [
             {"role": "user", "text": "look at the skills project", "at": "2026-10-16T15:28:29.958Z"},
             {"role": "assistant", "text": "Locating the project.", "at": "2026-10-16T15:28:32.000Z"},
-            {"role": "tool", "text": "Bash: ls -d ~/Projects/*skill* cat x", "at": "2026-10-16T15:28:33.000Z"},
             {"role": "user", "text": "/work SKL-1", "at": "2026-10-16T15:28:35.000Z"},
         ])
 
@@ -678,18 +687,6 @@ class Chat(Fixture):
             assistant([{"type": "text", "text": "done"}], stop="end_turn"),
         ])
         self.assertEqual([(e["role"], e["text"]) for e in got], [("user", "go"), ("assistant", "done")])
-
-    def test_tool_gist_is_one_line_of_at_most_120_chars(self):
-        got = self.chat([
-            assistant([{"type": "tool_use", "name": "Read", "input": {"file_path": "/a/b.py", "limit": 5}},
-                       {"type": "tool_use", "name": "Grep", "input": {"pattern": "def x", "path": "/a"}},
-                       {"type": "tool_use", "name": "Agent", "input": {"description": "Find it", "prompt": "long"}},
-                       {"type": "tool_use", "name": "Bash", "input": {"command": "echo " + "y" * 200}},
-                       {"type": "tool_use", "name": "TodoWrite", "input": {"todos": []}}]),
-        ])
-        self.assertEqual([e["text"] for e in got][:3], ["Read: /a/b.py", "Grep: def x", "Agent: Find it"])
-        self.assertEqual(got[3]["text"], "Bash: " + ("echo " + "y" * 200)[:119] + "…")
-        self.assertEqual(got[4]["text"], "TodoWrite")
 
     def test_reads_only_the_last_2_mb(self):
         big = "x" * (server.CHAT_TAIL // 2)
@@ -725,6 +722,35 @@ class Screen(unittest.TestCase):
         self.assertEqual(len(lines), 50)
         self.assertNotIn("\x1b", "".join(lines))
         self.assertNotIn("Creating…", "".join(lines))  # overwritten spinner text is gone
+
+    def test_question_is_cut_from_the_screen(self):
+        raw = Path(__file__).with_name("fixtures").joinpath("logs-blocked-question.ansi").read_bytes().decode("utf-8")
+        rule = "─" * 200
+        self.assertEqual(server.question_block(server.render_screen(raw)), "\n".join([
+            rule,
+            " ☐ Color",
+            "",
+            "Red or blue?",
+            "",
+            "❯ 1. Red",
+            "     Pick red.",
+            "  2. Blue",
+            "     Pick blue.",
+            "  3. Type something.",
+            rule,
+            "  4. Chat about this",
+            "",
+            "Enter to select · ↑/↓ to navigate · Esc to cancel"]))
+
+    def test_permission_prompt_is_cut_from_the_screen(self):
+        rule = "─" * 40
+        screen = "\n".join(["❯ list files", "", "⏺ Bash(ls)", rule, " Bash command", "", "   ls", "",
+                            " Do you want to proceed?", " ❯ 1. Yes", "   2. No", "", " Esc to cancel · Tab to amend",
+                            "", "", rule + " probe ─"])
+        self.assertEqual(server.question_block(screen), "\n".join(screen.split("\n")[3:13]))
+
+    def test_screen_without_a_dialog_has_no_question(self):
+        self.assertIsNone(server.question_block("⏺ Merge #21 first?\n\n" + "─" * 40 + "\n❯ yes\n" + "─" * 40))
 
     def test_moves_and_erases(self):
         raw = "abcdef\x1b[3D\x1b[KX\r\n\x1b[2;4Hyz\x1b[1A\x1b[2Cq\x1b[1G\x1b[1B\x1b[31m!\x1b[0m\x1b7\x1b[5;1H\x1b8?\n\n\n"

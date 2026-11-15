@@ -162,9 +162,10 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 
 /* session */
 .screen.session > .panel.chatp { flex: 1; }
-.screen.session > .panel.needs { flex: none; max-height: 45vh; border-color: var(--wait); }
+.screen.session > .panel.needs { flex: none; border-color: var(--wait); }
 .needs > .label { color: var(--wait); }
-.term { margin: 0; padding: 0 15px 12px; overflow: auto; white-space: pre; font: var(--fs-s)/1.35 var(--mono); color: var(--text); }
+/* the whole question, no scrollbar: text wraps at spaces; a rule wider than the panel is clipped */
+.term { margin: 0; padding: 0 15px 12px; overflow: hidden; white-space: pre-wrap; font: var(--fs-s)/1.35 var(--mono); color: var(--text); }
 .screen.session > .extra { flex: none; margin: 0; }
 .screen.session > .extra.sending { opacity: .5; }
 .head .st { font-size: var(--fs-s); color: var(--label); flex: none; }
@@ -175,9 +176,6 @@ code { font-family: var(--mono); font-size: .92em; background: var(--raised); bo
 .msg.user { margin-top: 10px; }
 .msg.user .g { color: var(--clay); }
 .msg.user .tx { color: var(--head); }
-.msg.tool { padding-top: 1px; padding-bottom: 1px; font-size: var(--fs-s); color: var(--label); }
-.msg.tool .tx { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.msg.tool .g { color: var(--run); }
 
 /* start */
 #app.start { grid-template-rows: 1fr; }
@@ -948,7 +946,7 @@ async function loadSession() {
   renderSession();
   if (gen === S.gen && S.route.name === 'session') { clearTimeout(S.timer); S.timer = setTimeout(loadSession, 2000); }
 }
-const CHAT_GLYPH = { user: '&gt;', assistant: '✻', tool: '⏺' };
+const CHAT_GLYPH = { user: '&gt;', assistant: '✻' };
 function renderSession() {
   if (S.route.name !== 'session') return;
   ensureFrame(); renderRail();
@@ -964,11 +962,12 @@ function renderSession() {
     ta.addEventListener('input', () => { if (ta.value) S.drafts[key] = ta.value; else delete S.drafts[key]; });
     ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
   }
-  // A blocked session's question as its terminal shows it; the answer goes out with it quoted in front.
-  const blocked = !!(s && s.state === 'blocked' && s.screen);
-  $('#s-needs').hidden = !blocked;
-  if (blocked && $('#s-screen').textContent !== s.screen) $('#s-screen').textContent = s.screen;
-  $('#s-text').placeholder = blocked ? 'Answer …' : s && s.state === 'running' ? 'Follow-up, once it stops running …' : 'Follow-up …';
+  // A blocked session's question dialog as its terminal shows it; the answer goes out with it quoted in front.
+  // A question asked in plain text has no dialog: it is the chat's last message.
+  const dialog = !!(s && s.state === 'blocked' && s.screen);
+  $('#s-needs').hidden = !dialog;
+  if (dialog && $('#s-screen').textContent !== s.screen) $('#s-screen').textContent = s.screen;
+  $('#s-text').placeholder = s && s.state === 'blocked' ? 'Answer …' : s && s.state === 'running' ? 'Follow-up, once it stops running …' : 'Follow-up …';
   $('#s-head').classList.toggle('armed', armedFor(r.sid));
   $('#s-head').innerHTML = s ? `<span class="dot ${esc(s.state)}"></span><h1 title="${esc(s.title)}">${esc(s.title || s.sessionId)}</h1>
     ${s.id ? `<span class="tag">bg ${esc(s.id)}</span>` : ''}<span class="st">${esc(s.state === 'blocked' ? 'needs you' : s.state)}</span>` : '';
@@ -977,7 +976,7 @@ function renderSession() {
   const html = !s ? (S.sessionErr ? '' : '<div class="status">loading…</div>')
     : !s.chat.length ? '<div class="empty">no messages yet</div>'
     : s.chat.map(m => `<div class="msg ${esc(m.role)}"><span class="g">${CHAT_GLYPH[m.role] || ''}</span>` +
-        `<span class="tx"${m.role === 'tool' ? ` title="${esc(m.text)}"` : ''}>${esc(m.text)}</span></div>`).join('');
+        `<span class="tx">${esc(m.text)}</span></div>`).join('');
   if (html === S.chatHtml) return;
   // Opens at the newest message; later updates follow it only while the chat is already at the bottom.
   const box = $('#chat');
