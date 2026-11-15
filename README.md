@@ -28,6 +28,15 @@ flowchart TD
     reply -- "done n / add all" --> vaultnotes["Notes ticked,<br/>contacts added"]
     reply -- "pick a ticket" --> ticket
 
+    dashboard(["/dashboard"]):::cmd --> dash["Per project: next tickets, sessions,<br/>new Sentry errors and Dependabot PRs"]
+    dash --> key{"Key?"}:::gate
+    key -- "s" --> sentryfix
+    key -- "d" --> depreview
+    key -- "→ on a ticket:<br/>background session" --> ticket
+    key -- "→ on an imported ticket:<br/>background session" --> send
+
+    newticket(["/ticket TEXT"]):::cmd --> card["Card at the end of To do<br/>on the vault board"] --> ticket
+
     ticket(["/work KEY"]):::cmd --> claim["Claim on the board<br/>Jira, vault Kanban or other tracker"]
     claim --> branch["Cut branch from base"]
     branch --> import[".scratch/KEY-slug/ticket.md<br/>.handoffs/HANDOFF-KEY.md"]
@@ -51,12 +60,13 @@ flowchart TD
         implspec --> review["code-review<br/>standards + spec"]
     end
 
-    diagnose --> send
-    implement --> send
+    diagnose --> fixreview["code-review<br/>standards + spec"]
+    implement --> fixreview
+    fixreview --> send
     review --> send
 
     send(["/send"]):::cmd --> commit["Commit by concern"] --> lint["npm run lint-fix"] --> push["Push"]
-    push --> pr["Open or reuse PR"] --> board["Move card:<br/>Jira → Code Review,<br/>vault → Done"]
+    push --> pr["Open or reuse PR;<br/>merge it where CLAUDE.md says so"] --> board["Move card:<br/>Jira → Code Review,<br/>vault → Done"]
     board --> cleanup["Delete branch,<br/>.scratch and .handoffs"]
 
     classDef cmd fill:#2563eb,stroke:#1e40af,color:#fff
@@ -133,13 +143,3 @@ an Obsidian vault with one note per project, the Microsoft 365 connector
 (`/briefing`), `gh`, the Jira MCP server and `acli` where a project uses Jira,
 and the `sentry` CLI where it uses Sentry.
 Put your projects root and vault path in `~/.claude/CLAUDE.md`.
-
-## Extras
-
-- **session-nav** (Claude desktop app only): a bar above the prompt with a
-  dashboard button (Shift+Tab, Enter), a link back to the parent session and links to child
-  sessions, labelled by ticket id.
-  `/plugin marketplace add QNeih/skills`, then `/plugin install session-nav@quinn`.
-- **break-reminder**: opens a small window every hour that reminds me to drink
-  water and stretch; `/break` opens it right away.
-  `/plugin install break-reminder@quinn`.
