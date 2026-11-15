@@ -235,12 +235,12 @@ class TicketSessions(Fixture):
         self.session("local_10", title="Spawned A-2", spawnedFrom={"sessionId": "local_1", "title": "Spawned A-2"})
         all_sessions = server.load_sessions(self.sessions)
         tree = server.ticket_sessions("A-2", self.project, all_sessions, self.transcripts)
-        self.assertEqual([n["sessionId"] for n in tree], ["local_1", "local_3", "local_4", "local_5"])
-        kids = tree[0]["children"]
+        self.assertEqual([n["sessionId"] for n in tree], ["local_5", "local_4", "local_3", "local_1"])
+        kids = tree[-1]["children"]
         self.assertEqual([k["sessionId"] for k in kids], ["local_7", "local_10"])
         self.assertEqual(kids[0]["children"][0]["sessionId"], "local_8")
         self.assertEqual(kids[0]["name"], "kid")
-        self.assertEqual(tree[0]["link"], "claude://claude.ai/epitaxy/local_1")
+        self.assertEqual(tree[-1]["link"], "claude://claude.ai/epitaxy/local_1")
 
     def test_states(self):
         self.session("local_1", title="A-2 running", lines=[user("go")])
@@ -303,7 +303,7 @@ class BackgroundFixture(Fixture):
 class BackgroundSessions(BackgroundFixture):
     """Background sessions come from `claude agents --json --all` and join a ticket by the same rules as app sessions."""
 
-    def test_ticket_view_lists_matching_background_sessions_after_app_sessions(self):
+    def test_ticket_view_lists_matching_sessions_newest_first(self):
         self.session("local_1", title="A-2 app")
         self.bg("bbbbbbbb-2", "skills: /work 2", 300, lines=[user("/work 2")])
         self.bg("aaaaaaaa-1", "skills: fix A-2 login", 200)
@@ -313,13 +313,13 @@ class BackgroundSessions(BackgroundFixture):
         self.agents.append(dict(agent("ffffffff-6", self.project, "A-2 interactive", 10), kind="interactive"))
         tree = server.ticket_view("p", "A-2")["sessions"]
         self.assertEqual([(n["kind"], n["sessionId"]) for n in tree], [
-            ("app", "local_1"), ("background", "cccccccc-3"), ("background", "aaaaaaaa-1"), ("background", "bbbbbbbb-2")])
-        b = tree[2]
+            ("background", "bbbbbbbb-2"), ("background", "aaaaaaaa-1"), ("background", "cccccccc-3"), ("app", "local_1")])
+        b = tree[1]
         self.assertEqual((b["id"], b["title"], b["children"], b["prs"], b["servers"]),
                          ("aaaaaaaa", "skills: fix A-2 login", [], [], []))
         self.assertEqual(b["lastActivityAt"], 200)  # no transcript yet: its start time
         t = self.transcripts / server.re.sub(r"[^A-Za-z0-9]", "-", self.project) / "bbbbbbbb-2.jsonl"
-        self.assertEqual(tree[3]["lastActivityAt"], int(t.stat().st_mtime * 1000))
+        self.assertEqual(tree[0]["lastActivityAt"], int(t.stat().st_mtime * 1000))
 
     def test_states_from_the_cli(self):
         self.bg("aaaaaaaa-1", "A-2 busy", 1, status="busy", state="running")
@@ -330,10 +330,10 @@ class BackgroundSessions(BackgroundFixture):
         self.bg("aaaaaaaa-6", "A-2 exited", 6, pid=None, status=None, state="done")
         tree = server.ticket_view("p", "A-2")["sessions"]
         self.assertEqual([(n["title"], n["state"]) for n in tree], [
-            ("A-2 busy", "running"), ("A-2 idle", "waiting"), ("A-2 question", "blocked"),
-            ("A-2 blocked busy", "blocked"), ("A-2 waiting", "blocked"), ("A-2 exited", "waiting")])
+            ("A-2 exited", "waiting"), ("A-2 waiting", "blocked"), ("A-2 blocked busy", "blocked"),
+            ("A-2 question", "blocked"), ("A-2 idle", "waiting"), ("A-2 busy", "running")])
         self.assertEqual([n["summary"] for n in tree],
-                         ["", "", "needs you: input needed", "needs you", "needs you", ""])
+                         ["", "needs you", "needs you", "needs you: input needed", "", ""])
 
     def test_session_endpoint_returns_brief_and_chat(self):
         self.bg("aaaaaaaa-1", "skills: fix it", 100, status="busy", state="running",
@@ -778,6 +778,24 @@ class Transcript(Fixture):
         self.assertEqual(server.session_state(stale, self.transcripts, now=later), "waiting")
 
 
+class OpenUrl(unittest.TestCase):
+    def test_refuses_other_sites(self):
+        with self.assertRaises(server.ApiError):
+            server.post_open_url({"url": "https://example.com/"})
+        with self.assertRaises(server.ApiError):
+            server.post_open_url({"url": "https://github.com/o/r/pull/3/../../evil"})
+
+    def test_opens_github_prs(self):
+        ran = []
+        orig = server.run
+        server.run = lambda cmd, **kw: (ran.append(cmd), (0, ""))[1]
+        try:
+            server.post_open_url({"url": "https://github.com/o/r/pull/3"})
+        finally:
+            server.run = orig
+        self.assertEqual(ran, [server.chrome_command("https://github.com/o/r/pull/3")])
+
+
 class Workflow(unittest.TestCase):
     def states(self, steps):
         return [(s["step"], s["state"]) for s in steps]
@@ -795,6 +813,41 @@ class Workflow(unittest.TestCase):
         self.assertEqual(self.states(server.workflow("in progress", scratch, issues)), [
             ("/work", "done"), ("/build", "done"), ("#1 a", "done"), ("#2 b", "now"), ("#3 c", "next"),
             ("/code-review", "todo"), ("/send", "todo")])
+
+    def test_route_runs_until_branch_is_ahead(self):
+        scratch = {"status": "ready-for-agent", "next": "`/implement` — small"}
+        self.assertEqual(self.states(server.workflow("in progress", scratch, [], ahead=False)), [
+            ("/work", "done"), ("/implement", "now"), ("/code-review", "next"), ("/send", "todo")])
+        self.assertEqual(self.states(server.workflow("in progress", scratch, [], ahead=True)), [
+            ("/work", "done"), ("/implement", "done"), ("/code-review", "done"), ("/send", "next")])
+
+    def test_ahead_does_not_finish_open_build_issues(self):
+        scratch = {"status": "needs-triage", "next": "`/build` — big"}
+        issues = [dict(n=1, title="a", status="done", blockedBy=[]), dict(n=2, title="b", status="", blockedBy=[1])]
+        steps = server.workflow("in progress", scratch, issues, ahead=True)
+        self.assertEqual(self.states(steps)[3], ("#2 b", "now"))
+        self.assertEqual(server.next_command("A-1", steps), "/work A-1")
+
+    def test_next_command(self):
+        scratch = {"status": "ready-for-agent", "next": "`/implement`"}
+        self.assertEqual(server.next_command("A-1", server.workflow("to do", None, [])), "/work A-1")
+        self.assertEqual(server.next_command("A-1", server.workflow("in progress", scratch, [])), "/work A-1")
+        self.assertEqual(server.next_command("A-1", server.workflow("in progress", scratch, [], ahead=True)), "/send")
+        self.assertIsNone(server.next_command("A-1", server.workflow("done", scratch, [])))
+        pr = {"number": 3, "state": "open"}
+        self.assertIsNone(server.next_command("A-1", server.with_pr_steps(server.workflow("in progress", scratch, []), [pr])))
+
+    def test_commits_ahead(self):
+        with tempfile.TemporaryDirectory() as d:
+            git = lambda *a: server.run(["git", "-C", d, *a])
+            git("init", "-q", "-b", "main")
+            git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "base")
+            git("checkout", "-q", "-b", "feature/A-1")
+            self.assertFalse(server.commits_ahead(d, "feature/A-1", "main"))
+            git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "work")
+            self.assertTrue(server.commits_ahead(d, "feature/A-1", "main"))
+            with self.assertRaises(server.ApiError):
+                server.commits_ahead(d, "feature/A-9", "main")
 
     def test_done_card_and_not_started(self):
         self.assertTrue(all(s["state"] == "done" for s in server.workflow("done", None, [])))

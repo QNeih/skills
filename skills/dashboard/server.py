@@ -822,7 +822,7 @@ def ticket_sessions(ticket_id, project_dir, sessions, transcripts=None):
         return False
 
     roots = sorted((by_id[i] for i in matched if not ancestor_matched(by_id[i])),
-                   key=lambda s: (s.get("kind") == "background", s.get("startedAt") or s.get("createdAt") or 0))
+                   key=lambda s: s.get("startedAt") or s.get("createdAt") or 0, reverse=True)
     return [node(s, set()) for s in roots]
 
 
@@ -1084,13 +1084,15 @@ def with_pr_steps(steps, prs):
     return steps
 
 
-def workflow(column, scratch, issues):
+def workflow(column, scratch, issues, ahead=False):
     """Steps of the ticket's route, each done | now | next | todo.
     Card in Done → every step done. /work is done once ticket.md exists. The route is the first
     `/skill` in `Next:`; a `Status:` starting with "blocked" puts a `blocked: <reason>` step before
     it. With build issues the route is done and each issue is a step: done by its Status, now when
-    on the frontier (every blocker done), else todo. Then /code-review and /send. The first todo
-    after the last now (or after the last done) becomes next; without ticket.md nothing is next."""
+    on the frontier (every blocker done), else todo. Then /code-review and /send. `ahead` (the
+    ticket branch has commits its base lacks) means the route and its code review ran, unless the
+    ticket is blocked or a build issue is open. The first todo after the last now (or after the
+    last done) becomes next; without ticket.md nothing is next."""
     steps = [{"step": "/work", "state": "done" if scratch else "now"}]
     route = None
     if scratch:
@@ -1116,8 +1118,11 @@ def workflow(column, scratch, issues):
                 steps.append({"step": "#{} {}".format(i["n"], i["title"]), "state": state})
         elif route:
             steps.append({"step": route, "state": "now"})
+    if ahead and scratch and all(s["state"] == "done" or s["step"] == route for s in steps):
+        steps = [dict(s, state="done") for s in steps]
     rest_now = scratch and not any(s["state"] == "now" for s in steps)
-    steps.append({"step": "/code-review", "state": "now" if rest_now else "todo"})
+    review = "done" if ahead and all(s["state"] == "done" for s in steps) else "now" if rest_now else "todo"
+    steps.append({"step": "/code-review", "state": review})
     steps.append({"step": "/send", "state": "todo"})
     if column == "done":
         return [dict(s, state="done") for s in steps]
@@ -1129,6 +1134,27 @@ def workflow(column, scratch, issues):
             s["state"] = "next"
             break
     return steps
+
+
+def next_command(ticket_id, steps):
+    """The command that moves the ticket on: /send when /send is the current step, nothing once
+    every step is done or a PR exists, else `/work <id>`, which (re)starts the route."""
+    if any(s["step"].startswith("PR #") for s in steps):
+        return None
+    cur = next((s for s in steps if s["state"] in ("now", "next")), None)
+    if not cur:
+        return None
+    return "/send" if cur["step"] == "/send" else "/work " + ticket_id
+
+
+def commits_ahead(repo, branch, base):
+    """Whether `branch` has commits `base` lacks; `origin/<base>` stands for the base when it exists."""
+    code, _ = run(["git", "-C", repo, "rev-parse", "--verify", "-q", "origin/" + base])
+    ref = "origin/" + base if code == 0 else base
+    code, out = run(["git", "-C", repo, "rev-list", "--count", "{}..{}".format(ref, branch)])
+    if code != 0:
+        raise ApiError(502, "git rev-list {}..{}: {}".format(ref, branch, out.strip()))
+    return int(out.strip()) > 0
 
 
 def adf_lines(node):
@@ -1173,16 +1199,20 @@ def ticket_view(project, ticket_id):
     folders = sorted(Path(d, ".scratch").glob(ticket_id + "-*/ticket.md"))
     if folders:
         text = folders[0].read_text(encoding="utf-8")
-        scratch = {"path": str(folders[0]), "branch": field(text, "branch:"), "status": field(text, "Status:"),
+        scratch = {"path": str(folders[0]), "branch": field(text, "branch:"), "base": field(text, "base:"),
+                   "status": field(text, "Status:"),
                    "next": field(text, "Next:")}
         issues = read_issues(folders[0].parent)
     handoff = Path(d, ".handoffs", "HANDOFF-{}.md".format(ticket_id))
     sessions = ticket_sessions(ticket_id, d, all_sessions())
     prs = [pr_status(u) for u in ticket_pr_urls(lines, sessions, (scratch or {}).get("branch"), d)]
+    branch, base = (scratch or {}).get("branch"), (scratch or {}).get("base")
+    ahead = bool(branch and base and branch != "none") and column != "done" and not prs and commits_ahead(d, branch, base)
+    steps = with_pr_steps(workflow(column, scratch, issues, ahead), prs)
     return {"id": ticket_id, "title": title, "column": column, "goal": card_goal(lines[1:]), "card": lines,
             "scratch": scratch,
             "handoff": str(handoff) if handoff.is_file() else None, "issues": issues,
-            "workflow": with_pr_steps(workflow(column, scratch, issues), prs),
+            "workflow": steps, "nextCommand": next_command(ticket_id, steps),
             "sessions": sessions, "prs": prs}
 
 
@@ -1373,8 +1403,8 @@ def chrome_command(url):
 
 def post_open_url(body):
     url = need(body, "url")[0]
-    if local_port(url) is None:
-        raise ApiError(400, "not a local http(s) URL: " + str(url))
+    if local_port(url) is None and not PR_URL_RE.fullmatch(str(url)):
+        raise ApiError(400, "not a local http(s) URL or GitHub PR: " + str(url))
     code, out = run(chrome_command(url))
     if code != 0:
         raise ApiError(500, "open: " + out.strip())
