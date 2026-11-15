@@ -1,6 +1,6 @@
 ---
 name: new-project
-description: Set up a new or existing project — folder and local git, project note, board, sidebar group, Fork workspace — creating only what's missing. Never creates a GitHub repo.
+description: Set up a new or existing project — folder and local git, project note, board, sidebar group — creating only what's missing. Never creates a GitHub repo.
 argument-hint: "[name | clone URL], or nothing for the current folder"
 disable-model-invocation: true
 ---
@@ -15,7 +15,7 @@ The vault path and the projects root are set in `~/.claude/CLAUDE.md` (a project
 cd <folder> && VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
 ```
 
-Keep a list of what you created and what was already there; step 8 prints it.
+Keep a list of what you created and what was already there; step 7 prints it.
 
 ## 1. Folder and git
 
@@ -36,9 +36,9 @@ Keep a list of what you created and what was already there; step 8 prints it.
 Run the lookup.
 
 - `project: <name>` → the project has a note. Its name is the display name; say so, don't ask.
-- `project: none` → suggest a name from the folder or repo name: hyphens, underscores and dots become spaces, words start upper case, all-caps parts stay (`ACME-Proto` → "ACME Proto", `acme-shop` → "Acme Shop"). Ask once: "Name for the note, sidebar group and Fork workspace: <suggestion>? Reply ok or another name."
+- `project: none` → suggest a name from the folder or repo name: hyphens, underscores and dots become spaces, words start upper case, all-caps parts stay (`ACME-Proto` → "ACME Proto", `acme-shop` → "Acme Shop"). Ask once: "Name for the note and sidebar group: <suggestion>? Reply ok or another name."
 
-`<name>` is used for all three.
+`<name>` is used for both.
 
 **Done when:** Quinn confirmed `<name>`, or it came from the existing note.
 
@@ -91,32 +91,14 @@ Needs the desktop tools `create_group`, `move_sessions` and `change_directory` (
 
 **Done when:** this session is in the group and moving to `<folder>`, or the step is skipped with the reason said.
 
-## 6. Fork workspace
-
-`<session>` is `~/Library/Application Support/com.DanPristupov.Fork/session.json`. Skip and say why when:
-
-- `/Applications/Fork.app` does not exist (Fork not installed), or
-- `jq -e '.workspaces | type == "array"' "<session>"` fails (no `workspaces`), or
-- `jq -e --arg n "<name>" 'any(.workspaces[]; .name == $n)' "<session>"` succeeds (workspace exists).
-
-Fork rewrites `session.json` while it runs, so edit it only while Fork is quit:
-
-1. `pgrep -x Fork` finds it → say "Quitting Fork to add the workspace", run `osascript -e 'quit app "Fork"'` and wait until `pgrep -x Fork` finds nothing.
-2. `bash ${CLAUDE_SKILL_DIR}/fork.sh "<session>" "<name>" "<folder>"`. It backs up to `session.json.bak`, then adds the workspace with `<folder>` as its only tab, shaped like an existing entry with a new UUID.
-3. `open -a Fork` if it was running.
-
-`error:` from `fork.sh` → the file is untouched. Reopen Fork as in 3, stop this step and name the manual step: "In Fork, create a workspace named <name> and open <folder> in it."
-
-**Done when:** `fork.sh` printed `added:` and Fork runs again if it ran before, or the step is skipped or stopped with the reason said.
-
-## 7. Specs
+## 6. Specs
 
 The project is empty when `<folder>` holds nothing but `.git`. Then offer: "Plan it now? Type `/to-spec` for a small project or `/wayfinder` for a big one, here in this session." Not empty → no offer.
 
 **Done when:** the offer is made for an empty project, or it is not empty.
 
-## 8. Report
+## 7. Report
 
-Print what was created, what was already there, and what was skipped or stopped and why, one line each: folder, git, note, board, sidebar group, Fork workspace.
+Print what was created, what was already there, and what was skipped or stopped and why, one line each: folder, git, note, board, sidebar group.
 
 **Done when:** the report is printed.
