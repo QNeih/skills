@@ -82,6 +82,15 @@ expect "ticket.md: ref" "$(cat "$t" 2>/dev/null)" "ref: ACM-2"
 grep -qF "$t" "$acme/.handoffs/HANDOFF-ACM-2.md" 2>/dev/null \
   && pass "handoff points at ticket.md by absolute path" || fail "handoff points at ticket.md by absolute path"
 
+# --- git project, run from the main checkout: the ticket gets its own worktree ---
+git -C "$acme" checkout -q main
+setup "$acme"
+ALLOWED_TOOLS="$ALLOWED_TOOLS,Bash(cd *)" run_ticket "$acme" "/t-work ACM-1"
+expect "main checkout stays on main" "$(git -C "$acme" branch --show-current)" "main"
+expect "ticket worktree on feature/ACM-1" "$(git -C "$acme/.claude/worktrees/ACM-1" branch --show-current 2>/dev/null)" "feature/ACM-1"
+[ -n "$(ls "$acme"/.scratch/ACM-1-*/ticket.md 2>/dev/null)" ] && [ ! -e "$acme/.claude/worktrees/ACM-1/.scratch" ] && pass "worktree run: ticket.md in the main checkout" \
+  || { fail "worktree run: ticket.md in the main checkout"; find "$acme" -name ticket.md; echo "$CLAUDE_OUT" | tail -15; }
+
 # --- project without git, digits only ---
 fixture_note Beta
 board="$VAULT/Projects/Beta/Beta Board.md"

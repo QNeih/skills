@@ -50,17 +50,20 @@ The board file's **Claim**.
 
 ## 4. Branch (git only)
 
-1. `git status --porcelain --untracked-files=no` prints anything → stop and ask: stash, commit, or discard.
-2. Branch name and `<base>` from the board file's **Branch**.
-3. `origin` exists → `git fetch origin` (`cannot open '.git/FETCH_HEAD'` → rerun unsandboxed). Cut from `origin/<base>` when it exists, else from `<base>`:
-   ```bash
-   git checkout -b <branch> <start point>
-   git push -u origin HEAD   # only with an origin
-   ```
-   Branch exists → check it out and say so. Base missing → stop and ask.
-4. Note the branch on the board, as the board file's **Branch** says.
+Each ticket works in its own **ticket worktree** `<wt>` = `<dir>/.claude/worktrees/<id>`, the folder the dashboard's `claude --bg -w <id>` also uses, so tickets can run in parallel. The main checkout's branch is never changed.
 
-**Done when:** `git branch --show-current` prints the branch (tracking `origin` when there is one), and the board shows it if the board file notes branches.
+1. Branch name and `<base>` from the board file's **Branch**. `origin` exists → `git -C <dir> fetch origin` (`cannot open '.git/FETCH_HEAD'` → rerun unsandboxed). `<start point>`: `origin/<base>` when it exists, else `<base>`; neither → stop and ask.
+2. Where this session works (`git rev-parse --show-toplevel`):
+   - `<wt>` → stay.
+   - Another ticket's worktree (`<dir>/.claude/worktrees/<other id>`) → stop: ask Quinn to start this ticket in its own session.
+   - Any other linked worktree (`git rev-parse --git-dir` differs from `--git-common-dir`) → stay: it is this session's own.
+   - The main checkout → `<wt>` missing: `git -C <dir> worktree add <wt> -b <branch> <start point>` (branch exists → `git -C <dir> worktree add <wt> <branch>`, and say so). Then `cd <wt>`. From here on the ticket's code work happens in `<wt>`: commands as `cd <wt> && …` or `git -C <wt> …`, file edits by absolute path under `<wt>`. `<dir>` stays the main checkout, so `.scratch/` and `.handoffs/` still go there. No EnterWorktree: it would make the main checkout read-only for this session.
+3. `git status --porcelain --untracked-files=no` prints anything → stop and ask: stash, commit, or discard.
+4. `git branch --show-current` is not `<branch>` (a worktree the dashboard made is on `worktree-<id>`) → `git checkout -b <branch> <start point>`; branch exists → `git checkout <branch>` and say so.
+5. With an origin → `git push -u origin HEAD`.
+6. Note the branch on the board, as the board file's **Branch** says.
+
+**Done when:** this session works in `<wt>` (or the linked worktree it started in), `git branch --show-current` prints the branch (tracking `origin` when there is one), the main checkout's branch is unchanged, and the board shows the branch if the board file notes branches.
 
 ## 5. Import
 
@@ -92,7 +95,7 @@ No row fits → `needs-triage`, `/grill-with-docs`.
 Write `<dir>/.handoffs/HANDOFF-<id>.md`. Pointers only, every path absolute:
 
 - id, title, board (file path or link)
-- branch and base, or "no git"
+- branch, base and ticket worktree path, or "no git"
 - the `ticket.md` path
 - route and why
 - loose ends from every step
@@ -107,7 +110,7 @@ Print the loose ends, then this line:
 Route: /<skill> — <one-line reason>
 ```
 
-Then start the route in this session, with the `ticket.md` path as its input:
+Then start the route in this session, with the `ticket.md` path as its input. With git, all of the route's code work happens in the worktree from step 4, by path as step 4 says:
 
 - `/implement` → read `~/.claude/skills/implement/SKILL.md` and follow it. Start coding right away.
 - `/diagnosing-bugs`, `/grill-with-docs`, `/wayfinder` → read `~/.claude/skills/<name>/SKILL.md` and follow it, opening with a question to Quinn.
