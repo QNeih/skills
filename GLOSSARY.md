@@ -13,5 +13,5 @@ An open point a session reports when it stops: something still to check, decide 
 _Avoid_: leftover, open point
 
 **Close**:
-Ending a ticket without code, for example because it turned out already fixed or obsolete. The card goes to Done with the reason, and nothing ships.
+Ending a ticket without code, for example because it turned out already fixed or obsolete. The reason is recorded on the ticket.
 _Avoid_: cancel, abandon, drop

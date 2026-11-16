@@ -50,7 +50,7 @@ Without git, go to step 7.
 6. **Branch commits**: `git rev-list origin/<base>..HEAD`, pushed or not. Commits already on `origin` still need their PR, board move and cleanup.
 7. Change set and branch commits both empty:
    - No ticket → stop and print this line as is: `Nothing to send: <branch> has no changes against <base>.`
-   - A ticket → this is a **close**. Reason: `$ARGUMENTS` without the word `draft`; empty → ask Quinn for one line and wait, changing nothing before the answer. Skip steps 3–6 and go to step 7.
+   - A ticket → this is a **close**. Reason: `$ARGUMENTS` without the word `draft`; empty → ask Quinn for one line and wait, changing nothing before the answer. Skip steps 3–6 and go to step 7 (Board).
 
 **Done when:** no staged hunks, `<base>` is known, and the change set and branch commits are listed, or a close has its reason.
 
@@ -115,7 +115,7 @@ Runs after a successful push, even if the PR step failed; on a close, right afte
   2. `getTransitionsForJiraIssue` → the transition whose target status is `Code Review` (any case) → `transitionJiraIssue`.
   3. No such transition → report the available target statuses. MCP tools missing or unauthenticated → tell Quinn to run `/mcp` → "claude.ai Atlassian".
 - **Another tracker** → through its connector, move the item to its review state (with a PR) or its done state (without git), and add the PR link. No connector reachable → name the missing one.
-- **Close on Jira or another tracker** (instead of the two bullets above): the state comes from `close:` in the frontmatter of the lookup's `note:`.
+- **Close on Jira or another tracker** (instead of the Jira and Another tracker bullets): the state comes from `close:` in the frontmatter of the lookup's `note:`.
   - No `close:` line → ask Quinn once: "Which state does closing a ticket without code move it to in <project>? Name the state, or `leave`." Save the answer as `close: "<answer>"` in the note's frontmatter, after `board:` if it has one, else before the closing `---`. No note (`project: none`) → ask, don't save.
   - `leave` → don't move the item; report "close <ref> on the tracker yourself" with its link.
   - Else move the item to that state (Jira: the transition whose target status matches, any case) and add the comment `Closed without code: <reason>`. No such transition → report the available target statuses and change nothing.
@@ -124,28 +124,28 @@ Runs after a successful push, even if the PR step failed; on a close, right afte
 
 ## 8. Clean up
 
-- **Git**: runs when step 6 ended with an `OPEN` PR or one it merged, or on a close, even if step 7 failed. Otherwise skip and say why.
+- **Git**: runs when step 6 ended with an `OPEN` PR or one it merged, even if step 7 failed; on a close, only when step 7 moved the card or item (or Quinn answered `leave`), since nothing else records the ticket. Otherwise skip and say why.
   1. `git rev-parse HEAD` differs from `git rev-parse @{u}` → stop: the remote doesn't hold every local commit. Merged on send → skip this check (`--delete-branch` removed the upstream); `git fetch origin` instead, so `origin/<base>` has the merge. Close → skip this check.
   2. Leave `<branch>`. Linked worktree (`git rev-parse --git-dir` differs from `git rev-parse --git-common-dir`) → `git switch --detach origin/<base>`, since `<base>` is usually checked out in the main checkout. Otherwise `git switch <base>`, then `git pull --ff-only`. Switch fails → stop and show the output.
-  3. `git branch -D <branch>` (`-D` because the PR isn't merged yet; the commits are on `origin/<branch>`). Close and `origin/<branch>` exists → also `git push origin --delete <branch>`.
+  3. `git branch -D <branch>` (`-D` because the PR may not be merged yet; its commits are on `origin/<branch>`). Close and `origin/<branch>` exists → also `git push origin --delete <branch>`.
   4. Leftover session branches: `git for-each-ref --format='%(refname:short) %(worktreepath)' 'refs/heads/claude/*' 'refs/heads/worktree-*'`. For each one with no worktree path and no output from `git rev-list -1 <name> --not --remotes` (every commit is on `origin`) → `git branch -D <name>`. The others stay; name them in the report.
   5. Each of `main`, `master`, `develop` that exists locally and is checked out in no worktree → `git fetch origin <name>:<name>`. Not a fast-forward → report it and go on.
 - **No git**: runs when step 7 left the card in `Done` (or the item done). Otherwise keep the files and say why.
 
 Then, with a ticket, capture loose ends (below), then delete its files (untracked, so `rm -rf`): its `<dir>/.scratch/<id>-<slug>/` folder and `<dir>/.handoffs/HANDOFF-<id>.md`. A `.scratch/` or `.handoffs/` folder left empty → remove it. Other tickets' files stay.
 
-Last, with git, when this session works in the ticket worktree (`git rev-parse --show-toplevel` is `<dir>/.claude/worktrees/<id>`): `git -C <dir> worktree remove <dir>/.claude/worktrees/<id>`, without `--force`. Git refuses (untracked or modified files) → stop and show its output. Every later command runs from `<dir>`.
+Last, with git, when this session works in the ticket worktree (`git rev-parse --show-toplevel` is `<dir>/.claude/worktrees/<id>`): `cd <dir> && git worktree remove <dir>/.claude/worktrees/<id>`, without `--force`. Git refuses (untracked or modified files) → stop and name the files from its output. Every later command runs from `<dir>`.
 
 **Loose ends** become to-dos (see `GLOSSARY.md`). Collect them from the handoff and from your own session's reports. Keep one only if all hold:
 
-- still open after the merge (fixed or settled points drop),
+- still open after the merge or close (fixed or settled points drop),
 - an action, not information,
 - vault board only: no open card (any column but Done) covers it. On Jira and other trackers skip this check: no search, no marker,
 - written as standalone ticket text: what, where, why, and the ticket it came from. `/ticket` plus a grilling must be able to turn it into a card that overlaps no other.
 
 Keep at most 3, most important first. Append each with `VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/../note/note.sh` (text on stdin, run from `<dir>`). An `error:` line → show it and stop before deleting the ticket's files. Print the kept ones, then the dropped ones, one line each. No ticket or no loose ends → skip.
 
-**Done when:** neither ticket path exists, `git branch --list <branch>` prints nothing (on a close, neither does `git ls-remote --heads origin <branch>`), the ticket worktree is gone, and `HEAD` is on `<base>` (in another linked worktree: detached at `origin/<base>`).
+**Done when:** neither ticket path exists, `git branch --list <branch>` prints nothing (on a close, neither does `git ls-remote --heads origin <branch>`), the ticket worktree is gone, and otherwise `HEAD` is on `<base>` (in another linked worktree: detached at `origin/<base>`).
 
 ## 9. Report
 
