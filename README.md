@@ -82,7 +82,7 @@ flowchart TD
 | **Daily** | `briefing` | One whole-day briefing across every project: what I did last workday, what's next, Jira changes, new Sentry errors and Dependabot PRs, mail and Teams messages waiting on me, today's meetings. | vault, Jira, Sentry, GitHub, Microsoft 365 |
 | | `dashboard` | Starts my full-screen local dashboard (next tickets, ticket workflow, background sessions) and brings its window to the front. The app lives in its own repo, `dashboard`, under the projects root. | dashboard repo |
 | | `note` | Saves a to-do for the briefing, tagged with the project I'm in. | vault |
-| **Ticket flow** | `ticket` | Adds one card to the project's vault board, in the language and line pattern of the cards already there, with the next free id. Given only an id, points to `/work`. | vault |
+| **Ticket flow** | `ticket` | Adds one card to the project's vault board, in the language and line pattern of the cards already there, with the next free id. First asks what the text leaves open that would change the work. Given only an id, points to `/work`. | vault |
 | | `work` | Claims a ticket on the project's board (Jira, an Obsidian Kanban board, or any tracker with a connector), cuts its branch, imports it, and starts the route that works on it. | board (vault, Jira, other), repo |
 | | `build` | Runs a multi-session feature in one session: spec, tickets, test-first build in subagents, code review. | repo |
 | | `send` | Ships the branch: lint, commit, push, PR with the tracker link, board card moved, branch and worktree cleaned up. A ticket branch with nothing on it is closed instead: card to Done with the reason, same cleanup. | GitHub, board, repo |

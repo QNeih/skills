@@ -57,9 +57,19 @@ Next id: `<KEY>-<printed number + 1>`; nothing printed → `<KEY>-1`.
 
 **Done when:** the id is one higher than every `<KEY>-<n>` on the board and in its `tickets/` folder.
 
-## 3a. Grill (`todo:` only)
+## 3a. Grill open questions
 
-Before writing, compare the text with the board's cards (any column) and grill Quinn about the card's scope and its overlap with those cards. One question per message, each with your recommended answer. Go on only after Quinn confirms the card's scope. Quinn's answers refine the to-do text into the ticket text for step 4; keep the original to-do text for step 6.
+Before writing, find the **open questions**: what the text leaves open whose answer would change the work, such as which parts of the project it covers, which tool to use, or where it runs. Example: "add linter to project" leaves open which folders the linter checks, which linter, and whether it runs in `test.sh` or before `/send`. Ask only what the ticket's session could not settle while working.
+
+Also compare the text with the board's cards (any column): an overlap with a card is an open question.
+
+- `todo:` → always grill, at least to confirm the card's scope; keep the original to-do text for step 6.
+- Else, no open questions → go on to step 4.
+- Else → grill Quinn: one question per message, each with your recommended answer; wait for each answer.
+
+Quinn's answers refine the text into the ticket text for step 4.
+
+**Done when:** every open question is answered, and on `todo:` Quinn confirmed the scope.
 
 ## 4. Draft
 
@@ -72,7 +82,7 @@ Write the card block from the ticket text, in the board's language and line patt
 ```
 
 - Quinn's text is a rough dictation. Rewrite it as clean board text: correct spelling and grammar, drop filler and repeats, spell out shorthand ("fx" → "for example"; keep command, tool and product names), split run-on thoughts into the pattern's lines, and turn questions into what is to be found out ("Find out why /send fails from the app"). Keep every point and its meaning; add none.
-- Fill a line only from what the text says; drop the lines it gives nothing for, and list each dropped line as a loose end. Effort, priority, offer item and benefit values come from Quinn, verbatim.
+- Fill a line only from what the ticket text (with Quinn's answers from step 3a) says; drop the lines it gives nothing for, and list each dropped line as a loose end. Effort, priority, offer item and benefit values come from Quinn, verbatim.
 - Dependencies line: the ids the text names, checked to exist on the board; text names none → drop the line.
 - Tags: `#bug` only when the ticket is mainly a defect to fix, `#urgent` when it says urgent, `hotfix` in the title when it says hotfix. `/work` cuts a `bugfix/` or `hotfix/` branch from `#bug` and `hotfix`, so a feature that also fixes something gets neither. Only tags the board already uses, plus `#bug`.
 - Lines start with one tab.
