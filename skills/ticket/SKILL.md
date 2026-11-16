@@ -57,15 +57,19 @@ Next id: `<KEY>-<printed number + 1>`; nothing printed → `<KEY>-1`.
 
 **Done when:** the id is one higher than every `<KEY>-<n>` on the board and in its `tickets/` folder.
 
-## 3a. Open questions
+## 3a. Grill open questions
 
-Before writing, find the **open questions**: what the text leaves open whose answer would change the work, such as which parts of the project it covers, which tool to use, or where it runs. Example: "add linter to project" leaves open which folders the linter checks, which linter, and whether it runs in `test.sh` or before `/send`. Also compare the text with the board's cards (any column): an overlap with a card is an open question. Details the ticket's session can settle while working are not open questions.
+Before writing, find the **open questions**: what the text leaves open whose answer would change the work, such as which parts of the project it covers, which tool to use, or where it runs. Example: "add linter to project" leaves open which folders the linter checks, which linter, and whether it runs in `test.sh` or before `/send`. Ask only what the ticket's session could not settle while working.
 
-- None → go on to step 4.
-- Else → ask them, one question per message, each with your recommended answer, and wait for each answer. Go on only after Quinn confirms the card's scope. Quinn's answers refine the text into the ticket text for step 4.
-- `todo:` → always do this step, at least to confirm the scope; keep the original to-do text for step 6.
+Also compare the text with the board's cards (any column): an overlap with a card is an open question.
 
-**Done when:** no open question is left, or Quinn confirmed the scope.
+- `todo:` → always grill, at least to confirm the card's scope; keep the original to-do text for step 6.
+- Else, no open questions → go on to step 4.
+- Else → grill Quinn: one question per message, each with your recommended answer; wait for each answer.
+
+Quinn's answers refine the text into the ticket text for step 4.
+
+**Done when:** every open question is answered, and on `todo:` Quinn confirmed the scope.
 
 ## 4. Draft
 
