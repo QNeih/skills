@@ -2,6 +2,7 @@
 # Raw material for /briefing across every active project: Did, Next, Jira, Sentry, Dependabot, notes.
 #   gather.sh            header lines, then `# Today` and one `# <project>` section per project with something to show
 #   gather.sh --done N…  tick open notes N… (numbered as the briefing shows them) in <vault>/Briefing notes.md, print them
+#   gather.sh --done-text <text>  tick the one open note whose text contains <text> (fixed string), print it
 #   gather.sh --contacts  per active project `# <name>`, `client:`, one `contact:` line per `contacts` entry
 #   gather.sh --add-contact <project> <entry>…  add confirmed entries to the note's `contacts`
 # Env: VAULT, PROJECTS_ROOT (as for project.sh); BRIEFING_STATE (default ~/.claude/briefing),
@@ -23,6 +24,19 @@ if [ "${1:-}" = --done ]; then
     lines+=" $l"
   done
   for l in $lines; do perl -i -pe "s/^- \\[ \\] /- [x] / if \$. == $l" "$notes_file"; sed -n "${l}p" "$notes_file"; done
+  exit 0
+fi
+
+# --done-text <text>: exactly one open note must contain it
+if [ "${1:-}" = --done-text ]; then
+  [ -n "${2:-}" ] || { echo "error: --done-text needs the note text"; exit 1; }
+  hits=$(grep -nF -- "$2" "$notes_file" 2>/dev/null | grep -E '^[0-9]+:- \[ \] ' | cut -d: -f1)
+  case $(printf '%s' "$hits" | grep -c .) in
+    0) echo "error: no open note contains: $2"; exit 1 ;;
+    1) ;;
+    *) echo "error: several open notes contain: $2"; exit 1 ;;
+  esac
+  perl -i -pe "s/^- \\[ \\] /- [x] / if \$. == $hits" "$notes_file"; sed -n "${hits}p" "$notes_file"
   exit 0
 fi
 

@@ -12,6 +12,7 @@ disable-model-invocation: true
 ## 0. Arguments
 
 - Only a ticket id (`KEY-12`, `12` or `AB#1234`, nothing else) → stop: "/ticket creates a ticket. To start <id>, run `/work <id>`."
+- Starts with `todo:` → the rest is a to-do's text (a line of `<vault>/Briefing notes.md`, see `GLOSSARY.md`); step 3a applies. Empty after `todo:` → ask for it and stop.
 - Empty → ask "What is the ticket about?" and stop.
 
 ## 1. Project and board
@@ -56,6 +57,10 @@ Next id: `<KEY>-<printed number + 1>`; nothing printed → `<KEY>-1`.
 
 **Done when:** the id is one higher than every `<KEY>-<n>` on the board and in its `tickets/` folder.
 
+## 3a. Grill (`todo:` only)
+
+Before writing, compare the text with the board's cards (any column) and grill Quinn about the card's scope and its overlap with those cards. One question per message, each with your recommended answer. Go on only after Quinn confirms the card's scope. Quinn's answers refine the to-do text into the ticket text for step 4; keep the original to-do text for step 6.
+
 ## 4. Draft
 
 Write the card block from the ticket text, in the board's language and line pattern:
@@ -81,3 +86,15 @@ Read the board file again right before the edit: Quinn edits it in Obsidian at a
 Print the card block and the loose ends.
 
 **Done when:** the board file has the new card as the last card in `To do`, every other line unchanged, and the card and loose ends are printed.
+
+## 6. Tick the to-do (`todo:` only)
+
+After the card is written, tick the matching to-do:
+
+```bash
+VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/../briefing/gather.sh --done-text "<to-do text>"
+```
+
+An `error:` line → show it; the card stays.
+
+**Done when:** the to-do line in `Briefing notes.md` is ticked, or the error is shown.

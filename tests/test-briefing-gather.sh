@@ -65,6 +65,12 @@ expect "done several: first" "$out" "- [x] 2026-11-07 a"
 expect "done several: numbers refer to the briefing, not shifted" "$out" "- [x] 2026-11-07 c"
 grep -q '^- \[ \] 2026-11-07 b' "$VAULT/Briefing notes.md" && pass "done several: others stay open" || fail "done several: others stay open"
 perl -i -ne 'print unless /2026-11-07 [abc]/' "$VAULT/Briefing notes.md"
+printf -- '- [ ] 2026-11-07 fix the roof [[Acme]]\n- [ ] 2026-11-07 fix the roof tiles\n- [x] 2026-11-07 paint the door\n' >> "$VAULT/Briefing notes.md"
+expect "done-text: several matches" "$(gather "" "" --done-text 'fix the roof')" "error: several open notes contain: fix the roof"
+expect "done-text: ticked note does not match" "$(gather "" "" --done-text 'paint the door')" "error: no open note contains: paint the door"
+expect "done-text: unique match" "$(gather "" "" --done-text 'roof tiles')" "- [x] 2026-11-07 fix the roof tiles"
+grep -q '^- \[ \] 2026-11-07 fix the roof \[\[Acme' "$VAULT/Briefing notes.md" && pass "done-text: others stay open" || fail "done-text: others stay open"
+perl -i -ne 'print unless /2026-11-07 (fix|paint)/' "$VAULT/Briefing notes.md"
 rm -rf "$BRIEFING_STATE"
 
 # --- Did: last workday from prompts and commits, worktree transcripts, left off ---

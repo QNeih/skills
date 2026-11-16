@@ -125,7 +125,16 @@ Runs after a successful push, even if the PR step failed; without git, right aft
   5. Each of `main`, `master`, `develop` that exists locally and is checked out in no worktree → `git fetch origin <name>:<name>`. Not a fast-forward → report it and go on.
 - **No git**: runs when step 7 left the card in `Done` (or the item done). Otherwise keep the files and say why.
 
-Then, with a ticket, delete its files (untracked, so `rm -rf`): its `<dir>/.scratch/<id>-<slug>/` folder and `<dir>/.handoffs/HANDOFF-<id>.md`. A `.scratch/` or `.handoffs/` folder left empty → remove it. Other tickets' files stay.
+Then, with a ticket, capture loose ends (below), then delete its files (untracked, so `rm -rf`): its `<dir>/.scratch/<id>-<slug>/` folder and `<dir>/.handoffs/HANDOFF-<id>.md`. A `.scratch/` or `.handoffs/` folder left empty → remove it. Other tickets' files stay.
+
+**Loose ends** become to-dos (see `GLOSSARY.md`). Collect them from the handoff and from your own session's reports. Keep one only if all hold:
+
+- still open after the merge (fixed or settled points drop),
+- an action, not information,
+- vault board only: no open card (any column but Done) covers it. On Jira and other trackers skip this check: no search, no marker,
+- written as standalone ticket text: what, where, why, and the ticket it came from. `/ticket` plus a grilling must be able to turn it into a card that overlaps no other.
+
+Keep at most 3, most important first. Append each with `VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/../note/note.sh` (text on stdin, run from `<dir>`). An `error:` line → show it and stop before deleting the ticket's files. Print the kept ones, then the dropped ones, one line each. No ticket or no loose ends → skip.
 
 **Done when:** neither ticket path exists, `git branch --list <branch>` prints nothing, and `HEAD` is on `<base>` (in a linked worktree: detached at `origin/<base>`).
 
@@ -135,6 +144,7 @@ Then, with a ticket, delete its files (untracked, so `rm -rf`): its `<dir>/.scra
 - PR URL, new or reused, and whether it was merged on send
 - board state of the card or item
 - deleted branches, current branch or detached `HEAD`, removed paths
+- loose ends kept as to-dos and dropped ones, one line each
 - session branches kept and why; fast-forwarded branches
 - every skipped step and why
 
