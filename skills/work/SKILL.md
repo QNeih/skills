@@ -112,7 +112,7 @@ Then start the route in this session, with the `ticket.md` path as its input:
 - `/implement` → read `~/.claude/skills/implement/SKILL.md` and follow it. Start coding right away.
 - `/diagnosing-bugs`, `/grill-with-docs`, `/wayfinder` → read `~/.claude/skills/<name>/SKILL.md` and follow it, opening with a question to Quinn.
 - `/wayfinder` adds, while this session orchestrates its map:
-  - When the vault shows the current ticket `status: closed`, start the next frontier ticket in a new session without asking, and post one line naming it and why so Quinn can stop it. A report that only says "waiting on user" is not a close.
+  - When the vault shows the current ticket `status: closed`, start the next frontier ticket in a new session without asking (with git: `claude --bg -w <its id>` from `<dir>`, so it works in that ticket's own worktree), and post one line naming it and why so Quinn can stop it. A report that only says "waiting on user" is not a close.
   - One ticket session at a time; research tickets go to background subagents alongside.
   - Archive the closed ticket's session right away: an idle unarchived session shows as waiting on Quinn.
   - Still ask before writing tickets for "Not yet specified" items and before starting `/to-spec`.

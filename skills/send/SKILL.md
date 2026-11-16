@@ -121,7 +121,7 @@ Runs after a successful push, even if the PR step failed; without git, right aft
   1. `git rev-parse HEAD` differs from `git rev-parse @{u}` → stop: the remote doesn't hold every local commit. Merged on send → skip this check (`--delete-branch` removed the upstream); `git fetch origin` instead, so `origin/<base>` has the merge.
   2. Leave `<branch>`. Linked worktree (`git rev-parse --git-dir` differs from `git rev-parse --git-common-dir`) → `git switch --detach origin/<base>`, since `<base>` is usually checked out in the main checkout. Otherwise `git switch <base>`, then `git pull --ff-only`. Switch fails → stop and show the output.
   3. `git branch -D <branch>` (`-D` because the PR isn't merged yet; the commits are on `origin/<branch>`).
-  4. Leftover session branches: `git for-each-ref --format='%(refname:short) %(worktreepath)' 'refs/heads/claude/*'`. For each one with no worktree path and no output from `git rev-list -1 <name> --not --remotes` (every commit is on `origin`) → `git branch -D <name>`. The others stay; name them in the report.
+  4. Leftover session branches: `git for-each-ref --format='%(refname:short) %(worktreepath)' 'refs/heads/claude/*' 'refs/heads/worktree-*'`. For each one with no worktree path and no output from `git rev-list -1 <name> --not --remotes` (every commit is on `origin`) → `git branch -D <name>`. The others stay; name them in the report.
   5. Each of `main`, `master`, `develop` that exists locally and is checked out in no worktree → `git fetch origin <name>:<name>`. Not a fast-forward → report it and go on.
 - **No git**: runs when step 7 left the card in `Done` (or the item done). Otherwise keep the files and say why.
 
