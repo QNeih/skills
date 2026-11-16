@@ -195,7 +195,7 @@ fi
 
 # --- Next on a vault board: cards in In progress; none → first #urgent card in To do, else the first ---
 # Each card carries its goal in one sentence: its `Goal:`/`Ziel:` line, else the first sentence of its
-# first description line (meta lines Branch/PR/Braucht/Needs skipped). Same rule as dashboard/server.py.
+# first description line (meta lines Branch/PR/Braucht/Needs skipped). The dashboard's backend uses the same rule.
 vault_next() {
   awk 'function flush() { if (c == "") return; g = goal != "" ? goal : first; t = c (g != "" ? " — " g : "")
       if (col == "in progress") ip = ip "next: " t " (in progress)\n"
