@@ -67,7 +67,8 @@ flowchart TD
 
     send(["/send"]):::cmd --> commit["Commit by concern"] --> lint["npm run lint-fix"] --> push["Push"]
     push --> pr["Open or reuse PR;<br/>merge it where CLAUDE.md says so"] --> board["Move card:<br/>Jira → Code Review,<br/>vault → Done"]
-    board --> cleanup["Delete branch,<br/>.scratch and .handoffs"]
+    send -- "nothing on the branch:<br/>close with a reason" --> board
+    board --> cleanup["Delete branch, worktree,<br/>.scratch and .handoffs"]
 
     classDef cmd fill:#2563eb,stroke:#1e40af,color:#fff
     classDef gate fill:#facc15,stroke:#a16207,color:#000
@@ -84,7 +85,7 @@ flowchart TD
 | **Ticket flow** | `ticket` | Adds one card to the project's vault board, in the language and line pattern of the cards already there, with the next free id. Given only an id, points to `/work`. | vault |
 | | `work` | Claims a ticket on the project's board (Jira, an Obsidian Kanban board, or any tracker with a connector), cuts its branch, imports it, and starts the route that works on it. | board (vault, Jira, other), repo |
 | | `build` | Runs a multi-session feature in one session: spec, tickets, test-first build in subagents, code review. | repo |
-| | `send` | Ships the branch: lint, commit, push, PR with the tracker link, board card moved, branch cleaned up. | GitHub, board, repo |
+| | `send` | Ships the branch: lint, commit, push, PR with the tracker link, board card moved, branch and worktree cleaned up. A ticket branch with nothing on it is closed instead: card to Done with the reason, same cleanup. | GitHub, board, repo |
 | **Maintenance** | `sentry-fix` | Fixes Sentry errors in their own worktrees and opens draft PRs; finds the Sentry projects from the DSNs in the code. | Sentry, GitHub |
 | | `dependabot-review` | Checks every open Dependabot PR in parallel: does it break the build, could it change behaviour. | GitHub |
 | **Setup and misc** | `new-project` | Sets up a project: folder and git, project note, board, sidebar group. Creates only what's missing. | vault, repo |
