@@ -11,3 +11,7 @@ _Avoid_: briefing note, project note, leftover
 **Loose end**:
 An open point a session reports when it stops: something still to check, decide or do that the session did not finish.
 _Avoid_: leftover, open point
+
+**Close**:
+Ending a ticket without code, for example because it turned out already fixed or obsolete. The card goes to Done with the reason, and nothing ships.
+_Avoid_: cancel, abandon, drop

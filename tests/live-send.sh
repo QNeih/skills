@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# /send through claude -p, against a local bare remote: nothing to send; pushed commits still sent; lint commit, push
+# /send through claude -p, against a local bare remote: close without a reason asks, with one closes; pushed commits still sent; lint commit, push
 # and the "PR on <host> not supported" stop; without git: card to Done, ticket files deleted.
 . "$(dirname "$0")/lib.sh"
 fixture_new
@@ -10,7 +10,7 @@ export CLAUDE_BUDGET=${CLAUDE_BUDGET:-2}
 setup() { fixture_claude_md "$1"; install_skill "$REPO_DIR/skills/send" send "$1"; }
 # run_send <dir>: CLAUDE_OUT = every text the assistant printed
 run_send() {
-  run_claude "$1" "/t-send" --output-format stream-json --verbose
+  run_claude "$1" "/t-send${2:+ $2}" --output-format stream-json --verbose
   CLAUDE_OUT=$(jq -rR 'fromjson? | select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' <<<"$CLAUDE_OUT")
 }
 column() { awk -v h="$2" '/^## / { on = tolower($0) ~ h; next } /^%% kanban/ { on = 0 } on && NF' "$1"; }
@@ -39,14 +39,24 @@ JSON
 sed -i.bak 's/^var /let /' "$acme/src/a.js" && rm "$acme/src/a.js.bak"
 git -C "$acme" add -A && git -C "$acme" commit -qm "Add app" && git -C "$acme" push -q -u origin main 2>/dev/null
 
-# Nothing to send: branch pushed, tree clean apart from its ticket files
+# Close: branch pushed, nothing on it. Without a reason it asks and changes nothing
 git -C "$acme" checkout -q -b feature/ACM-1 && git -C "$acme" push -q -u origin HEAD 2>/dev/null
 ticket "$acme" ACM-1 old-work feature/ACM-1 main
 run_send "$acme"
-grep -qi 'nothing to send' <<<"$CLAUDE_OUT" && pass "nothing to send: says so" || { fail "nothing to send: says so"; echo "$CLAUDE_OUT" | tail -20; }
+grep -qF 'ACM-1 · Old work' <<<"$(column "$board" 'in progress')" && [ -f "$acme/.scratch/ACM-1-old-work/ticket.md" ] \
+  && git -C "$remote" rev-parse -q --verify feature/ACM-1 >/dev/null \
+  && pass "close without reason: nothing changed" || { fail "close without reason: nothing changed"; echo "$CLAUDE_OUT" | tail -20; }
+
+# With a reason: card to Done with the reason, branch gone locally and on origin, ticket files gone
+run_send "$acme" "already fixed by ACM-0"
+grep -qF $'- [x] **ACM-1 · Old work**\n\tBranch `feature/ACM-1`\n\tClosed without code: already fixed by ACM-0' <<<"$(column "$board" 'done')" \
+  && pass "close: card ticked in Done with the reason" || { fail "close: card ticked in Done with the reason"; cat "$board"; echo "$CLAUDE_OUT" | tail -20; }
+[ -z "$(git -C "$acme" branch --list feature/ACM-1)" ] && ! git -C "$remote" rev-parse -q --verify feature/ACM-1 >/dev/null \
+  && pass "close: branch deleted locally and on origin" || fail "close: branch deleted locally and on origin"
+[ ! -e "$acme/.scratch/ACM-1-old-work" ] && [ ! -e "$acme/.handoffs/HANDOFF-ACM-1.md" ] \
+  && pass "close: ticket files deleted" || fail "close: ticket files deleted"
 [ "$(git -C "$acme" rev-parse HEAD)" = "$(git -C "$acme" rev-parse origin/main)" ] \
-  && pass "nothing to send: no commit" || fail "nothing to send: no commit"
-grep -qF 'ACM-1 · Old work' <<<"$(column "$board" 'in progress')" && pass "nothing to send: card stays" || fail "nothing to send: card stays"
+  && pass "close: no commit, back on main" || fail "close: no commit, back on main"
 
 # Committed and pushed, no PR yet: send goes on past preflight instead of saying nothing to send
 git -C "$acme" checkout -q main && git -C "$acme" checkout -q -b feature/ACM-3
