@@ -82,20 +82,20 @@ Write the card block from the ticket text, in the board's language and line patt
 ```
 
 - Quinn's text is a rough dictation. Rewrite it as clean board text: correct spelling and grammar, drop filler and repeats, spell out shorthand ("fx" → "for example"; keep command, tool and product names), split run-on thoughts into the pattern's lines, and turn questions into what is to be found out ("Find out why /send fails from the app"). Keep every point and its meaning; add none.
-- Fill a line only from what the ticket text (with Quinn's answers from step 3a) says; drop the lines it gives nothing for, and list each dropped line as a loose end. Effort, priority, offer item and benefit values come from Quinn, verbatim.
+- Fill a line only from what the ticket text (with Quinn's answers from step 3a) says; drop the lines it gives nothing for, and report each dropped line as could not fix, with the cause "no source in the text". Effort, priority, offer item and benefit values come from Quinn, verbatim.
 - Dependencies line: the ids the text names, checked to exist on the board; text names none → drop the line.
 - Tags: `#bug` only when the ticket is mainly a defect to fix, `#urgent` when it says urgent, `hotfix` in the title when it says hotfix. `/work` cuts a `bugfix/` or `hotfix/` branch from `#bug` and `hotfix`, so a feature that also fixes something gets neither. Only tags the board already uses, plus `#bug`.
 - Lines start with one tab.
 
-**Done when:** every point of the ticket text is on the card in clean wording, every line traces to the text, and every pattern line without a source is a loose end.
+**Done when:** every point of the ticket text is on the card in clean wording, every line traces to the text, and every pattern line without a source is reported as could not fix.
 
 ## 5. Write
 
 Read the board file again right before the edit: Quinn edits it in Obsidian at any time. Insert the card block at the end of `## To do` (case-insensitive): after that column's last card, before the blank lines that end the column. Change nothing else. No `To do` column → stop: "no To do column on <board file>".
 
-Print the card block and the loose ends.
+Print the card block and what it could not fix, and why.
 
-**Done when:** the board file has the new card as the last card in `To do`, every other line unchanged, and the card and loose ends are printed.
+**Done when:** the board file has the new card as the last card in `To do`, every other line unchanged, and the card and what it could not fix are printed.
 
 ## 6. Tick the to-do (`todo:` only)
 

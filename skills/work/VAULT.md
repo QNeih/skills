@@ -20,7 +20,7 @@ The card whose first line contains `**<id> ·`. Not found → stop: "<id> is not
 
 - Card in `In progress` → leave it.
 - Card in `Done` → stop and ask whether to reopen it.
-- No `In progress` column → leave the card; loose end "no In progress column on <board file>".
+- No `In progress` column → leave the card and report it as could not fix: "no In progress column on <board file>".
 - Else → move the card block, unchanged, to the end of `In progress`: after that column's last card, before the blank lines that end the column.
 
 No assignee, no fix version.

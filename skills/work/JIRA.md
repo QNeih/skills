@@ -39,8 +39,8 @@ Set the fix version and the status, each only if missing.
    - Hotfix → the highest `X.Y.Z` (e.g. `6.10.4`).
    - Else → the lowest `X.Y` (e.g. `6.11`).
 
-   The ticket already has it → skip. Else `editJiraIssue` with `fixVersions` = the ticket's current entries plus `{ "id": "<id>" }`. No candidate → loose end.
-2. **Status.** `status.statusCategory.key` is `new` → `getTransitionsForJiraIssue` → the transition whose target is `In Progress` (any case) → `transitionJiraIssue`. Any other category → leave it. No such transition → loose end, with the available targets.
+   The ticket already has it → skip. Else `editJiraIssue` with `fixVersions` = the ticket's current entries plus `{ "id": "<id>" }`. No candidate → report it as could not fix: "no fix version candidate".
+2. **Status.** `status.statusCategory.key` is `new` → `getTransitionsForJiraIssue` → the transition whose target is `In Progress` (any case) → `transitionJiraIssue`. Any other category → leave it. No such transition → report it as could not fix, with the available targets as the cause.
 
 ## Branch
 

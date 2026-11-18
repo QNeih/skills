@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# /send through claude -p, against a local bare remote: close without a reason asks, with one closes; pushed commits still sent; rebase onto a
+# /send through claude -p, against a local bare remote: close without a reason asks, with one closes; pushed commits still sent; a leftover from the handoff fixed in its own commit, no to-do written; rebase onto a
 # moved base, lint commit, test.sh, push and the "PR on <host> not supported" stop; a ticket worktree is removed, port change and all; a failing
-# test.sh pushes nothing; without git: card to Done, ticket files deleted.
+# test.sh is fixed in its own commit and the branch pushed; without git: card to Done, ticket files deleted.
 . "$(dirname "$0")/lib.sh"
 fixture_new
 export CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
@@ -13,6 +13,13 @@ setup() { fixture_claude_md "$1"; install_skill "$REPO_DIR/skills/send" send "$1
 run_send() {
   run_claude "$1" "/t-send${2:+ $2}" --output-format stream-json --verbose
   CLAUDE_OUT=$(jq -rR 'fromjson? | select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' <<<"$CLAUDE_OUT")
+}
+# only_line_commit <branch> <diff line>: a commit on the pushed branch whose whole diff is that one line
+only_line_commit() {
+  local c
+  for c in $(git -C "$remote" rev-list "main..$1" 2>/dev/null); do
+    [ "$(git -C "$remote" show --format= -U0 "$c" | grep -E '^[-+][^-+]')" = "$2" ] && echo "$c"
+  done
 }
 column() { awk -v h="$2" '/^## / { on = tolower($0) ~ h; next } /^%% kanban/ { on = 0 } on && NF' "$1"; }
 # ticket <dir> <id> <slug> <branch> [base]: .scratch ticket.md and handoff, as /work writes them
@@ -39,8 +46,12 @@ cat > "$acme/package.json" <<'JSON'
 JSON
 echo '{ "version": "0.0.1", "configurations": [{ "name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["start", "--", "--port", "5173"], "port": 5173 }] }' > "$acme/.claude/launch.json"
 sed -i.bak 's/^var /let /' "$acme/src/a.js" && rm "$acme/src/a.js.bak"
-# test.sh leaves a mark each time it runs, and fails once src/bad.js exists
-printf '#!/usr/bin/env bash\necho ran >> "%s/tests-ran"\n[ ! -f src/bad.js ]\n' "$FIX" > "$acme/test.sh"
+# test.sh leaves a mark each time it runs, and fails while src/bad.js exists without its export line
+cat > "$acme/test.sh" <<SH
+#!/usr/bin/env bash
+echo ran >> "$FIX/tests-ran"
+[ ! -f src/bad.js ] || grep -qx 'module.exports = { bad }' src/bad.js || { echo 'FAIL src/bad.js lacks the line: module.exports = { bad }'; exit 1; }
+SH
 git -C "$acme" add -A && git -C "$acme" commit -qm "Add app" && git -C "$acme" push -q -u origin main 2>/dev/null
 
 # Close: branch pushed, nothing on it. Without a reason it asks and changes nothing
@@ -83,6 +94,8 @@ git clone -q "$remote" "$FIX/elsewhere" 2>/dev/null
 git -C "$FIX/elsewhere" -c user.name=t -c user.email=t@acme.test commit -q --allow-empty -m "Merged elsewhere"
 git -C "$FIX/elsewhere" push -q origin main 2>/dev/null
 rm -f "$FIX/tests-ran"
+# A leftover the ticket's change left unfinished, as the handoff reports it
+echo 'Left unfinished by this ticket: src/b.js needs the extra last line `module.exports = { b }`.' >> "$acme/.handoffs/HANDOFF-ACM-2.md"
 run_send "$acme"
 
 grep -qE 'PR on .+ not supported' <<<"$CLAUDE_OUT" && pass "non-GitHub origin: PR on <host> not supported" \
@@ -92,7 +105,7 @@ pushed=$(git -C "$remote" rev-parse bugfix/ACM-2 2>/dev/null)
 git -C "$remote" merge-base --is-ancestor main bugfix/ACM-2 2>/dev/null && pass "rebase: the pushed branch holds origin's new base commit" \
   || { fail "rebase: the pushed branch holds origin's new base commit"; git -C "$remote" log --oneline --all --graph | head; }
 [ -s "$FIX/tests-ran" ] && pass "test: test.sh ran" || { fail "test: test.sh ran"; echo "$CLAUDE_OUT" | tail -20; }
-[ "$(git -C "$remote" show bugfix/ACM-2:src/b.js 2>/dev/null)$(git -C "$remote" show bugfix/ACM-2:src/c.js 2>/dev/null)" = "let b = 2let c = 3" ] \
+[ "$(git -C "$remote" show bugfix/ACM-2:src/b.js 2>/dev/null | head -1)$(git -C "$remote" show bugfix/ACM-2:src/c.js 2>/dev/null)" = "let b = 2let c = 3" ] \
   && pass "lint: committed and uncommitted paths fixed" || fail "lint: committed and uncommitted paths fixed"
 # The lint commit changes only var → let lines, in both files
 lint=
@@ -101,6 +114,9 @@ for c in $(git -C "$remote" rev-list main..bugfix/ACM-2); do
   [ -n "$d" ] && ! grep -qvE '^[-+](var|let) [bc] = [23]$' <<<"$d" && [ "$(grep -c '^+let' <<<"$d")" = 2 ] && lint=$c
 done
 [ -n "$lint" ] && pass "lint: own commit" || { fail "lint: own commit"; git -C "$remote" log -p main..bugfix/ACM-2; }
+[ -n "$(only_line_commit bugfix/ACM-2 '+module.exports = { b }')" ] && pass "leftover: fixed in its own commit" \
+  || { fail "leftover: fixed in its own commit"; git -C "$remote" log -p main..bugfix/ACM-2; echo "$CLAUDE_OUT" | tail -20; }
+[ ! -e "$VAULT/Briefing notes.md" ] && pass "leftover: no to-do written" || { fail "leftover: no to-do written"; cat "$VAULT/Briefing notes.md"; }
 [ -z "$(git -C "$acme" status --porcelain | grep -vE '\.(scratch|handoffs)/')" ] && pass "commit: tree clean" || fail "commit: tree clean"
 grep -qF 'ACM-2 · Login fails' <<<"$(column "$board" 'in progress')" && pass "stop: card not moved" || { fail "stop: card not moved"; cat "$board"; }
 [ "$(git -C "$acme" branch --show-current)" = bugfix/ACM-2 ] && [ -f "$acme/.scratch/ACM-2-login-fails/ticket.md" ] \
@@ -119,15 +135,15 @@ run_send "$wt" "superseded by ACM-0"
 grep -qF -- '- [x] **ACM-4 · Worktree ticket**' <<<"$(column "$board" 'done')" && [ ! -e "$acme/.scratch/ACM-4-worktree-ticket" ] \
   && pass "worktree: card in Done, ticket files deleted" || { fail "worktree: card in Done, ticket files deleted"; cat "$board"; }
 
-# A failing test.sh: nothing is pushed, nothing cleaned up
+# A failing test.sh nobody reported: fixed in its own commit, then the branch is pushed with the tests green
 git -C "$acme" checkout -q main && git -C "$acme" checkout -q -b feature/ACM-5
 ticket "$acme" ACM-5 bad-change feature/ACM-5 main
 echo 'let bad = 1' > "$acme/src/bad.js"
 run_send "$acme"
-! git -C "$remote" rev-parse -q --verify feature/ACM-5 >/dev/null && pass "failing tests: nothing pushed" \
-  || { fail "failing tests: nothing pushed"; echo "$CLAUDE_OUT" | tail -20; }
-[ "$(git -C "$acme" branch --show-current)" = feature/ACM-5 ] && [ -f "$acme/.scratch/ACM-5-bad-change/ticket.md" ] \
-  && pass "failing tests: no cleanup" || fail "failing tests: no cleanup"
+[ -n "$(only_line_commit feature/ACM-5 '+module.exports = { bad }')" ] && pass "failing tests: fixed in its own commit" \
+  || { fail "failing tests: fixed in its own commit"; git -C "$remote" log -p main..feature/ACM-5 2>&1 | head -40; echo "$CLAUDE_OUT" | tail -20; }
+[ "$(git -C "$remote" show feature/ACM-5:test.sh 2>/dev/null)" = "$(git -C "$remote" show main:test.sh)" ] \
+  && pass "failing tests: test.sh unchanged" || fail "failing tests: test.sh unchanged"
 
 # --- project without git: two tickets, the one in progress on the board is sent ---
 fixture_note Beta

@@ -46,7 +46,7 @@ Then the board file's **Find**.
 
 The board file's **Claim**.
 
-**Done when:** the ticket is in progress on the board, or a stop or loose end says why not.
+**Done when:** the ticket is in progress on the board, or a stop says why not, or it is reported as could not fix, with its cause.
 
 ## 4. Branch (git only)
 
@@ -59,11 +59,11 @@ Each ticket works in its own **ticket worktree** `<wt>` = `<dir>/.claude/worktre
    - Any other linked worktree (`git rev-parse --git-dir` differs from `--git-common-dir`) → stay: it is this session's own.
    - The main checkout → `<wt>` missing: `git -C <dir> worktree add <wt> -b <branch> <start point>` (branch exists → `git -C <dir> worktree add <wt> <branch>`, and say so). Then `cd <wt>`. From here on the ticket's code work happens in `<wt>`: commands as `cd <wt> && …` or `git -C <wt> …`, file edits by absolute path under `<wt>`. `<dir>` stays the main checkout, so `.scratch/` and `.handoffs/` still go there. No EnterWorktree: it would make the main checkout read-only for this session.
 3. `git status --porcelain --untracked-files=no` prints anything → stop and ask: stash, commit, or discard.
-4. `git branch --show-current` is not `<branch>` (a worktree the dashboard made is on `worktree-<id>`) → `git checkout -b <branch> <start point>`; branch exists → `git checkout <branch>` and say so. The branch it left is `worktree-<id>` → delete it: `git rev-list -1 worktree-<id> --not <branch> --remotes` prints nothing (no commit of its own) → `git branch -D worktree-<id>`; prints a commit → keep it, as a loose end.
+4. `git branch --show-current` is not `<branch>` (a worktree the dashboard made is on `worktree-<id>`) → `git checkout -b <branch> <start point>`; branch exists → `git checkout <branch>` and say so. The branch it left is `worktree-<id>` → delete it: `git rev-list -1 worktree-<id> --not <branch> --remotes` prints nothing (no commit of its own) → `git branch -D worktree-<id>`; prints a commit → keep it and report it as could not fix, with its cause.
 5. With an origin → `git push -u origin HEAD`.
 6. Note the branch on the board, as the board file's **Branch** says.
 
-**Done when:** this session works in `<wt>` (or the linked worktree it started in), `git branch --show-current` prints the branch (tracking `origin` when there is one), the main checkout's branch is unchanged, no `worktree-<id>` branch is left (or a loose end names it), and the board shows the branch if the board file notes branches.
+**Done when:** this session works in `<wt>` (or the linked worktree it started in), `git branch --show-current` prints the branch (tracking `origin` when there is one), the main checkout's branch is unchanged, no `worktree-<id>` branch is left (or it is reported as could not fix), and the board shows the branch if the board file notes branches.
 
 ## 5. Import
 
@@ -98,13 +98,13 @@ Write `<dir>/.handoffs/HANDOFF-<id>.md`. Pointers only, every path absolute:
 - branch, base and ticket worktree path, or "no git"
 - the `ticket.md` path
 - route and why
-- loose ends from every step
+- what each step could not fix, and why
 
-**Done when:** the handoff exists and every line is a pointer or a loose end.
+**Done when:** the handoff exists and every line is a pointer, or names what a step could not fix, and why.
 
 ## 8. Start the route
 
-Print the loose ends, then this line:
+Print what the steps could not fix, and why, then this line:
 
 ```
 Route: /<skill> — <one-line reason>
@@ -113,7 +113,7 @@ Route: /<skill> — <one-line reason>
 Then start the route in this session, with the `ticket.md` path as its input. With git, all of the route's code work happens in the worktree from step 4, by path as step 4 says:
 
 - `/implement` → right away, hand the coding to one sub-agent: Agent tool, model `fable`, effort `low`. The call fails on Fable's usage limit → the same call with model `opus`, effort `medium`.
-  - Its brief, every path absolute: read `~/.claude/skills/implement/SKILL.md` and do its implementing, testing and commit, since the review runs in this session afterwards; input the `ticket.md` path; work in the worktree from step 4; report what changed, the test results and the loose ends.
+  - Its brief, every path absolute: read `~/.claude/skills/implement/SKILL.md` and do its implementing, testing and commit, since the review runs in this session afterwards; input the `ticket.md` path; work in the worktree from step 4; report what changed, the test results and what it could not fix, and why.
   - When it reports, send the review's findings worth fixing to that sub-agent with SendMessage.
 - `/diagnosing-bugs`, `/grill-with-docs`, `/wayfinder` → read `~/.claude/skills/<name>/SKILL.md` and follow it, opening with a question to Quinn.
 - `/wayfinder` adds, while this session orchestrates its map:

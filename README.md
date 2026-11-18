@@ -8,7 +8,7 @@ everything in between runs on its own and stops only where I have to decide.
     /ticket TEXT  add a card to the project's vault board
     /work KEY     claim the ticket, pick a route (fix, grill, build, wayfinder), start it
     /build        spec → tickets → test-first build in subagents → review
-    /send         commit, rebase, lint, test, push, open the PR, move the board card
+    /send         commit, fix leftovers, rebase, lint, test, push, open the PR, move the board card
 
 Built on Matt Pocock's skills (separate install): `/build` and `/work` hand off
 to his `to-spec`, `to-tickets`, `implement-spec`, `implement`, `wayfinder`,
@@ -65,7 +65,7 @@ flowchart TD
     fixreview --> send
     review --> send
 
-    send(["/send"]):::cmd --> commit["Commit by concern"] --> rebase["Rebase onto the base"] --> lint["npm run lint-fix"] --> test["test.sh or tests/run.sh"] --> push["Push"]
+    send(["/send"]):::cmd --> commit["Commit by concern"] --> leftovers["Fix leftovers"] --> rebase["Rebase onto the base"] --> lint["npm run lint-fix"] --> test["test.sh or tests/run.sh"] --> push["Push"]
     push --> pr["Open or reuse PR;<br/>merge it where CLAUDE.md says so"] --> board["Move card:<br/>Jira → Code Review,<br/>vault → Done"]
     send -- "nothing on the branch:<br/>close with a reason" --> board
     board --> cleanup["Stop the ticket's dev servers;<br/>delete branch, worktree,<br/>.scratch and .handoffs"]
@@ -85,7 +85,7 @@ flowchart TD
 | **Ticket flow** | `ticket` | Adds one card to the project's vault board, in the language and line pattern of the cards already there, with the next free id. First asks what the text leaves open that would change the work. Given only an id, points to `/work`. | vault |
 | | `work` | Claims a ticket on the project's board (Jira, an Obsidian Kanban board, or any tracker with a connector), cuts its branch, imports it, and starts the route that works on it. | board (vault, Jira, other), repo |
 | | `build` | Runs a multi-session feature in one session: spec, tickets, test-first build in subagents, code review. | repo |
-| | `send` | Ships the branch: commit, rebase onto the base branch, lint, test, push, PR with the tracker link, board card moved, the ticket's dev servers stopped, branch and worktree cleaned up. Names the other open PRs that now conflict. A ticket branch with nothing on it is closed instead: card to Done with the reason, same cleanup. | GitHub, board, repo |
+| | `send` | Ships the branch: commit, fix its own leftovers, rebase onto the base branch, lint, test, push, PR with the tracker link, board card moved, the ticket's dev servers stopped, branch and worktree cleaned up. Names the other open PRs that now conflict. A ticket branch with nothing on it is closed instead: card to Done with the reason, same cleanup. | GitHub, board, repo |
 | **Maintenance** | `sentry-fix` | Fixes Sentry errors in their own worktrees and opens draft PRs; finds the Sentry projects from the DSNs in the code. | Sentry, GitHub |
 | | `dependabot-review` | Checks every open Dependabot PR in parallel: does it break the build, could it change behaviour. | GitHub |
 | **Setup and misc** | `new-project` | Sets up a project: folder and git, project note, board, sidebar group. Creates only what's missing. | vault, repo |
