@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Raw material for /briefing across every active project: Did, Next, Jira, Sentry, Dependabot, notes.
+# Raw material for /briefing across every active project: Did, Next, Jira, Sentry, Dependabot, conflicting PRs, notes.
 #   gather.sh            header lines, then `# Today` and one `# <project>` section per project with something to show
 #   gather.sh --done N…  tick open notes N… (numbered as the briefing shows them) in <vault>/Briefing notes.md, print them
 #   gather.sh --done-text <text>  tick the one open note whose text contains <text> (fixed string), print it
@@ -337,8 +337,8 @@ sentry_lines() {
   done
 }
 
-# --- Dependabot: open PRs of a GitHub repo, new since $since ---
-dependabot_lines() {
+# --- Open PRs of a GitHub repo: Dependabot's that are new since $since, and Quinn's own that conflict with their base ---
+pr_lines() {
   local repo list
   repo=$(prop "$1" repo); [ -n "$repo" ] || [ -z "$2" ] || repo=$(git -C "$2" remote get-url origin 2>/dev/null)
   repo=$(sed -nE 's#^.*github\.com[:/]([^/]+/[^/]+)$#\1#p' <<<"${repo%/}"); repo=${repo%.git}
@@ -348,6 +348,10 @@ dependabot_lines() {
     { echo "error: Dependabot: $(head -1 <<<"$list") — gh auth login"; return; }
   jq -r --argjson since "$since" '[.[] | select((.createdAt | fromdate) >= $since)] as $new | select($new != [])
     | "dependabot: \($new | length) new of \(length) open: \($new | map("#\(.number) \(.title)") | join("; "))"' <<<"$list"
+  list=$(gh pr list -R "$repo" --author @me --state open --json number,title,headRefName,mergeable 2>&1) ||
+    { echo "error: PRs: $(head -1 <<<"$list") — gh auth login"; return; }
+  jq -r '[.[] | select(.mergeable == "CONFLICTING")] | select(. != [])
+    | "conflicting: \(map("#\(.number) \(.title) (\(.headRefName))") | join("; "))"' <<<"$list"
 }
 
 # --- one section per project with something to show (fd 3, so no CLI eats the list from stdin) ---
@@ -373,7 +377,7 @@ while IFS=$'\t' read -r name note dir <&3; do
     esac
     cat "$tmp/folder.$i" 2>/dev/null
     [ -z "$dir" ] || sentry_lines "$dir" "$note"
-    dependabot_lines "$note" "$dir"
+    pr_lines "$note" "$dir"
     while IFS=$'\t' read -r n text; do
       case "$text" in *" [[$name]]") echo "note $n: ${text% \[\[$name\]\]}" ;; esac
     done < "$tmp/notes"
