@@ -59,11 +59,11 @@ Each ticket works in its own **ticket worktree** `<wt>` = `<dir>/.claude/worktre
    - Any other linked worktree (`git rev-parse --git-dir` differs from `--git-common-dir`) → stay: it is this session's own.
    - The main checkout → `<wt>` missing: `git -C <dir> worktree add <wt> -b <branch> <start point>` (branch exists → `git -C <dir> worktree add <wt> <branch>`, and say so). Then `cd <wt>`. From here on the ticket's code work happens in `<wt>`: commands as `cd <wt> && …` or `git -C <wt> …`, file edits by absolute path under `<wt>`. `<dir>` stays the main checkout, so `.scratch/` and `.handoffs/` still go there. No EnterWorktree: it would make the main checkout read-only for this session.
 3. `git status --porcelain --untracked-files=no` prints anything → stop and ask: stash, commit, or discard.
-4. `git branch --show-current` is not `<branch>` (a worktree the dashboard made is on `worktree-<id>`) → `git checkout -b <branch> <start point>`; branch exists → `git checkout <branch>` and say so.
+4. `git branch --show-current` is not `<branch>` (a worktree the dashboard made is on `worktree-<id>`) → `git checkout -b <branch> <start point>`; branch exists → `git checkout <branch>` and say so. The branch it left is `worktree-<id>` → delete it: `git rev-list -1 worktree-<id> --not <branch> --remotes` prints nothing (no commit of its own) → `git branch -D worktree-<id>`; prints a commit → keep it, as a loose end.
 5. With an origin → `git push -u origin HEAD`.
 6. Note the branch on the board, as the board file's **Branch** says.
 
-**Done when:** this session works in `<wt>` (or the linked worktree it started in), `git branch --show-current` prints the branch (tracking `origin` when there is one), the main checkout's branch is unchanged, and the board shows the branch if the board file notes branches.
+**Done when:** this session works in `<wt>` (or the linked worktree it started in), `git branch --show-current` prints the branch (tracking `origin` when there is one), the main checkout's branch is unchanged, no `worktree-<id>` branch is left (or a loose end names it), and the board shows the branch if the board file notes branches.
 
 ## 5. Import
 
