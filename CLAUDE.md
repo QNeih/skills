@@ -2,6 +2,11 @@
 
 Rules for changing this repo. Terms: `GLOSSARY.md`.
 
+## Git
+
+- Ticket work (`/work` → `/send`) goes through a PR; `/send` merges this repo's PRs (squash, delete the branch). No CI or reviewer.
+- Any other skill change: commit straight to `main` and push.
+
 ## Skill text
 
 - `SKILL.md` and every other file an agent reads (this file, a file a skill points to) follow the `writing-for-agents` skill. Load it before writing or reviewing one.
