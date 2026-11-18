@@ -1,12 +1,12 @@
 ---
 name: send
-description: Ship the current branch on any board — lint, commit by concern, push, open or reuse the PR, move the board card, then clean up the branch, the ticket worktree and the ticket's files. A ticket branch with nothing on it is closed instead: card to Done with the reason, same cleanup. Closes the flow /work starts.
+description: Ship the current branch on any board — commit by concern, rebase onto the base branch, lint, test, push, open or reuse the PR, move the board card, then clean up the branch, the ticket's dev servers, the ticket worktree and the ticket's files. A ticket branch with nothing on it is closed instead: card to Done with the reason, same cleanup. Closes the flow /work starts.
 argument-hint: "[draft] [notes for the commit and PR wording, or the close reason]"
 ---
 
 # Send
 
-`/send` ships the current branch: lint, commit, push, open or reuse the PR, move the ticket's card on its board, then delete the branch, the ticket worktree and the ticket's `.scratch/` and `.handoffs/` files. A ticket whose branch has nothing on it is **closed** instead: no commit, push or PR, the card moves to Done with the reason, and the same cleanup runs. Typing `/send` is Quinn's go-ahead to commit, push and delete; there is no review step. Every step runs unless it says stop.
+`/send` ships the current branch: commit, rebase onto the base branch, lint, test, push, open or reuse the PR, move the ticket's card on its board, then stop the ticket's dev servers and delete the branch, the ticket worktree and the ticket's `.scratch/` and `.handoffs/` files. A ticket whose branch has nothing on it is **closed** instead: no commit, push or PR, the card moves to Done with the reason, and the same cleanup runs. Typing `/send` is Quinn's go-ahead to commit, push and delete; there is no review step. Every step runs unless it says stop.
 
 `$ARGUMENTS`: the word `draft` → open the PR as draft. Other text → context for the commit and PR wording, or the reason on a close; without git, it may name the ticket id.
 
@@ -65,7 +65,16 @@ Change set empty → skip and say "no uncommitted changes; sending the branch co
 
 **Done when:** `git status --porcelain` shows only `.scratch/` and `.handoffs/` paths, and every planned subject is in `git log`.
 
-## 4. Lint
+## 4. Rebase, lint and test
+
+In this order. A stop in any of them means nothing is pushed.
+
+**Rebase**: `git rebase origin/<base>`, so the PR can't conflict with what merged since the branch was cut.
+
+- Conflict → resolve it with the Skill tool `resolving-merge-conflicts`. A hunk that `ticket.md` and both sides leave undecided → `git rebase --abort`, stop and name the conflicting files.
+- `git rev-list origin/<base>..HEAD` prints nothing afterwards (`<base>` already holds every change) → stop and print this line as is: `Nothing to send: <base> already holds every change of <branch>.` With a ticket, add that `/send <reason>` closes it.
+
+**Lint**
 
 Paths: `git diff --name-only origin/<base>...HEAD` that still exist. This covers commits made before `/send` too.
 
@@ -74,11 +83,13 @@ Paths: `git diff --name-only origin/<base>...HEAD` that still exist. This covers
 3. No such directory → say so and go on.
 4. `git status --porcelain` shows changes outside `.scratch/` and `.handoffs/` → commit them all as one commit, `Apply lint fixes`.
 
-**Done when:** every lint-fix run exited 0 and the tree is clean again.
+**Test**: at `git rev-parse --show-toplevel`, the first of `test.sh` and `tests/run.sh` that exists → `bash <script>` from there. Non-zero exit → stop and show the output. Neither exists → say "no test.sh or tests/run.sh: tests not run" and go on.
+
+**Done when:** `git merge-base --is-ancestor origin/<base> HEAD` succeeds, every lint-fix run and the test script exited 0 (or the project has no test script), and the tree is clean again.
 
 ## 5. Push
 
-1. `git push -u origin HEAD` (`Operation not permitted` → rerun unsandboxed). Fails → stop and show the output.
+1. `git push --force-with-lease -u origin HEAD`: the rebase may have rewritten commits that `/work` already pushed (`Operation not permitted` → rerun unsandboxed). Fails → stop and show the output.
 2. `<host>` = the host in `git remote get-url origin` (`git@<host>:…`, `https://<host>/…`, `ssh://[user@]<host>/…`); a local path is its own `<host>`. Not `github.com` → stop and print `PR on <host> not supported`. No PR, no board move, no cleanup.
 
 **Done when:** `origin/<branch>` equals `HEAD`, and `origin` is on GitHub or the stop is printed.
@@ -98,7 +109,9 @@ gh pr create --base <base> --assignee @me [--label <label>] --title "<title>" --
 
 **Merge on send**: a `CLAUDE.md` rule says to merge this repo's PRs on send, and the PR isn't a draft → `gh pr merge <url> --squash --delete-branch`. It fails → stop and show the output; the board move and cleanup don't run.
 
-**Done when:** you hold the URL of an `OPEN` PR for `<branch>` (or, merged on send, a `MERGED` one), or the reason there is none.
+**Conflicting PRs**: `gh pr list --state open --json number,title,headRefName,mergeable`. Every PR other than this one whose `mergeable` is `CONFLICTING` goes into the report with its number, title and branch. `UNKNOWN` (GitHub is still computing it, usual right after a merge) → run the list once more; still `UNKNOWN` → report that PR as not yet checked. Their branches stay as they are: each one is rebased by `/send` in its own ticket's session.
+
+**Done when:** you hold the URL of an `OPEN` PR for `<branch>` (or, merged on send, a `MERGED` one), or the reason there is none; and every other open PR is listed as conflicting, not yet checked, or left out as mergeable.
 
 ## 7. Board
 
@@ -135,6 +148,8 @@ Runs after a successful push, even if the PR step failed; on a close, right afte
 
 Then, with a ticket, capture loose ends (below), then delete its files (untracked, so `rm -rf`): its `<dir>/.scratch/<id>-<slug>/` folder and `<dir>/.handoffs/HANDOFF-<id>.md`. A `.scratch/` or `.handoffs/` folder left empty → remove it. Other tickets' files stay.
 
+**Dev servers**, with git and a ticket: the ticket worktree `<dir>/.claude/worktrees/<id>` exists → `bash ${CLAUDE_SKILL_DIR}/stop-servers.sh <dir>/.claude/worktrees/<id>`. It stops every process that listens on a TCP port from inside that folder and prints one `stopped:` line each. An `error:` line → show it and stop. No ticket worktree (the ticket was worked in the main checkout) → stop nothing and say so: a server listening there may be one Quinn runs.
+
 Last, with git and a ticket: the ticket worktree `<wt>` = `<dir>/.claude/worktrees/<id>`. It doesn't exist → skip. Else run `claude agents --json --all --cwd <dir>`:
 
 - It lists a session with `kind` `background` and `cwd` `<wt>` (this session, when it was started with `claude --bg -w <id>`) → leave `<wt>`: a session cannot remove the folder it runs in, so the worktree goes with the session. `git status --porcelain` in `<wt>` prints anything → name those files in the report: `claude rm` refuses a worktree with uncommitted changes. Report the line `claude rm <session id>`, the listed session's `id`; Quinn removes the session (dashboard: `a a`), and that deletes the worktree.
@@ -155,8 +170,12 @@ Keep the most important one that qualifies, a breaking one before a ticket-worth
 ## 9. Report
 
 - commits, one subject each (lint commit included)
+- rebase: "up to date", or the `origin/<base>` commit it moved onto and the files whose conflicts were resolved
+- tests: the script that ran, or that the project has none
 - PR URL, new or reused, and whether it was merged on send; on a close, "closed without code" and the reason
+- other open PRs that conflict (number, title, branch) or are not yet checked; none → "no other PR conflicts"
 - board state of the card or item
+- stopped dev servers, one `stopped:` line each, or why none were stopped
 - deleted branches (local and, on a close, on origin), current branch or detached `HEAD`, removed paths
 - the ticket worktree: removed, or the `claude rm <session id>` line that removes it with its session, and any files that block that
 - the loose end kept as a to-do (or "none kept") and the dropped ones, one line each
