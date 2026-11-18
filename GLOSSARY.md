@@ -15,3 +15,11 @@ _Avoid_: leftover, open point
 **Close**:
 Ending a ticket without code, for example because it turned out already fixed or obsolete. The reason is recorded on the ticket.
 _Avoid_: cancel, abandon, drop
+
+**Script test**:
+A check of one of a skill's scripts against fixed inputs, with no model involved.
+_Avoid_: unit test, bash test
+
+**Live test**:
+A run of a whole skill through the model in a fixture vault and project, judged by the files, board and branches it leaves behind.
+_Avoid_: end-to-end test, `claude -p` test

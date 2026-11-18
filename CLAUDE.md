@@ -1,0 +1,15 @@
+# skills
+
+Rules for changing this repo. Terms: `GLOSSARY.md`.
+
+## Skill text
+
+- `SKILL.md` and every other file an agent reads (this file, a file a skill points to) follow the `writing-for-agents` skill. Load it before writing or reviewing one.
+- Only a change that creates a skill, or rewrites most of an existing one, goes through the `skill-creator` skill, once: draft, then its eval loop. Where its writing guide disagrees with `writing-for-agents`, `writing-for-agents` wins.
+- For a skill that writes to git, a board or the vault, `skill-creator`'s test runs happen inside a fixture from `tests/lib.sh`, so the real vault and real projects stay untouched.
+
+## Tests
+
+- A new script a skill runs gets a script test in `tests/test-*.sh`. `bash tests/run.sh` passes before a commit.
+- A change to the steps of a skill that has a live test (`tests/live-<skill>*.sh`) runs that file with `bash`. It costs tokens, so run only that file.
+- A new skill is tested through `skill-creator`'s eval loop; write a live test for it only when Quinn asks.
