@@ -73,7 +73,7 @@ In this order. A stop in any of them means nothing is pushed.
 
 - Conflict → resolve it with the Skill tool `resolving-merge-conflicts`. A hunk that `ticket.md` and both sides leave undecided → `git rebase --abort`, stop and name the conflicting files.
 - It fails for another reason → stop and show the output.
-- `git rev-list origin/<base>..HEAD` prints nothing afterwards (`<base>` already holds every change) → the branch has nothing on it: apply rule 7 of step 2.
+- `git rev-list origin/<base>..HEAD` prints nothing afterwards (`<base>` already holds every change) → the branch has nothing on it: apply step 2's rule for an empty change set with no branch commits.
 
 **Lint**
 
