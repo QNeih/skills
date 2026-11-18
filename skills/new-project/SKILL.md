@@ -70,7 +70,7 @@ Leave out `client` unless Quinn named one, the line if Quinn skipped, and `## Li
 - `<folder>` is directly under the projects root and has an origin → `repo: <origin>`.
 - Otherwise, or still failing → `local: <folder>`.
 
-Still failing after `local` → print both lookups' `reason:` lines as a loose end.
+Still failing after `local` → report it as could not fix, with both lookups' `reason:` lines as the cause.
 
 **Done when:** the note exists and both lookups find each other, or the reason is printed.
 

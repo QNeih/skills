@@ -55,6 +55,6 @@ Load `implement-spec` with `spec.md` and `issues/`, with these changes:
 
 ## 5. Report
 
-Print the integration branch, the tickets merged, the review fixes, and any loose ends. Next is `/send`.
+Print the integration branch, the tickets merged, the review fixes, and what it could not fix, and why. Next is `/send`.
 
 **Done when:** the report is printed.
