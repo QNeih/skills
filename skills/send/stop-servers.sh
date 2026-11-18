@@ -3,7 +3,8 @@
 #   stop-servers.sh <worktree>   prints `stopped: pid <pid>, port <ports>: <command>` per process
 # Takes only <checkout>/.claude/worktrees/<id>: a listener in a main checkout may be a server Quinn runs.
 set -u
-wt=$(cd "${1:-}" 2>/dev/null && pwd -P) || { echo "error: worktree ${1:-(none given)} not found"; exit 1; }
+[ -n "${1:-}" ] || { echo "error: no worktree given"; exit 1; }
+wt=$(cd "$1" 2>/dev/null && pwd -P) || { echo "error: worktree $1 not found"; exit 1; }
 case "$wt" in
   */.claude/worktrees/*) ;;
   *) echo "error: $wt is not a ticket worktree (<checkout>/.claude/worktrees/<id>)"; exit 1 ;;
@@ -11,7 +12,7 @@ esac
 command -v lsof >/dev/null || { echo "error: lsof not installed"; exit 1; }
 
 # a killed child stays a zombie until its parent reaps it; that counts as stopped
-alive() { kill -0 "$1" 2>/dev/null && [ "$(ps -o stat= -p "$1" 2>/dev/null | cut -c1)" != Z ]; }
+alive() { kill -0 "$1" 2>/dev/null && [ "$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' ' | cut -c1)" != Z ]; }
 
 rc=0
 for pid in $(lsof -nP -iTCP -sTCP:LISTEN -t 2>/dev/null | sort -u); do

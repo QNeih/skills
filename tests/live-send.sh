@@ -53,7 +53,7 @@ grep -qF 'ACM-1 · Old work' <<<"$(column "$board" 'in progress')" && [ -f "$acm
 
 # With a reason: card to Done with the reason, branch gone locally and on origin, ticket files gone
 run_send "$acme" "already fixed by ACM-0"
-grep -qF $'- [x] **ACM-1 · Old work**\n\tBranch `feature/ACM-1`\n\tClosed without code: already fixed by ACM-0' <<<"$(column "$board" 'done')" \
+grep -qF -- $'- [x] **ACM-1 · Old work**\n\tBranch `feature/ACM-1`\n\tClosed without code: already fixed by ACM-0' <<<"$(column "$board" 'done')" \
   && pass "close: card ticked in Done with the reason" || { fail "close: card ticked in Done with the reason"; cat "$board"; echo "$CLAUDE_OUT" | tail -20; }
 [ -z "$(git -C "$acme" branch --list feature/ACM-1)" ] && ! git -C "$remote" rev-parse -q --verify feature/ACM-1 >/dev/null \
   && pass "close: branch deleted locally and on origin" || fail "close: branch deleted locally and on origin"

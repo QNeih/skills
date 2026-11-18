@@ -41,6 +41,12 @@ out=$(bash "$stop" "$checkout"); rc=$?
 expect "main checkout: refused" "$out" "error: $checkout is not a ticket worktree (<checkout>/.claude/worktrees/<id>)"
 alive "$main" && pass "main checkout: listener untouched" || fail "main checkout: listener untouched"
 
+# No argument, run from inside another worktree that has a listener: nothing is stopped
+out=$(cd "$sibling" && bash "$stop"); rc=$?
+[ $rc -eq 1 ] && pass "no argument: exit 1" || fail "no argument: exit 1, got $rc"
+expect "no argument: named" "$out" "error: no worktree given"
+alive "$other" && pass "no argument: the current folder's listener stays" || fail "no argument: the current folder's listener stays"
+
 out=$(bash "$stop" "$FIX/missing"); rc=$?
 [ $rc -eq 1 ] && pass "missing folder: exit 1" || fail "missing folder: exit 1, got $rc"
 expect "missing folder: named" "$out" "error: worktree $FIX/missing not found"
