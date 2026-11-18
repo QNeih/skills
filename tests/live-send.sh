@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # /send through claude -p, against a local bare remote: close without a reason asks, with one closes; pushed commits still sent; lint commit, push
-# and the "PR on <host> not supported" stop; without git: card to Done, ticket files deleted.
+# and the "PR on <host> not supported" stop; a ticket worktree is removed, port change and all; without git: card to Done, ticket files deleted.
 . "$(dirname "$0")/lib.sh"
 fixture_new
 export CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
-export ALLOWED_TOOLS="Skill,Read,Glob,Grep,Edit,Write,Bash(git *),Bash(bash *),Bash(VAULT=*),Bash(npm *),Bash(rm *),Bash(rmdir *),Bash(ls *),Bash(find *)"
+export ALLOWED_TOOLS="Skill,Read,Glob,Grep,Edit,Write,Bash(git *),Bash(bash *),Bash(VAULT=*),Bash(npm *),Bash(rm *),Bash(rmdir *),Bash(ls *),Bash(find *),Bash(cd *),Bash(claude agents *)"
 export CLAUDE_BUDGET=${CLAUDE_BUDGET:-2}
 
 setup() { fixture_claude_md "$1"; install_skill "$REPO_DIR/skills/send" send "$1"; }
@@ -25,7 +25,7 @@ ticket() {
 # --- git project with a local bare remote ---
 fixture_note Acme
 board="$VAULT/Projects/Acme/Acme Board.md"
-printf -- '## To do\n\n## In progress\n\n- [ ] **ACM-1 · Old work**\n\tBranch `feature/ACM-1`\n- [ ] **ACM-2 · Login fails** #bug\n\tBranch `bugfix/ACM-2`\n\n## Done\n\n**Complete**\n' > "$board"
+printf -- '## To do\n\n## In progress\n\n- [ ] **ACM-1 · Old work**\n\tBranch `feature/ACM-1`\n- [ ] **ACM-2 · Login fails** #bug\n\tBranch `bugfix/ACM-2`\n- [ ] **ACM-4 · Worktree ticket**\n\tBranch `feature/ACM-4`\n\n## Done\n\n**Complete**\n' > "$board"
 acme="$PROJECTS_ROOT/acme" remote="$FIX/acme.git"
 git init -q --bare -b main "$remote"
 fixture_repo "$acme" "$remote"
@@ -36,6 +36,7 @@ echo 'var a = 1' > "$acme/src/a.js"
 cat > "$acme/package.json" <<'JSON'
 { "name": "acme", "scripts": { "lint-fix": "sed -i.bak 's/^var /let /' src/*.js && rm src/*.bak" } }
 JSON
+echo '{ "version": "0.0.1", "configurations": [{ "name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["start", "--", "--port", "5173"], "port": 5173 }] }' > "$acme/.claude/launch.json"
 sed -i.bak 's/^var /let /' "$acme/src/a.js" && rm "$acme/src/a.js.bak"
 git -C "$acme" add -A && git -C "$acme" commit -qm "Add app" && git -C "$acme" push -q -u origin main 2>/dev/null
 
@@ -92,6 +93,19 @@ done
 grep -qF 'ACM-2 · Login fails' <<<"$(column "$board" 'in progress')" && pass "stop: card not moved" || { fail "stop: card not moved"; cat "$board"; }
 [ "$(git -C "$acme" branch --show-current)" = bugfix/ACM-2 ] && [ -f "$acme/.scratch/ACM-2-login-fails/ticket.md" ] \
   && pass "stop: no cleanup" || fail "stop: no cleanup"
+
+# Ticket worktree no background session was started in, with a dev server's port moved: the port change is dropped, the worktree removed
+wt="$acme/.claude/worktrees/ACM-4"
+git -C "$acme" worktree add -q "$wt" -b feature/ACM-4 origin/main && git -C "$wt" push -q -u origin HEAD 2>/dev/null
+ticket "$acme" ACM-4 worktree-ticket feature/ACM-4 main
+sed -i.bak 's/5173/5174/g' "$wt/.claude/launch.json" && rm "$wt/.claude/launch.json.bak"
+run_send "$wt" "superseded by ACM-0"
+[ ! -e "$wt" ] && ! git -C "$acme" worktree list | grep -qF "$wt" \
+  && pass "worktree: removed with its port change" || { fail "worktree: removed with its port change"; git -C "$wt" status --short; echo "$CLAUDE_OUT" | tail -20; }
+[ -z "$(git -C "$acme" branch --list feature/ACM-4)" ] && ! git -C "$remote" rev-parse -q --verify feature/ACM-4 >/dev/null \
+  && pass "worktree: branch deleted locally and on origin" || fail "worktree: branch deleted locally and on origin"
+grep -qF -- '- [x] **ACM-4 · Worktree ticket**' <<<"$(column "$board" 'done')" && [ ! -e "$acme/.scratch/ACM-4-worktree-ticket" ] \
+  && pass "worktree: card in Done, ticket files deleted" || { fail "worktree: card in Done, ticket files deleted"; cat "$board"; }
 
 # --- project without git: two tickets, the one in progress on the board is sent ---
 fixture_note Beta

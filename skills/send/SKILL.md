@@ -29,7 +29,7 @@ VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
 
 Find the ticket. Its files are `<dir>/.scratch/<id>-<slug>/ticket.md` (title line `# <id>: …`, then `ref:`, `branch:`, `base:`, `board:`) and `<dir>/.handoffs/HANDOFF-<id>.md`.
 
-- **Git**: `<branch>` = `git branch --show-current`. The `ticket.md` with the line `branch: <branch>` is the ticket.
+- **Git**: a session started in the main checkout that works on its ticket in the ticket worktree `/work` made (`<dir>/.claude/worktrees/<id>`) → `cd` there first; steps 1–8 run in it. `<branch>` = `git branch --show-current`. The `ticket.md` with the line `branch: <branch>` is the ticket.
   - None → fallback for hand-cut branches: `<branch>` contains `[A-Z][A-Z0-9]+-[0-9]+` → that is the id and the ref, the board is the lookup's (`vault` → its `board-file:`; `jira-candidate` → Jira).
   - Still none → no ticket: the PR goes out without one, no board move, no ticket files deleted. Say so.
 - **No git**: the `ticket.md` files with `branch: none`. `$ARGUMENTS` names an id → that one. Else one file → it. Else the ones whose card is in `In progress` on their board; exactly one → it, otherwise list them and ask. None → stop and print this line as is: `Nothing to send: no ticket in <dir>/.scratch.`
@@ -46,9 +46,10 @@ Without git, go to step 7.
 2. `git fetch origin` (`cannot open '.git/FETCH_HEAD'` → rerun unsandboxed).
 3. `<base>`: `ticket.md`'s `base:`. Else a `hotfix/` branch → `main` or `master`, whichever is on `origin`; else `develop` if `origin/develop` exists, else `main` or `master`.
 4. `git diff --cached --quiet` fails → stop and ask: unstage (`git restore --staged .`) or say how to treat the staged hunks.
-5. **Change set**: `git status --porcelain --untracked-files=all`, minus every path under `.scratch/` or `.handoffs/`.
-6. **Branch commits**: `git rev-list origin/<base>..HEAD`, pushed or not. Commits already on `origin` still need their PR, board move and cleanup.
-7. Change set and branch commits both empty:
+5. **Port change**: `git diff -- .claude/launch.json` prints a diff, and every changed line differs from the line it replaces only in a number → `git restore .claude/launch.json`. That is a dev server's port moved for this session: it is never committed, and left in place it blocks the worktree's removal in step 8. The diff changes anything else → stop and ask which lines to commit.
+6. **Change set**: `git status --porcelain --untracked-files=all`, minus every path under `.scratch/` or `.handoffs/`.
+7. **Branch commits**: `git rev-list origin/<base>..HEAD`, pushed or not. Commits already on `origin` still need their PR, board move and cleanup.
+8. Change set and branch commits both empty:
    - No ticket → stop and print this line as is: `Nothing to send: <branch> has no changes against <base>.`
    - A ticket → this is a **close**. Reason: `$ARGUMENTS` without the word `draft`; empty → ask Quinn for one line and wait, changing nothing before the answer. Skip steps 3–6 and go to step 7 (Board).
 
@@ -134,7 +135,10 @@ Runs after a successful push, even if the PR step failed; on a close, right afte
 
 Then, with a ticket, capture loose ends (below), then delete its files (untracked, so `rm -rf`): its `<dir>/.scratch/<id>-<slug>/` folder and `<dir>/.handoffs/HANDOFF-<id>.md`. A `.scratch/` or `.handoffs/` folder left empty → remove it. Other tickets' files stay.
 
-Last, with git, when this session works in the ticket worktree (`git rev-parse --show-toplevel` is `<dir>/.claude/worktrees/<id>`): `cd <dir> && git worktree remove <dir>/.claude/worktrees/<id>`, without `--force`. Git refuses (untracked or modified files) → stop and name the files from its output. Every later command runs from `<dir>`.
+Last, with git and a ticket: the ticket worktree `<wt>` = `<dir>/.claude/worktrees/<id>`. It doesn't exist → skip. Else run `claude agents --json --all --cwd <dir>`:
+
+- It lists a session with `kind` `background` and `cwd` `<wt>` (this session, when it was started with `claude --bg -w <id>`) → leave `<wt>`: a session cannot remove the folder it runs in, so the worktree goes with the session. `git status --porcelain` in `<wt>` prints anything → name those files in the report: `claude rm` refuses a worktree with uncommitted changes. Report the line `claude rm <session id>`, the listed session's `id`; Quinn removes the session (dashboard: `a a`), and that deletes the worktree.
+- No such session → `cd <dir> && git worktree remove <wt>`, without `--force`. Git refuses (untracked or modified files) → stop and name the files from its output. Every later command runs from `<dir>`.
 
 **Loose ends** become to-dos (see `GLOSSARY.md`). Collect them from the handoff and from your own session's reports. Keep one only if all hold:
 
@@ -145,14 +149,15 @@ Last, with git, when this session works in the ticket worktree (`git rev-parse -
 
 Keep at most 3, most important first. Append each with `VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/../note/note.sh` (text on stdin, run from `<dir>`). An `error:` line → show it and stop before deleting the ticket's files. Print the kept ones, then the dropped ones, one line each. No ticket or no loose ends → skip.
 
-**Done when:** neither ticket path exists, `git branch --list <branch>` prints nothing (on a close, neither does `git ls-remote --heads origin <branch>`), the ticket worktree is gone, and otherwise `HEAD` is on `<base>` (in another linked worktree: detached at `origin/<base>`).
+**Done when:** neither ticket path exists, `git branch --list <branch>` prints nothing (on a close, neither does `git ls-remote --heads origin <branch>`), the ticket worktree is gone or the report names the session it goes with, and otherwise `HEAD` is on `<base>` (in a linked worktree that stays: detached at `origin/<base>`).
 
 ## 9. Report
 
 - commits, one subject each (lint commit included)
 - PR URL, new or reused, and whether it was merged on send; on a close, "closed without code" and the reason
 - board state of the card or item
-- deleted branches (local and, on a close, on origin), removed worktree, current branch or detached `HEAD`, removed paths
+- deleted branches (local and, on a close, on origin), current branch or detached `HEAD`, removed paths
+- the ticket worktree: removed, or the `claude rm <session id>` line that removes it with its session, and any files that block that
 - loose ends kept as to-dos and dropped ones, one line each
 - session branches kept and why; fast-forwarded branches
 - every skipped step and why
