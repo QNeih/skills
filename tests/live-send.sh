@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# /send through claude -p, against a local bare remote: close without a reason asks, with one closes; pushed commits still sent; lint commit, push
-# and the "PR on <host> not supported" stop; a ticket worktree is removed, port change and all; without git: card to Done, ticket files deleted.
+# /send through claude -p, against a local bare remote: close without a reason asks, with one closes; pushed commits still sent; rebase onto a
+# moved base, lint commit, test.sh, push and the "PR on <host> not supported" stop; a ticket worktree is removed, port change and all; a failing
+# test.sh pushes nothing; without git: card to Done, ticket files deleted.
 . "$(dirname "$0")/lib.sh"
 fixture_new
 export CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
@@ -38,6 +39,8 @@ cat > "$acme/package.json" <<'JSON'
 JSON
 echo '{ "version": "0.0.1", "configurations": [{ "name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["start", "--", "--port", "5173"], "port": 5173 }] }' > "$acme/.claude/launch.json"
 sed -i.bak 's/^var /let /' "$acme/src/a.js" && rm "$acme/src/a.js.bak"
+# test.sh leaves a mark each time it runs, and fails once src/bad.js exists
+printf '#!/usr/bin/env bash\necho ran >> "%s/tests-ran"\n[ ! -f src/bad.js ]\n' "$FIX" > "$acme/test.sh"
 git -C "$acme" add -A && git -C "$acme" commit -qm "Add app" && git -C "$acme" push -q -u origin main 2>/dev/null
 
 # Close: branch pushed, nothing on it. Without a reason it asks and changes nothing
@@ -75,12 +78,20 @@ ticket "$acme" ACM-2 login-fails bugfix/ACM-2 main
 echo 'var b = 2' > "$acme/src/b.js"
 git -C "$acme" add src/b.js && git -C "$acme" commit -qm "Add b"
 echo 'var c = 3' > "$acme/src/c.js"
+# main moves on origin after the branch was cut
+git clone -q "$remote" "$FIX/elsewhere" 2>/dev/null
+git -C "$FIX/elsewhere" -c user.name=t -c user.email=t@acme.test commit -q --allow-empty -m "Merged elsewhere"
+git -C "$FIX/elsewhere" push -q origin main 2>/dev/null
+rm -f "$FIX/tests-ran"
 run_send "$acme"
 
 grep -qE 'PR on .+ not supported' <<<"$CLAUDE_OUT" && pass "non-GitHub origin: PR on <host> not supported" \
   || { fail "non-GitHub origin: PR on <host> not supported"; echo "$CLAUDE_OUT" | tail -20; }
 pushed=$(git -C "$remote" rev-parse bugfix/ACM-2 2>/dev/null)
 [ -n "$pushed" ] && [ "$pushed" = "$(git -C "$acme" rev-parse HEAD)" ] && pass "push: remote has HEAD" || fail "push: remote has HEAD"
+git -C "$remote" merge-base --is-ancestor main bugfix/ACM-2 2>/dev/null && pass "rebase: the pushed branch holds origin's new base commit" \
+  || { fail "rebase: the pushed branch holds origin's new base commit"; git -C "$remote" log --oneline --all --graph | head; }
+[ -s "$FIX/tests-ran" ] && pass "test: test.sh ran" || { fail "test: test.sh ran"; echo "$CLAUDE_OUT" | tail -20; }
 [ "$(git -C "$remote" show bugfix/ACM-2:src/b.js 2>/dev/null)$(git -C "$remote" show bugfix/ACM-2:src/c.js 2>/dev/null)" = "let b = 2let c = 3" ] \
   && pass "lint: committed and uncommitted paths fixed" || fail "lint: committed and uncommitted paths fixed"
 # The lint commit changes only var → let lines, in both files
@@ -107,6 +118,16 @@ run_send "$wt" "superseded by ACM-0"
   && pass "worktree: branch deleted locally and on origin" || fail "worktree: branch deleted locally and on origin"
 grep -qF -- '- [x] **ACM-4 · Worktree ticket**' <<<"$(column "$board" 'done')" && [ ! -e "$acme/.scratch/ACM-4-worktree-ticket" ] \
   && pass "worktree: card in Done, ticket files deleted" || { fail "worktree: card in Done, ticket files deleted"; cat "$board"; }
+
+# A failing test.sh: nothing is pushed, nothing cleaned up
+git -C "$acme" checkout -q main && git -C "$acme" checkout -q -b feature/ACM-5
+ticket "$acme" ACM-5 bad-change feature/ACM-5 main
+echo 'let bad = 1' > "$acme/src/bad.js"
+run_send "$acme"
+! git -C "$remote" rev-parse -q --verify feature/ACM-5 >/dev/null && pass "failing tests: nothing pushed" \
+  || { fail "failing tests: nothing pushed"; echo "$CLAUDE_OUT" | tail -20; }
+[ "$(git -C "$acme" branch --show-current)" = feature/ACM-5 ] && [ -f "$acme/.scratch/ACM-5-bad-change/ticket.md" ] \
+  && pass "failing tests: no cleanup" || fail "failing tests: no cleanup"
 
 # --- project without git: two tickets, the one in progress on the board is sent ---
 fixture_note Beta

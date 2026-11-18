@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Raw material for /briefing across every active project: Did, Next, Jira, Sentry, Dependabot, notes.
+# Raw material for /briefing across every active project: Did, Next, Jira, Sentry, Dependabot, conflicting PRs, notes.
 #   gather.sh            header lines, then `# Today` and one `# <project>` section per project with something to show
 #   gather.sh --done N…  tick open notes N… (numbered as the briefing shows them) in <vault>/Briefing notes.md, print them
 #   gather.sh --done-text <text>  tick the one open note whose text contains <text> (fixed string), print it
@@ -337,17 +337,37 @@ sentry_lines() {
   done
 }
 
-# --- Dependabot: open PRs of a GitHub repo, new since $since ---
-dependabot_lines() {
-  local repo list
+# --- GitHub repo (<owner>/<name>) of a project: `repo:` in its note, else its folder's origin; nothing when not on GitHub ---
+gh_repo() {
+  local repo
   repo=$(prop "$1" repo); [ -n "$repo" ] || [ -z "$2" ] || repo=$(git -C "$2" remote get-url origin 2>/dev/null)
-  repo=$(sed -nE 's#^.*github\.com[:/]([^/]+/[^/]+)$#\1#p' <<<"${repo%/}"); repo=${repo%.git}
-  [ -n "$repo" ] || return 0
+  repo=$(sed -nE 's#^.*github\.com[:/]([^/]+/[^/]+)$#\1#p' <<<"${repo%/}"); echo "${repo%.git}"
+}
+
+# --- Dependabot: open PRs of a GitHub repo, new since $since. Fails when gh does, so the caller skips its other gh calls ---
+dependabot_lines() {
+  local list
   need gh Dependabot "GitHub CLI" || return
-  list=$(gh pr list -R "$repo" --author app/dependabot --state open --json number,title,createdAt 2>&1) ||
-    { echo "error: Dependabot: $(head -1 <<<"$list") — gh auth login"; return; }
+  list=$(gh pr list -R "$1" --author app/dependabot --state open --json number,title,createdAt 2>&1) ||
+    { echo "error: Dependabot: $(head -1 <<<"$list") — gh auth login"; return 1; }
   jq -r --argjson since "$since" '[.[] | select((.createdAt | fromdate) >= $since)] as $new | select($new != [])
     | "dependabot: \($new | length) new of \(length) open: \($new | map("#\(.number) \(.title)") | join("; "))"' <<<"$list"
+}
+
+# --- Conflicting PRs: Quinn's open PRs of a GitHub repo that conflict with their base branch ---
+own_prs() { gh pr list -R "$1" --author @me --state open --limit 100 --json number,title,headRefName,mergeable 2>&1; }
+conflicting_lines() {
+  local list
+  list=$(own_prs "$1") || { echo "error: PRs: $(head -1 <<<"$list") — gh auth login"; return; }
+  # GitHub works out `mergeable` only once asked: UNKNOWN on the first call, the answer a moment later
+  if jq -e 'any(.[]; .mergeable == "UNKNOWN")' <<<"$list" >/dev/null; then
+    sleep 2
+    list=$(own_prs "$1") || { echo "error: PRs: $(head -1 <<<"$list") — gh auth login"; return; }
+  fi
+  jq -r 'def names: map("#\(.number) \(.title) (\(.headRefName))") | join("; ");
+    ([.[] | select(.mergeable == "CONFLICTING")] | select(. != []) | "conflicting: \(names)"),
+    ([.[] | select(.mergeable == "UNKNOWN")] | select(. != [])
+      | "error: PRs: GitHub has not yet said whether these conflict: \(names) — run /briefing again")' <<<"$list"
 }
 
 # --- one section per project with something to show (fd 3, so no CLI eats the list from stdin) ---
@@ -373,7 +393,8 @@ while IFS=$'\t' read -r name note dir <&3; do
     esac
     cat "$tmp/folder.$i" 2>/dev/null
     [ -z "$dir" ] || sentry_lines "$dir" "$note"
-    dependabot_lines "$note" "$dir"
+    repo=$(gh_repo "$note" "$dir")
+    [ -z "$repo" ] || { dependabot_lines "$repo" && conflicting_lines "$repo"; }
     while IFS=$'\t' read -r n text; do
       case "$text" in *" [[$name]]") echo "note $n: ${text% \[\[$name\]\]}" ;; esac
     done < "$tmp/notes"

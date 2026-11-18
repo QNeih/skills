@@ -8,7 +8,7 @@ everything in between runs on its own and stops only where I have to decide.
     /ticket TEXT  add a card to the project's vault board
     /work KEY     claim the ticket, pick a route (fix, grill, build, wayfinder), start it
     /build        spec → tickets → test-first build in subagents → review
-    /send         lint, commit, push, open the PR, move the board card
+    /send         commit, rebase, lint, test, push, open the PR, move the board card
 
 Built on Matt Pocock's skills (separate install): `/build` and `/work` hand off
 to his `to-spec`, `to-tickets`, `implement-spec`, `implement`, `wayfinder`,
@@ -21,7 +21,7 @@ Grey: Matt Pocock's skills. Everything else runs on its own.
 
 ```mermaid
 flowchart TD
-    briefing(["/briefing"]):::cmd --> brief["Brief: did, next, Jira, Sentry,<br/>Dependabot, mail, Teams, meetings, notes"]
+    briefing(["/briefing"]):::cmd --> brief["Brief: did, next, Jira, Sentry, Dependabot,<br/>conflicting PRs, mail, Teams, meetings, notes"]
     brief --> reply{"Reply?"}:::gate
     reply -- "fix all" --> sentryfix["sentry-fix<br/>one worktree per error"] --> draftpr["Draft PRs"]
     reply -- "/dependabot-review" --> depreview["dependabot-review<br/>checks every open PR in parallel"]
@@ -65,10 +65,10 @@ flowchart TD
     fixreview --> send
     review --> send
 
-    send(["/send"]):::cmd --> commit["Commit by concern"] --> lint["npm run lint-fix"] --> push["Push"]
+    send(["/send"]):::cmd --> commit["Commit by concern"] --> rebase["Rebase onto the base"] --> lint["npm run lint-fix"] --> test["test.sh or tests/run.sh"] --> push["Push"]
     push --> pr["Open or reuse PR;<br/>merge it where CLAUDE.md says so"] --> board["Move card:<br/>Jira → Code Review,<br/>vault → Done"]
     send -- "nothing on the branch:<br/>close with a reason" --> board
-    board --> cleanup["Delete branch, worktree,<br/>.scratch and .handoffs"]
+    board --> cleanup["Stop the ticket's dev servers;<br/>delete branch, worktree,<br/>.scratch and .handoffs"]
 
     classDef cmd fill:#2563eb,stroke:#1e40af,color:#fff
     classDef gate fill:#facc15,stroke:#a16207,color:#000
@@ -79,13 +79,13 @@ flowchart TD
 
 | | Skill | What it does | Uses |
 | --- | --- | --- | --- |
-| **Daily** | `briefing` | One whole-day briefing across every project: what I did last workday, what's next, Jira changes, new Sentry errors and Dependabot PRs, mail and Teams messages waiting on me, today's meetings. | vault, Jira, Sentry, GitHub, Microsoft 365 |
+| **Daily** | `briefing` | One whole-day briefing across every project: what I did last workday, what's next, Jira changes, new Sentry errors and Dependabot PRs, my PRs that conflict, mail and Teams messages waiting on me, today's meetings. | vault, Jira, Sentry, GitHub, Microsoft 365 |
 | | `dashboard` | Starts my full-screen local dashboard (next tickets, ticket workflow, background sessions) and brings its window to the front. The app lives in its own repo, `dashboard`, under the projects root. | dashboard repo |
 | | `note` | Saves a to-do for the briefing, tagged with the project I'm in. | vault |
 | **Ticket flow** | `ticket` | Adds one card to the project's vault board, in the language and line pattern of the cards already there, with the next free id. First asks what the text leaves open that would change the work. Given only an id, points to `/work`. | vault |
 | | `work` | Claims a ticket on the project's board (Jira, an Obsidian Kanban board, or any tracker with a connector), cuts its branch, imports it, and starts the route that works on it. | board (vault, Jira, other), repo |
 | | `build` | Runs a multi-session feature in one session: spec, tickets, test-first build in subagents, code review. | repo |
-| | `send` | Ships the branch: lint, commit, push, PR with the tracker link, board card moved, branch and worktree cleaned up. A ticket branch with nothing on it is closed instead: card to Done with the reason, same cleanup. | GitHub, board, repo |
+| | `send` | Ships the branch: commit, rebase onto the base branch, lint, test, push, PR with the tracker link, board card moved, the ticket's dev servers stopped, branch and worktree cleaned up. Names the other open PRs that now conflict. A ticket branch with nothing on it is closed instead: card to Done with the reason, same cleanup. | GitHub, board, repo |
 | **Maintenance** | `sentry-fix` | Fixes Sentry errors in their own worktrees and opens draft PRs; finds the Sentry projects from the DSNs in the code. | Sentry, GitHub |
 | | `dependabot-review` | Checks every open Dependabot PR in parallel: does it break the build, could it change behaviour. | GitHub |
 | **Setup and misc** | `new-project` | Sets up a project: folder and git, project note, board, sidebar group. Creates only what's missing. | vault, repo |
