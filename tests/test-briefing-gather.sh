@@ -352,9 +352,19 @@ case "$*" in
   "pr list -R acme/shop --author app/dependabot --state open "*) echo '[
     {"number":12,"title":"Bump left-pad from 1.0 to 1.1","createdAt":"2026-11-08T03:00:00Z"},
     {"number":9,"title":"Bump old","createdAt":"2026-10-01T03:00:00Z"}]' ;;
+  "pr list -R acme/shop --author @me --state open "*)
+    # own-prs.fail → fails with its text; own-prs.retry.json → the answer from the second call on
+    [ -f "$FIX/stub/own-prs.fail" ] && { cat "$FIX/stub/own-prs.fail" >&2; exit 1; }
+    if [ -f "$FIX/stub/own-prs.retry.json" ] && [ -f "$FIX/stub/own-prs.asked" ]; then cat "$FIX/stub/own-prs.retry.json"
+    else touch "$FIX/stub/own-prs.asked"; cat "$FIX/stub/own-prs.json"; fi ;;
   *) echo "unexpected: $*" >&2; exit 3 ;;
 esac
 SH
+cat > "$FIX/stub/own-prs.json" <<'JSON'
+[{"number":31,"title":"Add checkout","headRefName":"feature/SHP-4","mergeable":"CONFLICTING"},
+ {"number":32,"title":"Fine one","headRefName":"feature/SHP-5","mergeable":"MERGEABLE"},
+ {"number":33,"title":"Fix cart","headRefName":"bugfix/SHP-6","mergeable":"CONFLICTING"}]
+JSON
 rm -rf "$BRIEFING_STATE"
 out=$(gather)
 expect "dependabot: new PRs" "$(section Shop "$out")" "dependabot: 1 new of 2 open: #12 Bump left-pad from 1.0 to 1.1"
@@ -362,6 +372,25 @@ grep -qi dependabot <<<"$(section Acme "$out")" && fail "dependabot: non-GitHub 
 grep -q '^dependabot' <<<"$(section Shop "$(gather "" "$(at "2026-11-09 13:00")")")" && fail "dependabot: nothing new → no line" || pass "dependabot: nothing new → no line"
 s=$(section Shop "$(GH_FAIL="HTTP 401: Bad credentials" gather "" "$(at "2026-11-09 14:00")")")
 expect "dependabot fails: one line with the fix" "$s" "error: Dependabot: HTTP 401: Bad credentials — gh auth login"
+[ "$(grep -c '^error: ' <<<"$s")" -eq 1 ] && pass "gh fails: one error line for the repo" || { fail "gh fails: one error line for the repo"; echo "$s"; }
+
+# --- Conflicting PRs: Quinn's open PRs that GitHub marks CONFLICTING, on every run while they conflict ---
+expect "conflicting: own open PRs" "$(section Shop "$out")" "conflicting: #31 Add checkout (feature/SHP-4); #33 Fix cart (bugfix/SHP-6)"
+expect "conflicting: shown again on a later run" "$(section Shop "$(gather "" "$(at "2026-11-09 14:30")")")" "conflicting: #31 Add checkout (feature/SHP-4); #33 Fix cart (bugfix/SHP-6)"
+grep -q '^conflicting' <<<"$(section Acme "$out")" && fail "conflicting: non-GitHub origin → nothing" || pass "conflicting: non-GitHub origin → nothing"
+echo '[{"number":32,"title":"Fine one","headRefName":"feature/SHP-5","mergeable":"MERGEABLE"}]' > "$FIX/stub/own-prs.json"
+grep -qE '^(conflicting|error: PRs)' <<<"$(section Shop "$(gather "" "$(at "2026-11-09 14:40")")")" && fail "conflicting: none → no line" || pass "conflicting: none → no line"
+# GitHub answers UNKNOWN until it has worked the state out: asked a second time
+echo '[{"number":34,"title":"Just pushed","headRefName":"feature/SHP-7","mergeable":"UNKNOWN"}]' > "$FIX/stub/own-prs.json"
+echo '[{"number":34,"title":"Just pushed","headRefName":"feature/SHP-7","mergeable":"CONFLICTING"}]' > "$FIX/stub/own-prs.retry.json"
+rm -f "$FIX/stub/own-prs.asked"
+expect "conflicting: UNKNOWN → asked again" "$(section Shop "$(gather "" "$(at "2026-11-09 14:50")")")" "conflicting: #34 Just pushed (feature/SHP-7)"
+rm "$FIX/stub/own-prs.retry.json"
+expect "conflicting: still UNKNOWN → error line" "$(section Shop "$(gather "" "$(at "2026-11-09 14:55")")")" \
+  "error: PRs: GitHub has not yet said whether these conflict: #34 Just pushed (feature/SHP-7) — run /briefing again"
+echo "HTTP 502: Bad gateway" > "$FIX/stub/own-prs.fail"
+expect "conflicting: its gh call fails → one line with the fix" "$(section Shop "$(gather "" "$(at "2026-11-09 14:58")")")" "error: PRs: HTTP 502: Bad gateway — gh auth login"
+rm "$FIX/stub/own-prs.fail"
 
 # --- CLIs not installed: one line each with the fix ---
 mkdir -p "$FIX/tools"; ln -s "$(command -v jq)" "$(command -v git)" "$FIX/tools/"
