@@ -112,7 +112,9 @@ Route: /<skill> — <one-line reason>
 
 Then start the route in this session, with the `ticket.md` path as its input. With git, all of the route's code work happens in the worktree from step 4, by path as step 4 says:
 
-- `/implement` → read `~/.claude/skills/implement/SKILL.md` and follow it. Start coding right away.
+- `/implement` → right away, hand the coding to one sub-agent: Agent tool, model `fable`, effort `low`. The call fails on Fable's usage limit → the same call with model `opus`, effort `medium`.
+  - Its brief, every path absolute: read `~/.claude/skills/implement/SKILL.md` and do its implementing, testing and commit, since the review runs in this session afterwards; input the `ticket.md` path; work in the worktree from step 4; report what changed, the test results and the loose ends.
+  - When it reports, send the review's findings worth fixing to that sub-agent with SendMessage.
 - `/diagnosing-bugs`, `/grill-with-docs`, `/wayfinder` → read `~/.claude/skills/<name>/SKILL.md` and follow it, opening with a question to Quinn.
 - `/wayfinder` adds, while this session orchestrates its map:
   - When the vault shows the current ticket `status: closed`, start the next frontier ticket in a new session without asking (with git: `claude --bg -w <its id>` from `<dir>`, so it works in that ticket's own worktree), and post one line naming it and why so Quinn can stop it. A report that only says "waiting on user" is not a close.
@@ -120,8 +122,8 @@ Then start the route in this session, with the `ticket.md` path as its input. Wi
   - Archive the closed ticket's session right away: an idle unarchived session shows as waiting on Quinn.
   - Still ask before writing tickets for "Not yet specified" items and before starting `/to-spec`.
   - Each brief tells the child to read `~/.claude/skills/wayfinder/SKILL.md` by path; it may not be in the child's skill list.
-- `/diagnosing-bugs` ends, once the fix is in, with the Skill tool `code-review`: fixed point `origin/<base>`, spec the `ticket.md` path.
-- `/grill-with-docs` ends, once Quinn confirms the shared understanding and the ticket needs code, by writing the decisions into `ticket.md`, setting `Status: ready-for-agent` and `Next: /implement`, then following `~/.claude/skills/implement/SKILL.md`. It ends with `code-review`, so no code reaches `/send` unreviewed.
+- `/implement` and `/diagnosing-bugs` end, once the code is committed, with the Skill tool `code-review` in this session: fixed point `origin/<base>`, spec the `ticket.md` path. No code reaches `/send` unreviewed.
+- `/grill-with-docs` ends, once Quinn confirms the shared understanding and the ticket needs code, by writing the decisions into `ticket.md`, setting `Status: ready-for-agent` and `Next: /implement`, then starting `/implement` as above: the sub-agent knows only `ticket.md`, so every decision is in it first.
 - `/build` → the Skill tool `build`.
 - `needs-info` → print the questions for the reporter and stop.
 
