@@ -5,7 +5,7 @@ Quinn's personal Claude Code skills: the ticket flow (`/ticket`, `/work`, `/send
 ## Language
 
 **To-do**:
-An open line in the vault's briefing notes, tagged with its project. Quinn writes one with `/note`, or it comes from a loose end that a ticket's session left behind.
+An open line in the vault's briefing notes, tagged with its project. Quinn writes one with `/note`, or `/send` writes one from a ticket's loose ends: at most one per ticket, and only a breaking or ticket-worthy one, as `/send` defines them.
 _Avoid_: briefing note, project note, leftover
 
 **Loose end**:

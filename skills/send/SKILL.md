@@ -140,14 +140,15 @@ Last, with git and a ticket: the ticket worktree `<wt>` = `<dir>/.claude/worktre
 - It lists a session with `kind` `background` and `cwd` `<wt>` (this session, when it was started with `claude --bg -w <id>`) → leave `<wt>`: a session cannot remove the folder it runs in, so the worktree goes with the session. `git status --porcelain` in `<wt>` prints anything → name those files in the report: `claude rm` refuses a worktree with uncommitted changes. Report the line `claude rm <session id>`, the listed session's `id`; Quinn removes the session (dashboard: `a a`), and that deletes the worktree.
 - No such session → `cd <dir> && git worktree remove <wt>`, without `--force`. Git refuses (untracked or modified files) → stop and name the files from its output. Every later command runs from `<dir>`.
 
-**Loose ends** become to-dos (see `GLOSSARY.md`). Collect them from the handoff and from your own session's reports. Keep one only if all hold:
+**Loose ends**: at most one per ticket becomes a to-do (see `GLOSSARY.md`). Collect them from the handoff and from your own session's reports; those that share a cause count as one. A loose end qualifies only if all hold:
 
 - still open after the merge or close (fixed or settled points drop),
-- an action, not information,
+- **breaking** or **ticket-worthy**. Breaking: something fails or is lost now (a build, a test, data, a step that was skipped). Ticket-worthy: Quinn would open a ticket for it unprompted. Checks, one-off chores (restart a server, remove a worktree), test-coverage gaps, wording and style, and decisions with nothing breaking are neither. In doubt → neither,
+- no open to-do names its cause: read all `- [ ]` lines of `<vault>/Briefing notes.md`, whatever their project tag,
 - vault board only: no open card (any column but Done) covers it. On Jira and other trackers skip this check: no search, no marker,
 - written as standalone ticket text: what, where, why, and the ticket it came from. `/ticket` plus a grilling must be able to turn it into a card that overlaps no other.
 
-Keep at most 3, most important first. Append each with `VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/../note/note.sh` (text on stdin, run from `<dir>`). An `error:` line → show it and stop before deleting the ticket's files. Print the kept ones, then the dropped ones, one line each. No ticket or no loose ends → skip.
+Keep the most important one that qualifies, a breaking one before a ticket-worthy one. Append it with `VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/../note/note.sh` (text on stdin, run from `<dir>`). An `error:` line → show it and stop before deleting the ticket's files. Print the kept one (or "none kept"), then the dropped ones, one line each. No ticket or nothing collected → skip.
 
 **Done when:** neither ticket path exists, `git branch --list <branch>` prints nothing (on a close, neither does `git ls-remote --heads origin <branch>`), the ticket worktree is gone or the report names the session it goes with, and otherwise `HEAD` is on `<base>` (in a linked worktree that stays: detached at `origin/<base>`).
 
@@ -158,7 +159,7 @@ Keep at most 3, most important first. Append each with `VAULT=<vault> PROJECTS_R
 - board state of the card or item
 - deleted branches (local and, on a close, on origin), current branch or detached `HEAD`, removed paths
 - the ticket worktree: removed, or the `claude rm <session id>` line that removes it with its session, and any files that block that
-- loose ends kept as to-dos and dropped ones, one line each
+- the loose end kept as a to-do (or "none kept") and the dropped ones, one line each
 - session branches kept and why; fast-forwarded branches
 - every skipped step and why
 
