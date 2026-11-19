@@ -30,6 +30,8 @@ gh_can 'project field-list 4 --owner QuinnNei -L 200 --format json' '{"fields":[
 gh_can 'issue view 1 --repo QuinnNei/acme-wiki --json id' '{"id":"ID1"}'
 gh_can 'issue view 2 --repo QuinnNei/acme-wiki --json id' '{"id":"ID2"}'
 gh_can 'issue view 1 --repo QuinnNei/acme-wiki --json number,title,body,labels,comments,state' '{"number":1,"title":"x","body":"","state":"OPEN","labels":[],"comments":[]}'
+gh_can 'issue view 2 --repo QuinnNei/acme-wiki --json number,title,body,labels,comments,state' '{"number":2,"title":"x","body":"","state":"OPEN","labels":[],"comments":[]}'
+gh_can 'api graphql -F owner=QuinnNei -F name=acme-wiki -F number=2' '{"data":{"repository":{"issue":{"blockedBy":{"nodes":[]}}}}}'
 gh_seq 'api graphql -F owner=QuinnNei -F name=acme-wiki -F number=1' \
   '{"data":{"repository":{"issue":{"blockedBy":{"nodes":[]}}}}}' \
   '{"data":{"repository":{"issue":{"blockedBy":{"nodes":[{"number":2,"state":"OPEN","repository":{"nameWithOwner":"QuinnNei/acme-wiki"}}]}}}}}'
@@ -70,5 +72,13 @@ expect "rerun: no issue created" "$(grep -c '^issue create' <<<"$log")" "0"
 expect "rerun: no blocked-by added twice" "$(grep -c 'issueId=' <<<"$log")" "0"
 expect "rerun: finishes the open Done issue" "$(grep '^issue close' <<<"$log")" "issue close 3 --repo QuinnNei/acme-wiki --comment Done on the vault board (was ACM-4)."
 expect "rerun: reports the cards kept" "$(grep -c '^kept' "$FIX/out2")" "5"
+expect "rerun: a kept In progress card still at Todo gets its Status" "$log" "project item-edit --id I2 --project-id PVT_1 --field-id F1 --single-select-option-id O2"
 [ -f "$VAULT/Archive/Acme Board.md" ] && pass "rerun: archived again" || fail "rerun: archived again"
+
+# Rerun after the card moved on to Done on the Project: its Status is not pushed back
+rm "$VAULT/Archive/Acme Board.md"; cp "$FIX/board.copy" "$BOARD"; : > "$GH_LOG"
+itemkey=$(grep -lx 'project item-list 4 --owner QuinnNei -L 200 --format json' "$GH_DIR"/*.key)
+printf '%s\n' '{"items":[{"id":"I2","status":"Done","labels":[],"content":{"type":"Issue","number":2,"title":"x"}}]}' > "${itemkey%.key}.json"
+bash "$SK" "$BOARD" "$PROJECTS_ROOT/acme/acme" --owner QuinnNei >/dev/null 2>&1; log=$(gh_calls)
+expect "rerun: a kept card already Done keeps its Status" "$(grep -c '^project item-edit' <<<"$log")" "0"
 done_testing

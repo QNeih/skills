@@ -7,7 +7,8 @@
 # Done closed; any other column open with the column name as a label. Card tags become labels.
 # `Needs:` ids become blocked-by links once every issue exists; an id that is not on this board
 # stays text in the body and is reported. A card whose `was` line is already on an issue is not
-# created again (its column rule is applied again, so a failed run can be repeated). When the run
+# created again (its column rule is applied again, so a failed run can be repeated; In Progress
+# only moves a card that is still Todo). When the run
 # is complete the board file moves to <vault>/Archive/. The vault is VAULT, else two folders
 # above the board file's folder (<vault>/Projects/<name>/<board file>).
 # Needs gh, jq, and board.sh, tickets.sh and project.sh next to this script.
@@ -91,7 +92,12 @@ while IFS= read -r c; do
     printf '%s\t%s\tOPEN\n' "$key" "$n" >> "$tmp/map"; istate=OPEN
     echo "created $key as #$n"
   fi
-  [ -z "$status" ] || tickets status "$n" "$status" >/dev/null
+  # A kept card moves to In Progress only from Todo, so a card already Done is not pushed back
+  if [ -n "$status" ]; then
+    if [ -z "$existing" ] || [ "$(tickets show "$n" | jq -r .status)" = Todo ]; then
+      tickets status "$n" "$status" >/dev/null
+    fi
+  fi
   if [ "$state" = done ] && [ "$istate" = OPEN ]; then
     tickets close "$n" --comment "Done on the vault board (was $key)." >/dev/null
   fi
