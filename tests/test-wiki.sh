@@ -18,6 +18,7 @@ expect "new: one commit" "$(git -C "$W" rev-list --count HEAD)" "1"
 expect "new: on main" "$(git -C "$W" branch --show-current)" "main"
 expect "new: remote set" "$(git -C "$W" remote get-url origin)" "$FIX/acme-wiki.git"
 expect "new: clean tree" "$(git -C "$W" status --porcelain | wc -l | tr -d ' ')" "0"
+git -C "$W" check-ignore -q .local && pass "new: wiki ignores the per-person folder file" || fail "new: wiki ignores the per-person folder file"
 expect "new: brain ignores the wiki" "$(cat "$VAULT/.gitignore")" 'Projects/*/wiki/'
 
 # re-run changes nothing
