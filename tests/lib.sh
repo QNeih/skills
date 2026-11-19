@@ -31,6 +31,54 @@ fixture_repo() {
   [ -z "${2:-}" ] || git -C "$1" remote add origin "$2"
 }
 
+# --- Stand-in gh and wiki fixture (the GitHub boards) ---
+# fixture_gh: a fake gh first on PATH. It appends each call's arguments (space-joined) as one
+# line to $GH_LOG and prints the canned answer whose key is the longest prefix of the call;
+# no match prints nothing and succeeds. Needs fixture_new first. Sets GH_DIR, GH_LOG.
+fixture_gh() {
+  export GH_DIR="$FIX/gh-canned" GH_LOG="$FIX/gh.log"
+  mkdir -p "$FIX/bin" "$GH_DIR"; : > "$GH_LOG"
+  cat > "$FIX/bin/gh" <<'GH'
+#!/usr/bin/env bash
+call="$*"
+printf '%s\n' "$call" >> "$GH_LOG"
+best=""
+for k in "$GH_DIR"/*.key; do
+  [ -f "$k" ] || continue
+  key=$(cat "$k")
+  if [ "$call" = "$key" ] || [[ "$call" == "$key "* ]]; then
+    [ "${#key}" -gt "${#best}" ] && { best=$key; file="${k%.key}.json"; }
+  fi
+done
+[ -z "$best" ] || cat "$file"
+exit 0
+GH
+  chmod +x "$FIX/bin/gh"
+  export PATH="$FIX/bin:$PATH"
+}
+# gh_can <call prefix> <json>: canned answer for calls starting with the prefix
+gh_can() {
+  local n; n=$(find "$GH_DIR" -name '*.key' | wc -l | tr -d ' ')
+  printf '%s' "$1" > "$GH_DIR/$n.key"; printf '%s\n' "$2" > "$GH_DIR/$n.json"
+}
+# gh_calls: the logged calls, one per line
+gh_calls() { cat "$GH_LOG"; }
+
+# fixture_wiki <name> [project.md settings line...]: $PROJECTS_ROOT/<name>/{<name>,wiki};
+# wiki/project.md holds the settings as front matter.
+fixture_wiki() {
+  local name=$1; shift
+  fixture_repo "$PROJECTS_ROOT/$name/$name"
+  fixture_repo "$PROJECTS_ROOT/$name/wiki"
+  { echo '---'; printf '%s\n' "$@"; echo '---'; } > "$PROJECTS_ROOT/$name/wiki/project.md"
+  git -C "$PROJECTS_ROOT/$name/wiki" add project.md
+  git -C "$PROJECTS_ROOT/$name/wiki" -c user.name=t -c user.email=t@acme.test commit -q -m project
+}
+# fixture_wiki_worktree <name> <ticket>: worktree of the project repo on feature/<ticket>
+fixture_wiki_worktree() {
+  git -C "$PROJECTS_ROOT/$1/$1" worktree add -q "$PROJECTS_ROOT/$1/$1/.claude/worktrees/$2" -b "feature/$2"
+}
+
 # --- claude -p harness (live tests) ---
 # Runs use Quinn's real config (a temp CLAUDE_CONFIG_DIR is not logged in), so:
 # skills are installed as t-<name> (personal skills win name clashes), the fixture
