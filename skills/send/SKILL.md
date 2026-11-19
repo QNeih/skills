@@ -34,7 +34,7 @@ Find the ticket. Its files are `<dir>/.scratch/<id>-<slug>/ticket.md` (title lin
   - Still none → no ticket: the PR goes out without one, no board move, no ticket files deleted. Say so.
 - **No git**: the `ticket.md` files with `branch: none` or no `branch:` line. `$ARGUMENTS` names an id → that one. Else one file → it. Else the ones whose ticket is `In Progress` on their board (GitHub: `bash ${CLAUDE_SKILL_DIR}/tickets.sh show <n>` prints `status`); exactly one → it, otherwise list them and ask. None → stop and print this line as is: `Nothing to send: no ticket in <dir>/.scratch.`
 
-The board is the lookup's `board:`; `ticket.md`'s `board:` link names the Jira site and project. A GitHub board is described in `${CLAUDE_SKILL_DIR}/GITHUB.md`.
+The board is the lookup's `board:`; `ticket.md`'s `board:` link names the Jira site and project. A GitHub board is described in `${CLAUDE_SKILL_DIR}/GITHUB-SEND.md`.
 
 **Done when:** `<dir>`, git or not, and the ticket (id, ref, board) or "no ticket" are known.
 
@@ -134,7 +134,7 @@ gh pr create --base <base> --assignee @me [--label <label>] --title "<title>" --
 
 Runs after a successful push, even if the PR step failed; on a close, right after step 2; without git, right after step 1. No ticket → skip and say so.
 
-- **GitHub**: follow `${CLAUDE_SKILL_DIR}/GITHUB.md`. With a PR, there is no board write at all.
+- **GitHub**: follow `${CLAUDE_SKILL_DIR}/GITHUB-SEND.md`. With a PR, there is no board write at all.
 - **Jira** → `Code Review`, through the claude.ai Atlassian MCP (`cloudId` from `getAccessibleAtlassianResources`):
   1. `getJiraIssue`: status already `Code Review` → done.
   2. `getTransitionsForJiraIssue` → the transition whose target status is `Code Review` (any case) → `transitionJiraIssue`.
