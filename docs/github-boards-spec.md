@@ -41,7 +41,31 @@ The `gh` facts come from GitHub docs and read-only calls (2026-11-19). Dashboard
 3. Old ids `SKL-n` are in the issue body first line (`was SKL-n`) so old branches and commits stay traceable. Old branches keep their names.
 4. Archive the vault boards, then remove the vault path from `CLAUDE.md`.
 
-## Open for a live test (build ticket)
+## Live check (SKL-39, 2026-11-19)
+
+Status: blocked after the first step. The token's account is an org `member` of `lisegmbh`, and the org forbids members from creating repositories (`members_can_create_repositories: false`). `gh repo create lisegmbh/...` returns HTTP 403. No sandbox repo exists, so only the Project step ran.
+
+| Behaviour | Result |
+| --- | --- |
+| Project created under the org | Works. `gh project create --owner lisegmbh` made `sandbox-boards-test` (private, number 10, https://github.com/orgs/lisegmbh/projects/10). A member may create Projects. |
+| Project linked to a repo | Not run: no repo to link. |
+| `addBlockedBy` across two repos, read back | Not run: no repos. |
+| `Closes lisegmbh/wiki#n` from a PR in a differently owned private repo | Not run: needs a repo under another owner (a `QuinnNei` repo) plus a wiki repo under the org. |
+| Workflows "item closed -> Done" and "PR merged -> Done" on a cross-repo close | Not run: needs the two repos. |
+
+Consequence: the design rests on org-owned wikis, and a member cannot create them. Quinn must decide one of:
+
+- An org owner creates `sandbox-boards-wiki` and `sandbox-boards-code` (private) under `lisegmbh`, or raises the member repo-creation setting. `/new-project` and the board step also create wiki repos, so they fail the same way for a member; an org owner must create each org wiki, or the setting must change.
+- Or the wiki and Project take owner `QuinnNei` (user owner: per-person invites only).
+
+Dependent tickets: every ticket that creates a wiki repo (the board script `create`, `/new-project`, the migration script) is flagged until this is decided.
+
+What Quinn must do, once repos exist (the two workflows are web UI only):
+
+1. Open https://github.com/orgs/lisegmbh/projects/10, Settings, Workflows. Check "Item closed" is on with Status = Done, and "Pull request merged" is on with Status = Done.
+2. After the agent run closes a wiki issue through a PR from another repo with `Closes lisegmbh/sandbox-boards-wiki#n`, open the Project and check the item moved to Done in both cases.
+
+## Still open after the live check
 
 - Project under the org: create and link.
 - `addBlockedBy` across repos.
