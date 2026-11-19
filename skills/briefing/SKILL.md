@@ -111,6 +111,6 @@ Then stop and wait.
 - **"fix all"** → for every project with a `sentry` line, all its new and regressed short ids. **Short ids** → the project whose `sentry` line lists them. Per project, one after another, call the Skill tool with `sentry-fix` and args `<shortIds> <project name>`; it finds that project's folder and makes its own worktrees.
 - **`done <n> …`** → run `VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/gather.sh --done <n> …` with the numbers as the brief showed them, and show the ticked lines. An `error:` line → show it.
 - **`add all`** → every `Unmatched:` line; **names** (an entry or a project from those lines) → only the lines they name. Per line run `VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/gather.sh --add-contact <project> <entry>` and show its output. No reply → nothing is added; never add an entry Quinn didn't confirm.
-- **`/dependabot-review`** → it runs in the project's folder; name the folder(s) with new Dependabot PRs (`VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh --note <project>` prints `dir:`).
+- **`/dependabot-review`** → it runs in the project's folder; name the folder(s) with new Dependabot PRs (`VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/vault-lookup.sh --note <project>` prints `dir:`).
 
 **Done when:** each reply's action ran and its result is shown.

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Board step file parts: board.sh creates a vault board and saves a board override,
-# checked through the project lookup.
+# checked in the note (the layout lookup no longer reads the vault; board.sh is replaced by SKL-39 ticket 04).
 . "$(dirname "$0")/lib.sh"
 SK="$REPO_DIR/skills/work"
 fixture_new
-lookup() { (cd "$1" && bash "$SK/project.sh"); }
+noteboard() { sed -n "s/^board: \"\{0,1\}\(.*[^\"]\)\"\{0,1\}$/board: \1/p" "$1"; }
 colors='{"kanban-plugin":"board","tag-colors":[{"tagKey":"#urgent","color":"#ffffff","backgroundColor":"#e03131"}]}'
 
 # Another board without tag colours, one with them
@@ -18,7 +18,7 @@ fixture_note Acme
 mkdir -p "$PROJECTS_ROOT/acme"
 out=$(bash "$SK/board.sh" create "$VAULT/Projects/Acme/Acme.md")
 expect "create: prints the board file" "$out" "created: $VAULT/Projects/Acme/Acme Board.md"
-expect "create: lookup sees a vault board" "$(lookup "$PROJECTS_ROOT/acme")" "board: vault"
+expect "create: board file exists" "$(test -f "$VAULT/Projects/Acme/Acme Board.md" && echo yes)" "yes"
 b=$(cat "$VAULT/Projects/Acme/Acme Board.md")
 expect "create: kanban board" "$b" "kanban-plugin: board"
 expect "create: To do column" "$b" "## To do"
@@ -46,9 +46,9 @@ fixture_note Omega 'repo: https://git.acme.test/omega'
 mkdir -p "$PROJECTS_ROOT/omega"
 url='https://dev.azure.test/acme/omega/_boards/board'
 bash "$SK/board.sh" set "$VAULT/Projects/Omega/Omega.md" "$url" >/dev/null
-expect "set: lookup reads the override" "$(lookup "$PROJECTS_ROOT/omega")" "board: $url"
+expect "set: lookup reads the override" "$(noteboard "$VAULT/Projects/Omega/Omega.md")" "board: $url"
 expect "set: other properties kept" "$(cat "$VAULT/Projects/Omega/Omega.md")" "repo: https://git.acme.test/omega"
 bash "$SK/board.sh" set "$VAULT/Projects/Omega/Omega.md" 'Trello: team board #2' >/dev/null
-expect "set: replaces the override" "$(lookup "$PROJECTS_ROOT/omega")" "board: Trello: team board #2"
+expect "set: replaces the override" "$(noteboard "$VAULT/Projects/Omega/Omega.md")" "board: Trello: team board #2"
 [ "$(grep -c '^board:' "$VAULT/Projects/Omega/Omega.md")" = 1 ] && pass "set: one board line" || fail "set: one board line"
 done_testing

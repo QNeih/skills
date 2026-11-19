@@ -5,7 +5,7 @@
 #   gather.sh --done-text <text>  tick the one open note whose text contains <text> (fixed string), print it
 #   gather.sh --contacts  per active project `# <name>`, `client:`, one `contact:` line per `contacts` entry
 #   gather.sh --add-contact <project> <entry>…  add confirmed entries to the note's `contacts`
-# Env: VAULT, PROJECTS_ROOT (as for project.sh); BRIEFING_STATE (default ~/.claude/briefing),
+# Env: VAULT, PROJECTS_ROOT (as for vault-lookup.sh); BRIEFING_STATE (default ~/.claude/briefing),
 # BRIEFING_TRANSCRIPTS (default ~/.claude/projects), BRIEFING_NOW (epoch seconds, default now; for tests).
 set -u
 export LC_ALL=C
@@ -123,7 +123,7 @@ fi
 i=0
 active | while IFS=$'\t' read -r name n; do
   i=$((i + 1))
-  "$here/project.sh" --note "$name" </dev/null > "$tmp/look.$i"
+  "$here/vault-lookup.sh" --note "$name" </dev/null > "$tmp/look.$i"
   dir=$(sed -n 's/^dir: //p' "$tmp/look.$i")
   fix="— set local: <folder> in the project note"
   if [ "$dir" = none ]; then
