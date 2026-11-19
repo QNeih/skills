@@ -88,7 +88,7 @@ One per brain: a daily local scheduled task that commits and pushes the brain by
   - name: `brain-sync`
   - description: `Commit and push the brain once a day`
   - schedule: daily at 17:00
-  - prompt: ``Run `bash ${CLAUDE_SKILL_DIR}/brain-sync.sh "<vault>"` and report its output in one line. Do nothing else.`` with both paths written out as absolute paths.
+  - prompt: ``Run `bash ${CLAUDE_SKILL_DIR}/brain-sync.sh "<vault>"` and report its output in one line, then end the session.`` with both paths written out as absolute paths.
 - No tool that creates a local scheduled task → this session cannot schedule. Say: "Brain sync task not scheduled: this session has no scheduled-task tool. Run `/wiki <project>` again in the Claude desktop app."
 
 Only a local scheduled task fits, since it runs on this machine, where the brain is. The tool writes the task; `~/.claude/scheduled-tasks` is its folder to write.

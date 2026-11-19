@@ -48,4 +48,20 @@ expect "clone: prints the wiki folder" "$out" "cloned: $VAULT/Projects/Gamma/wik
 expect "clone: remote page present" "$(cat "$VAULT/Projects/Gamma/wiki/pricing.md")" "# Pricing"
 expect "clone: remote history kept" "$(git -C "$VAULT/Projects/Gamma/wiki" log -1 --format=%s)" "add pricing"
 [ -f "$VAULT/Projects/Gamma/wiki/INGEST.md" ] && fail "clone: template not copied" || pass "clone: template not copied"
+# unreachable remote: git's message, non-zero, nothing created
+fixture_note Delta
+out=$(bash "$SK/wiki.sh" "$VAULT" Delta "$FIX/nope.git" 2>&1); rc=$?
+[ "$rc" -ne 0 ] && pass "bad remote: exits non-zero" || fail "bad remote: exits non-zero"
+grep -q 'nope.git' <<<"$out" && pass "bad remote: prints git's message" || fail "bad remote: prints git's message"
+[ -e "$VAULT/Projects/Delta/wiki" ] && fail "bad remote: creates nothing" || pass "bad remote: creates nothing"
+
+# empty reachable remote falls through to the template
+git init -q --bare -b main "$FIX/empty.git"
+fixture_note Eps
+out=$(bash "$SK/wiki.sh" "$VAULT" Eps "$FIX/empty.git")
+expect "empty remote: template used" "$out" "created: $VAULT/Projects/Eps/wiki"
+
+# missing arguments print a usage line
+out=$(bash "$SK/wiki.sh" 2>&1); rc=$?
+[ "$rc" -ne 0 ] && grep -q 'usage:' <<<"$out" && pass "no arguments: usage line" || fail "no arguments: usage line"
 done_testing

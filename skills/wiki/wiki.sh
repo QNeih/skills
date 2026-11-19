@@ -3,7 +3,9 @@
 #   wiki.sh VAULT PROJECT [REMOTE]
 # Prints "created: DIR", "cloned: DIR" or "exists: DIR".
 set -eu
-vault=$1 project=$2 remote=${3:-}
+vault=${1:?usage: wiki.sh VAULT PROJECT [REMOTE]}
+project=${2:?usage: wiki.sh VAULT PROJECT [REMOTE]}
+remote=${3:-}
 here=$(cd "$(dirname "$0")" && pwd)
 dir="$vault/Projects/$project/wiki"
 ignore='Projects/*/wiki/'
@@ -17,10 +19,14 @@ fi
 
 if [ -e "$dir" ]; then echo "exists: $dir"; exit 0; fi
 
-if [ -n "$remote" ] && [ -n "$(git ls-remote "$remote" 2>/dev/null)" ]; then
-  git clone -q "$remote" "$dir"
-  echo "cloned: $dir"
-  exit 0
+if [ -n "$remote" ]; then
+  # A failing ls-remote (auth, network, wrong URL) stops the script via set -e.
+  heads=$(git ls-remote "$remote")
+  if [ -n "$heads" ]; then
+    git clone -q "$remote" "$dir"
+    echo "cloned: $dir"
+    exit 0
+  fi
 fi
 
 mkdir -p "$dir"
