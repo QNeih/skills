@@ -6,7 +6,7 @@ argument-hint: "[draft] [notes for the commit and PR wording, or the close reaso
 
 # Send
 
-`/send` ships the current branch: commit, fix its leftovers, rebase onto the base branch, lint, test, push, open or reuse the PR, move the ticket on its board (GitHub: the PR body's `Closes` line closes it on merge, no board write), then stop the ticket's dev servers and delete the branch, the ticket worktree and the ticket's `.scratch/` and `.handoffs/` files. A ticket whose branch has nothing on it is **closed** instead: no commit, push or PR, the ticket closes with the reason, and the same cleanup runs. Typing `/send` is Quinn's go-ahead to commit, push and delete; there is no review step. Every step runs unless it says stop.
+`/send` ships the current branch: commit, fix its leftovers, rebase onto the base branch, lint, test, push, open or reuse the PR, move the ticket on its board (GitHub: the PR body's `Closes` line closes it on a merge into the default branch; after a merge on send into another base, `/send` closes it), then stop the ticket's dev servers and delete the branch, the ticket worktree and the ticket's `.scratch/` and `.handoffs/` files. A ticket whose branch has nothing on it is **closed** instead: no commit, push or PR, the ticket closes with the reason, and the same cleanup runs. Typing `/send` is Quinn's go-ahead to commit, push and delete; there is no review step. Every step runs unless it says stop.
 
 `$ARGUMENTS`: the word `draft` → open the PR as draft. Other text → context for the commit and PR wording, or the reason on a close; without git, it may name the ticket id.
 
@@ -122,9 +122,9 @@ gh pr create --base <base> --assignee @me [--label <label>] --title "<title>" --
 - `--draft`: only when `$ARGUMENTS` has the word `draft`.
 - Label from `<branch>`'s prefix, case-insensitive: `hotfix/` → `hotfix`; `bugfix/` → `bugfix`; `feature/` → `feature`, else `enhancement`. Take the first of these that `gh label list` shows. None exists, or another prefix → open without a label and say so.
 - Title: `<ref>: <gist of the change>`; no ticket → the gist alone.
-- Body: `## Summary` bullets from `ticket.md` and the commit subjects, then each observation from step 4 as one line `Observed: <what, where>`, then one link line in the tracker's syntax, last: GitHub → `Closes <repo>#<n>` (`<repo>` the lookup's `repo:`; merging closes the ticket); Jira → `Jira: <link>` (the `board:` link; without `ticket.md`, `https://<site>/browse/<ref>`, site from `getAccessibleAtlassianResources`); Azure Boards → the ref alone (`AB#1234`), which links it; another tracker → the item's link; no ticket → no link line.
+- Body: `## Summary` bullets from `ticket.md` and the commit subjects, then each observation from step 4 as one line `Observed: <what, where>`, then one link line in the tracker's syntax, last: GitHub → `Closes <repo>#<n>` (`<repo>` the lookup's `repo:`; merging into the default branch closes the ticket); Jira → `Jira: <link>` (the `board:` link; without `ticket.md`, `https://<site>/browse/<ref>`, site from `getAccessibleAtlassianResources`); Azure Boards → the ref alone (`AB#1234`), which links it; another tracker → the item's link; no ticket → no link line.
 
-**Merge on send**: a `CLAUDE.md` rule says to merge this repo's PRs on send, and the PR isn't a draft → `gh pr merge <url> --squash --delete-branch`. It fails → stop and show the output; the board move and cleanup don't run (GitHub has no board move: the merge closes the ticket).
+**Merge on send**: a `CLAUDE.md` rule says to merge this repo's PRs on send, and the PR isn't a draft → `gh pr merge <url> --squash --delete-branch`. It fails → stop and show the output; the board move and cleanup don't run (GitHub: a merge into the default branch closes the ticket by itself).
 
 **Conflicting PRs**: `gh pr list --state open --limit 100 --json number,title,headRefName,mergeable`. Every PR whose `headRefName` is not `<branch>` and whose `mergeable` is `CONFLICTING` goes into the report with its number, title and branch. `UNKNOWN` (GitHub works it out only once asked, so this is usual right after a merge) → run the list again right before the report (step 10); still `UNKNOWN` → report that PR as not yet checked. Their branches stay as they are: each one is rebased by `/send` in its own ticket's session.
 
@@ -134,7 +134,7 @@ gh pr create --base <base> --assignee @me [--label <label>] --title "<title>" --
 
 Runs after a successful push, even if the PR step failed; on a close, right after step 2; without git, right after step 1. No ticket → skip and say so.
 
-- **GitHub**: follow `${CLAUDE_SKILL_DIR}/GITHUB-SEND.md`. With a PR, there is no board write at all.
+- **GitHub**: follow `${CLAUDE_SKILL_DIR}/GITHUB-SEND.md`. With a PR, the board write is only the close after a merge into a non-default base.
 - **Jira** → `Code Review`, through the claude.ai Atlassian MCP (`cloudId` from `getAccessibleAtlassianResources`):
   1. `getJiraIssue`: status already `Code Review` → done.
   2. `getTransitionsForJiraIssue` → the transition whose target status is `Code Review` (any case) → `transitionJiraIssue`.
@@ -145,7 +145,7 @@ Runs after a successful push, even if the PR step failed; on a close, right afte
   - `leave` → don't move the item; report "close <ref> on the tracker yourself" with its link.
   - Else move the item to that state (Jira: the transition whose target status matches, any case) and add the comment `Closed without code: <reason>`. No such transition → report the available target statuses and change nothing.
 
-**Done when:** the ticket shows the new state, or the reason it doesn't is reported; on GitHub, no board write was made for a PR.
+**Done when:** the ticket shows the new state, or the reason it doesn't is reported; on GitHub, a PR merged into a non-default base has its ticket closed, and any other PR caused no board write.
 
 ## 9. Clean up
 

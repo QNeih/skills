@@ -24,8 +24,8 @@ No assignee.
 
 ## Branch
 
-- Name: a `hotfix` label, or `hotfix` in the title (any case) → `hotfix/<n>`; a `bug` label → `bugfix/<n>`; else `feature/<n>`.
-- Base: `develop` if it exists locally or on `origin`, else `main`.
+- Name: a `hotfix` label → `hotfix/<n>`; a `bug` label → `bugfix/<n>`; else `feature/<n>`.
+- Base: `develop` if it exists locally or on `origin`, else `main`. A PR into `develop` does not close the issue through `Closes`; `/send` closes it after the merge.
 - Nothing to note on the board: `/send` links the ticket through the PR's `Closes <ref>` line.
 
 ## Import

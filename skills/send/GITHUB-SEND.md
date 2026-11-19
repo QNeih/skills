@@ -6,7 +6,20 @@ Board writes go through `bash ${CLAUDE_SKILL_DIR}/tickets.sh`, run from inside t
 
 ## With a PR
 
-Write nothing to the board. The PR body's last line `Closes <repo>#<n>` closes the issue when the PR merges, and the Project moves a closed issue to Done by itself. The ticket stays `In Progress` until the merge.
+The PR body's last line `Closes <repo>#<n>` closes the issue when the PR merges into the repo's default branch, and the Project moves a closed issue to Done by itself. The ticket stays `In Progress` until the merge.
+
+After a merge on send, the PR's base decides:
+
+- The base is the repo's default branch (`gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`) → write nothing to the board.
+- Another base (for example `develop`): `Closes` does not fire. Close the issue now:
+
+```bash
+bash ${CLAUDE_SKILL_DIR}/tickets.sh close <n> --comment "Merged in <PR url>"
+```
+
+It prints `closed: <n>`. A failure → report its output.
+
+A PR left open → write nothing to the board.
 
 ## Close without code
 

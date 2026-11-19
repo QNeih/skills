@@ -65,7 +65,7 @@ Write the title and body from the ticket text, in the board's language and body 
 - Quinn's text is a rough dictation. Rewrite it as clean board text: correct spelling and grammar, drop filler and repeats, spell out shorthand ("fx" → "for example"; keep command, tool and product names), split run-on thoughts into the pattern's lines, and turn questions into what is to be found out ("Find out why /send fails from the app"). Keep every point and its meaning; add none.
 - Fill a pattern line only from what the ticket text (with Quinn's answers) says; drop the lines it gives nothing for, and report each dropped line as could not fix, with the cause "no source in the text". Effort, priority, offer item and benefit values come from Quinn, verbatim.
 - **Needs**: the ids the text names, each checked to exist (`tickets.sh show <n>` on GitHub, `getJiraIssue` on Jira); text names none → no blockers. An id that does not exist → ask Quinn.
-- **Labels**: `bug` only when the ticket is mainly a defect to fix; `urgent` when the text says urgent; `hotfix` when it says hotfix. `/work` cuts a `bugfix/` or `hotfix/` branch from `bug` and `hotfix`, so a feature that also fixes something gets neither. Only labels the board already uses, plus `bug`.
+- **Labels**: `bug` only when the ticket is mainly a defect to fix; `urgent` when the text says urgent; `hotfix` when it says hotfix. `/work` cuts a `bugfix/` or `hotfix/` branch from `bug` and `hotfix`, so a feature that also fixes something gets neither. No other labels.
 
 **Done when:** every point of the ticket text is in clean wording, every body line traces to the text, and every pattern line without a source is reported as could not fix.
 
