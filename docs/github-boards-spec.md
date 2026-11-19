@@ -43,27 +43,25 @@ The `gh` facts come from GitHub docs and read-only calls (2026-11-19). Dashboard
 
 ## Live check (SKL-39, 2026-11-19)
 
-Status: blocked after the first step. The token's account is an org `member` of `lisegmbh`, and the org forbids members from creating repositories (`members_can_create_repositories: false`). `gh repo create lisegmbh/...` returns HTTP 403. No sandbox repo exists, so only the Project step ran.
+Owner decision: wiki repos and Projects belong to the personal account `QuinnNei` for now. A move to the org `lisegmbh` comes later. Reason: the account is an org `member`, and the org sets `members_can_create_repositories: false`, so `gh repo create lisegmbh/...` returns HTTP 403. A member can create org Projects (empty test Project `sandbox-boards-test`, org number 10, left as is).
+
+Sandbox (kept, private): `QuinnNei/sandbox-boards-wiki`, `QuinnNei/sandbox-boards-code`, Project https://github.com/users/QuinnNei/projects/3 (`sandbox-boards-test`).
 
 | Behaviour | Result |
 | --- | --- |
-| Project created under the org | Works. `gh project create --owner lisegmbh` made `sandbox-boards-test` (private, number 10, https://github.com/orgs/lisegmbh/projects/10). A member may create Projects. |
-| Project linked to a repo | Not run: no repo to link. |
-| `addBlockedBy` across two repos, read back | Not run: no repos. |
-| `Closes lisegmbh/wiki#n` from a PR in a differently owned private repo | Not run: needs a repo under another owner (a `QuinnNei` repo) plus a wiki repo under the org. |
-| Workflows "item closed -> Done" and "PR merged -> Done" on a cross-repo close | Not run: needs the two repos. |
+| Project linked to the wiki repo | Works: `gh project link 3 --owner QuinnNei --repo QuinnNei/sandbox-boards-wiki`. |
+| Issues added to the Project | Works: `gh project item-add`. |
+| Blocked-by written and read across two repos | Works. `addBlockedBy` made wiki#2 blocked by wiki#1 and by code#1 (other repo). `blockedBy` returned both with `repository.nameWithOwner` and `state` OPEN. |
+| `Closes QuinnNei/sandbox-boards-wiki#2` from a squash-merged PR in the code repo | Works: wiki#2 is CLOSED (COMPLETED), `closedByPullRequestsReferences` names code PR 2. Closing worked while wiki#2 still had open blockers. |
+| Item status after the cross-repo close | Wiki#2 is `Done`; wiki#1 (untouched) stays `Todo`. Something set Done by itself; the API does not say which workflow did it. |
+| `Closes` from a differently owned private repo | Not testable: the org blocks repo creation, so no second owner exists. It would have shown whether a cross-owner `Closes` closes the issue and links the PR, and whether the customer-owned PR shows a link to an issue it cannot open. |
 
-Consequence: the design rests on org-owned wikis, and a member cannot create them. Quinn must decide one of:
+Decisions unchanged: GraphQL for blocked-by, `Closes <owner>/<wiki>#<n>` in the PR body, the Project moves a closed issue to Done. Tickets that create wiki repos use owner `QuinnNei` until the org move.
 
-- An org owner creates `sandbox-boards-wiki` and `sandbox-boards-code` (private) under `lisegmbh`, or raises the member repo-creation setting. `/new-project` and the board step also create wiki repos, so they fail the same way for a member; an org owner must create each org wiki, or the setting must change.
-- Or the wiki and Project take owner `QuinnNei` (user owner: per-person invites only).
-
-Dependent tickets: every ticket that creates a wiki repo (the board script `create`, `/new-project`, the migration script) is flagged until this is decided.
-
-What Quinn must do, once repos exist (the two workflows are web UI only):
-
-1. Open https://github.com/orgs/lisegmbh/projects/10, Settings, Workflows. Check "Item closed" is on with Status = Done, and "Pull request merged" is on with Status = Done.
-2. After the agent run closes a wiki issue through a PR from another repo with `Closes lisegmbh/sandbox-boards-wiki#n`, open the Project and check the item moved to Done in both cases.
+Web-UI checks for Quinn (only the UI shows them), on https://github.com/users/QuinnNei/projects/3, Workflows:
+1. "Item closed" is on with Status = Done.
+2. "Pull request merged" is on with Status = Done.
+3. To see which one fired, turn "Item closed" off, close wiki#1, and check it stays `Todo`; then turn it back on.
 
 ## Still open after the live check
 
