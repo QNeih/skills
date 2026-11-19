@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Vault project lookup, kept for /briefing only: the shared project.sh now reads the folder layout.
+# Vault project lookup, kept for /briefing and /wiki: the shared project.sh now reads the folder layout.
 # Goes with /briefing. Prints `key: value` lines; always exits 0 so callers read the reason.
 #   vault-lookup.sh             project of the current folder: project, note, dir, board, key
 #   vault-lookup.sh --note NAME folder of a project note: project, note, dir, board, key
