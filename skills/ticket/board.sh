@@ -54,7 +54,7 @@ create)
   # Project: the one project.md names, else the one titled <name>, else a new one
   number=$(awk 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit } /^project:/ { sub(/^project:[ \t]*/, ""); print; exit }' "$wiki/project.md" 2>/dev/null || true)
   if [ -z "$number" ]; then
-    number=$(gh project list --owner "$owner" --format json --jq ".projects[] | select(.title == \"$name\") | .number" | head -1)
+    number=$(gh project list --owner "$owner" -L 200 --format json --jq ".projects[] | select(.title == \"$name\") | .number" | head -1)
     [ -n "$number" ] || number=$(gh project create --owner "$owner" --title "$name" --format json --jq .number)
     gh project link "$number" --owner "$owner" --repo "$repo"
   fi

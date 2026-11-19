@@ -56,6 +56,7 @@ gh_can 'project list --owner QuinnNei' '4'
 out=$(bash "$SK/board.sh" create "$P2/beta")
 expect "half-made: keeps the wiki repo" "$([ "$(count '^repo create')" = 0 ] && echo kept)" "kept"
 expect "half-made: reuses the Project" "$out" "number: 4"
+expect "half-made: lists up to 200 Projects" "$(gh_calls | grep '^project list')" "project list --owner QuinnNei -L 200 --format json --jq .projects[] | select(.title == \"beta\") | .number"
 expect "half-made: links it" "$(gh_calls)" "project link 4 --owner QuinnNei --repo QuinnNei/beta-wiki"
 
 # project without a remote: the owner is given; without one it fails
