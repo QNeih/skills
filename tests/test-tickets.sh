@@ -85,6 +85,16 @@ expect "block: prints the result" "$out" "12: blocked by 3"
 grep -q '^api graphql -F issueId=ID12 -F blockingIssueId=ID3 -f query=' <<<"$(gh_calls)" \
   && pass "block: adds the blocked-by link" || fail "block: adds the blocked-by link"
 
+# a full item list (200) without the ticket: fails loudly, never "not on the Project"
+fixture_wiki big 'board: github' 'project: 8' 'repo: QuinnNei/big-wiki' 'owner: QuinnNei'
+gh_can 'project item-list 8 --owner QuinnNei -L 200 --format json' "$(jq -nc '{items: [range(1; 201) | {id: "X\(.)", status: "Todo", labels: [], content: {type: "Issue", number: ., title: "t"}}]}')"
+gh_can 'issue view 500 --repo QuinnNei/big-wiki --json number,title,body,labels,comments,state' '{"number":500,"title":"x","body":"","state":"OPEN","labels":[],"comments":[]}'
+gh_can 'api graphql -F owner=QuinnNei -F name=big-wiki -F number=500' "$(blk '')"
+cd "$PROJECTS_ROOT/big/big" || exit 1
+limit="tickets.sh: ticket 500 not found in the first 200 Project items: the board exceeds the item-list limit"
+err=$(t status 500 done 2>&1) && fail "full list: status fails" || expect "full list: status names the limit" "$err" "$limit"
+err=$(t show 500 2>&1) && fail "full list: show fails" || expect "full list: show names the limit" "$err" "$limit"
+
 # no project: fails
 cd "$FIX" && { t list >/dev/null 2>&1 && fail "no project: fails" || pass "no project: fails"; }
 done_testing

@@ -30,6 +30,19 @@ WIKI_OWNER=${REPO%%/*}; WIKI_NAME=${REPO#*/}
 
 items() { gh project item-list "$NUM" --owner "$OWNER" -L 200 --format json; }
 
+# item_of <n>: the Project item of ticket <n> as JSON, or empty when it is not on the Project.
+# A full list (200 items) without the ticket may just have cut it off: fail instead of guessing.
+item_of() {
+  local all; all=$(items)
+  jq -c --argjson n "$1" '[.items[] | select(.content.number == $n)][0] // empty' <<<"$all" | {
+    read -r found || found=
+    if [ -z "$found" ] && [ "$(jq '.items | length' <<<"$all")" -ge 200 ]; then
+      die "ticket $1 not found in the first 200 Project items: the board exceeds the item-list limit"
+    fi
+    printf '%s' "$found"
+  }
+}
+
 # issue_id <owner/name> <n>: node id
 issue_id() { gh issue view "$2" --repo "$1" --json id | jq -r .id; }
 
@@ -67,7 +80,8 @@ case $cmd in
   show)
     n=${1:?ticket number}
     issue=$(gh issue view "$n" --repo "$REPO" --json number,title,body,labels,comments,state)
-    status=$(items | jq -r --argjson n "$n" '[.items[] | select(.content.number == $n)][0].status // ""')
+    item=$(item_of "$n") || exit 1
+    status=$(jq -r '.status // ""' <<<"${item:-null}")
     jq --arg status "$status" --argjson blockers "$(blockers "$n")" '
       {number, title, body, state, status: $status,
        labels: [.labels[].name],
@@ -82,8 +96,9 @@ case $cmd in
       done) name=Done ;;
       *) die "unknown status $want (todo, in-progress, done)" ;;
     esac
-    item=$(items | jq -r --argjson n "$n" '[.items[] | select(.content.number == $n)][0].id // empty')
+    item=$(item_of "$n") || exit 1
     [ -n "$item" ] || die "ticket $n is not on the Project"
+    item=$(jq -r .id <<<"$item")
     project=$(gh project view "$NUM" --owner "$OWNER" --format json | jq -r .id)
     fields=$(gh project field-list "$NUM" --owner "$OWNER" -L 200 --format json)
     fid=$(jq -r '.fields[] | select(.name == "Status") | .id' <<<"$fields")
