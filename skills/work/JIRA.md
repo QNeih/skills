@@ -6,8 +6,6 @@ Jira goes through the claude.ai Atlassian MCP server. Its tools are missing or a
 
 - `<site>`, `<cloudId>`: from `getAccessibleAtlassianResources`. The board is a link → the site in the link. Else more than one site → ask which.
 - `<key>`: the board link's project key (`/projects/<KEY>/` or `/browse/<KEY>-<n>` in the URL), else the lookup's `key:`.
-- `board: jira-candidate` → `${CLAUDE_SKILL_DIR}/BOARD.md` has already checked that Jira knows `<key>`.
-
 The ticket id and ref are both `<KEY>-<n>`.
 
 ## Terms

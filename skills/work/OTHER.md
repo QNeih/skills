@@ -1,6 +1,6 @@
 # Other tracker
 
-The board is a `board:` link or text that names neither the vault nor Jira, e.g. an Azure DevOps boards URL. A link names the tool and the project; text names at least the tool.
+The board is a `board:` link or text that names neither GitHub nor Jira, e.g. an Azure DevOps boards URL. A link names the tool and the project; text names at least the tool.
 
 ## Connector
 
