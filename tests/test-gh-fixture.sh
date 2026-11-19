@@ -19,6 +19,12 @@ expect "gh: logs every call in order" "$(sed -n 3p <<<"$log")" "pr merge 9 --squ
 gh_can 'api graphql' '{"data":1}'
 expect "gh: arguments with spaces stay one logged line" "$(gh issue create --title 'a b' >/dev/null; gh_calls | tail -1)" "issue create --title a b"
 
+# gh_seq: matching calls get the answers one after the other, the last repeats
+gh_seq 'issue create' 'url/1' 'url/2'
+expect "gh_seq: first call" "$(gh issue create --title a)" "url/1"
+expect "gh_seq: second call" "$(gh issue create --title b)" "url/2"
+expect "gh_seq: the last answer repeats" "$(gh issue create --title c)" "url/2"
+
 # wiki fixture: x/{x,wiki} with a project.md
 fixture_wiki acme 'board: github' 'close: merge'
 [ -d "$PROJECTS_ROOT/acme/acme/.git" ] && [ -d "$PROJECTS_ROOT/acme/wiki/.git" ] \

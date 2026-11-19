@@ -54,7 +54,17 @@ for k in "$GH_DIR"/*.key; do
     [ "${#key}" -gt "${#best}" ] && { best=$key; file="${k%.key}.json"; }
   fi
 done
-[ -z "$best" ] || cat "$file"
+if [ -n "$best" ]; then
+  # a gh_seq answer: the n-th matching call prints the n-th line (the last line repeats)
+  if [ -f "${file%.json}.seq" ]; then
+    c="${file%.json}.count"; n=$(( $(cat "$c" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$c"
+    total=$(wc -l < "${file%.json}.seq" | tr -d ' ')
+    [ "$n" -le "$total" ] || n=$total
+    sed -n "${n}p" "${file%.json}.seq"
+  else
+    cat "$file"
+  fi
+fi
 exit 0
 GH
   chmod +x "$FIX/bin/gh"
@@ -64,6 +74,12 @@ GH
 gh_can() {
   local n; n=$(find "$GH_DIR" -name '*.key' | wc -l | tr -d ' ')
   printf '%s' "$1" > "$GH_DIR/$n.key"; printf '%s\n' "$2" > "$GH_DIR/$n.json"
+}
+# gh_seq <call prefix> <answer>...: answers the matching calls one after the other, one argument each
+gh_seq() {
+  local n; n=$(find "$GH_DIR" -name '*.key' | wc -l | tr -d ' ')
+  printf '%s' "$1" > "$GH_DIR/$n.key"; : > "$GH_DIR/$n.json"; shift
+  printf '%s\n' "$@" > "$GH_DIR/$n.seq"
 }
 # gh_calls: the logged calls, one per line
 gh_calls() { cat "$GH_LOG"; }

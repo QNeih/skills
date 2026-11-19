@@ -78,6 +78,13 @@ expect "close: comment" "$(gh_calls | tail -1)" "issue close 5 --repo QuinnNei/a
 t close 6 --comment "No code needed" --not-planned >/dev/null
 expect "close: not planned" "$(gh_calls | tail -1)" "issue close 6 --repo QuinnNei/acme-wiki --comment No code needed --reason not planned"
 
+# block: one blocker on an existing ticket
+: > "$GH_LOG"
+out=$(t block 12 3)
+expect "block: prints the result" "$out" "12: blocked by 3"
+grep -q '^api graphql -F issueId=ID12 -F blockingIssueId=ID3 -f query=' <<<"$(gh_calls)" \
+  && pass "block: adds the blocked-by link" || fail "block: adds the blocked-by link"
+
 # no project: fails
 cd "$FIX" && { t list >/dev/null 2>&1 && fail "no project: fails" || pass "no project: fails"; }
 done_testing

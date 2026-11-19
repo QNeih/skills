@@ -11,6 +11,8 @@
 #                                        prints `<n>: <Status>`
 #   tickets.sh create --title T [--body B] [--label a,b] [--blocked-by n,owner/name#n]
 #                                        creates the issue, adds it to the Project, prints its number
+#   tickets.sh block <n> <n|owner/name#n>
+#                                        marks ticket <n> as blocked by the other ticket; prints `<n>: blocked by <ref>`
 #   tickets.sh close <n> --comment TEXT [--not-planned]
 #                                        closes with the comment; --not-planned for a ticket with no code
 # Item lists pass an explicit limit of 200 (gh's default is 30). Blocked-by goes through GraphQL.
@@ -36,6 +38,17 @@ blockers() {
   gh api graphql -F owner="$WIKI_OWNER" -F name="$WIKI_NAME" -F number="$1" -f query='
 query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){blockedBy(first:50){nodes{number state repository{nameWithOwner}}}}}}' |
     jq -c '[.data.repository.issue.blockedBy.nodes[] | {ref: "\(.repository.nameWithOwner)#\(.number)", state}]'
+}
+
+# block <n> <ref>: ref is a number in the wiki repo or owner/name#n
+block() {
+  local b=$2 brepo bn
+  case $b in
+    */*#*) brepo=${b%#*}; bn=${b##*#} ;;
+    *) brepo=$REPO; bn=${b#\#} ;;
+  esac
+  gh api graphql -F issueId="$(issue_id "$REPO" "$1")" -F blockingIssueId="$(issue_id "$brepo" "$bn")" -f query='
+mutation($issueId:ID!,$blockingIssueId:ID!){addBlockedBy(input:{issueId:$issueId,blockingIssueId:$blockingIssueId}){clientMutationId}}' >/dev/null
 }
 
 cmd=${1:-}; [ $# -eq 0 ] || shift
@@ -98,18 +111,14 @@ case $cmd in
     n=${url##*/}
     gh project item-add "$NUM" --owner "$OWNER" --url "$url" >/dev/null
     if [ -n "$blocked" ]; then
-      me=$(issue_id "$REPO" "$n")
       IFS=, read -ra bs <<<"$blocked"
-      for b in "${bs[@]}"; do
-        case $b in
-          */*#*) brepo=${b%#*}; bn=${b##*#} ;;
-          *) brepo=$REPO; bn=${b#\#} ;;
-        esac
-        gh api graphql -F issueId="$me" -F blockingIssueId="$(issue_id "$brepo" "$bn")" -f query='
-mutation($issueId:ID!,$blockingIssueId:ID!){addBlockedBy(input:{issueId:$issueId,blockingIssueId:$blockingIssueId}){clientMutationId}}' >/dev/null
-      done
+      for b in "${bs[@]}"; do block "$n" "$b"; done
     fi
     echo "$n"
+    ;;
+  block)
+    block "${1:?ticket number}" "${2:?blocking ticket}"
+    echo "$1: blocked by $2"
     ;;
   close)
     n=${1:?ticket number}; shift
