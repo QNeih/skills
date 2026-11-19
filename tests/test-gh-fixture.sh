@@ -35,4 +35,7 @@ wt="$PROJECTS_ROOT/acme/acme/.claude/worktrees/ACM-1"
 expect "worktree: on its branch" "$(git -C "$wt" branch --show-current)" "feature/ACM-1"
 [ -d "$PROJECTS_ROOT/acme/wiki" ] && pass "worktree: wiki still beside the repo" || fail "worktree: wiki still beside the repo"
 
+# gh repo clone leaves an empty git repo with the origin
+gh repo clone QuinnNei/x-wiki "$FIX/cloned" >/dev/null
+expect "gh clone: origin is the cloned repo" "$(git -C "$FIX/cloned" remote get-url origin)" "https://github.com/QuinnNei/x-wiki.git"
 done_testing

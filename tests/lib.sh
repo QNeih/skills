@@ -34,7 +34,7 @@ fixture_repo() {
 # --- Stand-in gh and wiki fixture (the GitHub boards) ---
 # fixture_gh: a fake gh first on PATH. It appends each call's arguments (space-joined) as one
 # line to $GH_LOG and prints the canned answer whose key is the longest prefix of the call;
-# no match prints nothing and succeeds. Needs fixture_new first. Sets GH_DIR, GH_LOG.
+# no match prints nothing and succeeds. `repo clone <repo> <dir>` also creates <dir> as an empty git repo. Needs fixture_new first. Sets GH_DIR, GH_LOG.
 fixture_gh() {
   export GH_DIR="$FIX/gh-canned" GH_LOG="$FIX/gh.log"
   mkdir -p "$FIX/bin" "$GH_DIR"; : > "$GH_LOG"
@@ -42,6 +42,10 @@ fixture_gh() {
 #!/usr/bin/env bash
 call="$*"
 printf '%s\n' "$call" >> "$GH_LOG"
+# gh repo clone <owner/repo> <dir>: leave an empty git repo with that origin, like cloning an empty repo
+if [ "$1 $2" = "repo clone" ] && [ -n "${4:-}" ]; then
+  mkdir -p "$4" && git -C "$4" init -q -b main --template= && git -C "$4" remote add origin "https://github.com/$3.git"
+fi
 best=""
 for k in "$GH_DIR"/*.key; do
   [ -f "$k" ] || continue

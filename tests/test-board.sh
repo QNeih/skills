@@ -1,54 +1,75 @@
 #!/usr/bin/env bash
-# Board step file parts: board.sh creates a vault board and saves a board override,
-# checked in the note (the layout lookup no longer reads the vault; board.sh is replaced by SKL-39 ticket 04).
+# Board script (board.sh) with the stand-in gh: create makes the wiki repo, Project, labels,
+# link, clone and project.md without doing anything twice; set edits one settings line.
 . "$(dirname "$0")/lib.sh"
 SK="$REPO_DIR/skills/work"
 fixture_new
-noteboard() { sed -n "s/^board: \"\{0,1\}\(.*[^\"]\)\"\{0,1\}$/board: \1/p" "$1"; }
-colors='{"kanban-plugin":"board","tag-colors":[{"tagKey":"#urgent","color":"#ffffff","backgroundColor":"#e03131"}]}'
+fixture_gh
+P="$PROJECTS_ROOT/acme"
+fixture_repo "$P/acme" https://github.com/QuinnNei/acme.git
+count() { gh_calls | grep -c -- "$1" || true; }
+reset_gh() { rm -f "$GH_DIR"/*; : > "$GH_LOG"; }
 
-# Another board without tag colours, one with them
-fixture_note Beta
-printf -- '---\n\nkanban-plugin: board\n\n---\n\n## To do\n\n' > "$VAULT/Projects/Beta/Beta Board.md"
-fixture_note Gamma
-printf -- '## To do\n\n\n%%%% kanban:settings\n```\n%s\n```\n%%%%\n' "$colors" > "$VAULT/Projects/Gamma/Gamma Board.md"
+# fresh project: nothing exists on GitHub yet
+gh_can 'project create --owner QuinnNei' '7'
+out=$(bash "$SK/board.sh" create "$P/acme")
+calls=$(gh_calls)
+expect "create: private wiki repo under the project repo's owner" "$calls" "repo create QuinnNei/acme-wiki --private"
+expect "create: Project under the same owner" "$calls" "project create --owner QuinnNei --title acme --format json --jq .number"
+expect "create: links the Project to the wiki" "$calls" "project link 7 --owner QuinnNei --repo QuinnNei/acme-wiki"
+for l in urgent bug hotfix; do
+  expect "create: label $l" "$calls" "label create $l --repo QuinnNei/acme-wiki --force"
+done
+expect "create: clones the wiki into the layout" "$calls" "repo clone QuinnNei/acme-wiki $P/wiki"
+expect "create: prints the wiki" "$out" "wiki: $P/wiki"
+expect "create: prints the Project number" "$out" "number: 7"
+expect "create: prints the owner" "$out" "owner: QuinnNei"
+pm=$(cat "$P/wiki/project.md")
+expect "create: project.md is front matter" "$(head -1 <<<"$pm")" "---"
+expect "create: project.md board" "$pm" "board: github"
+expect "create: project.md Project number" "$pm" "project: 7"
 
-# obsidian: board created, lookup now finds a vault board
-fixture_note Acme
-mkdir -p "$PROJECTS_ROOT/acme"
-out=$(bash "$SK/board.sh" create "$VAULT/Projects/Acme/Acme.md")
-expect "create: prints the board file" "$out" "created: $VAULT/Projects/Acme/Acme Board.md"
-expect "create: board file exists" "$(test -f "$VAULT/Projects/Acme/Acme Board.md" && echo yes)" "yes"
-b=$(cat "$VAULT/Projects/Acme/Acme Board.md")
-expect "create: kanban board" "$b" "kanban-plugin: board"
-expect "create: To do column" "$b" "## To do"
-expect "create: In progress column" "$b" "## In progress"
-expect "create: Done column" "$b" "## Done"
-grep -qF '"tag-colors":[{"tagKey":"#urgent","color":"#ffffff","backgroundColor":"#e03131"}]' <<<"$b" \
-  && pass "create: tag colours copied from the board that has them" || fail "create: tag colours copied from the board that has them"
+# rerun: everything exists, nothing is created twice
+reset_gh
+gh_can 'repo view QuinnNei/acme-wiki' 'QuinnNei/acme-wiki'
+gh_can 'project list --owner QuinnNei' '7'
+bash "$SK/board.sh" create "$P/acme" >/dev/null
+for c in 'repo create' 'project create' 'project link' 'repo clone'; do
+  [ "$(count "^$c")" = 0 ] && pass "rerun: no '$c'" || fail "rerun: no '$c'"
+done
+[ "$(grep -c '^project:' "$P/wiki/project.md")" = 1 ] && pass "rerun: one project line" || fail "rerun: one project line"
 
-# existing board stays untouched
-echo keep > "$VAULT/Projects/Acme/Acme Board.md"
-out=$(bash "$SK/board.sh" create "$VAULT/Projects/Acme/Acme.md")
-expect "create: existing board reported" "$out" "exists: $VAULT/Projects/Acme/Acme Board.md"
-expect "create: existing board untouched" "$(cat "$VAULT/Projects/Acme/Acme Board.md")" "keep"
+# half-made: wiki repo exists but no local Project record; the Project of that title is reused
+P2="$PROJECTS_ROOT/beta"
+fixture_repo "$P2/beta" git@github.com:QuinnNei/beta.git
+reset_gh
+gh_can 'repo view QuinnNei/beta-wiki' 'QuinnNei/beta-wiki'
+gh_can 'project list --owner QuinnNei' '4'
+out=$(bash "$SK/board.sh" create "$P2/beta")
+expect "half-made: keeps the wiki repo" "$([ "$(count '^repo create')" = 0 ] && echo kept)" "kept"
+expect "half-made: reuses the Project" "$out" "number: 4"
+expect "half-made: links it" "$(gh_calls)" "project link 4 --owner QuinnNei --repo QuinnNei/beta-wiki"
 
-# no board in the vault has tag colours → board without them
-rm "$VAULT/Projects/Gamma/Gamma Board.md"
-fixture_note Delta
-bash "$SK/board.sh" create "$VAULT/Projects/Delta/Delta.md" >/dev/null
-b=$(cat "$VAULT/Projects/Delta/Delta Board.md")
-expect "create without colours: In progress column" "$b" "## In progress"
-grep -q tag-colors <<<"$b" && fail "create without colours: no tag-colors" || pass "create without colours: no tag-colors"
+# project without a remote: the owner is given; without one it fails
+P3="$PROJECTS_ROOT/gamma"
+fixture_repo "$P3/gamma"
+reset_gh
+gh_can 'project create --owner' '9'
+if bash "$SK/board.sh" create "$P3/gamma" >/dev/null 2>&1; then fail "no owner: fails"; else pass "no owner: fails"; fi
+expect "no owner: nothing asked of GitHub" "$([ -z "$(gh_calls)" ] && echo none)" "none"
+bash "$SK/board.sh" create "$P3/gamma" --owner lisegmbh >/dev/null
+expect "owner given: wiki repo under it" "$(gh_calls)" "repo create lisegmbh/gamma-wiki --private"
 
-# link or text answer → board override in the note
-fixture_note Omega 'repo: https://git.acme.test/omega'
-mkdir -p "$PROJECTS_ROOT/omega"
-url='https://dev.azure.test/acme/omega/_boards/board'
-bash "$SK/board.sh" set "$VAULT/Projects/Omega/Omega.md" "$url" >/dev/null
-expect "set: lookup reads the override" "$(noteboard "$VAULT/Projects/Omega/Omega.md")" "board: $url"
-expect "set: other properties kept" "$(cat "$VAULT/Projects/Omega/Omega.md")" "repo: https://git.acme.test/omega"
-bash "$SK/board.sh" set "$VAULT/Projects/Omega/Omega.md" 'Trello: team board #2' >/dev/null
-expect "set: replaces the override" "$(noteboard "$VAULT/Projects/Omega/Omega.md")" "board: Trello: team board #2"
-[ "$(grep -c '^board:' "$VAULT/Projects/Omega/Omega.md")" = 1 ] && pass "set: one board line" || fail "set: one board line"
+# set: exactly one settings line changes
+W="$P/wiki"
+printf -- '---\nboard: github\nproject: 7\nsentry: acme-web\nclose: merge\n---\nbody stays\n' > "$W/project.md"
+before=$(cat "$W/project.md")
+bash "$SK/board.sh" set "$W" close pr >/dev/null
+after=$(cat "$W/project.md")
+expect "set: line replaced" "$after" "close: pr"
+[ "$(diff <(echo "$before") <(echo "$after") | grep -c '^[<>]')" = 2 ] && pass "set: exactly one line differs" || fail "set: exactly one line differs"
+bash "$SK/board.sh" set "$W" key SKL >/dev/null
+expect "set: missing line added" "$(cat "$W/project.md")" "key: SKL"
+expect "set: body kept" "$(cat "$W/project.md")" "body stays"
+[ "$(grep -c '^key:' "$W/project.md")" = 1 ] && pass "set: one key line" || fail "set: one key line"
 done_testing
