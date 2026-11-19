@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sentry projects of a repo (skills/sentry-fix/sentry-projects.sh): DSN derivation and the note override.
+# Sentry projects of a repo (skills/sentry-fix/sentry-projects.sh): DSN derivation and the project.md override.
 # `sentry` is a stub on PATH; no live service is called.
 . "$(dirname "$0")/lib.sh"
 SCRIPT="$REPO_DIR/skills/sentry-fix/sentry-projects.sh"
@@ -39,28 +39,28 @@ expect "dsn: server project" "$out" "sentry: acme/api"
 out=$(cd /tmp && run "$r")
 expect "dsn: from another folder" "$out" "sentry: acme/web"
 
-# Override in the note wins; sentry is not called
-fixture_note Acme "sentry: acme/web"
+# Override in the wiki's project.md wins; sentry is not called
+fixture_wiki Acme "sentry: acme/web"
 rm -f "$FIX/sentry-calls"
-out=$(run "$r" "$VAULT/Projects/Acme/Acme.md")
+out=$(run "$r" "$PROJECTS_ROOT/Acme/wiki/project.md")
 expect "override: project" "$out" "sentry: acme/web"
 [ "$(grep -c '^sentry:' <<<"$out")" -eq 1 ] && pass "override: narrows to one" || fail "override: narrows to one: $out"
 [ ! -f "$FIX/sentry-calls" ] && pass "override: no sentry call" || fail "override: no sentry call"
 
-fixture_note Multi "sentry: \"acme/web, globex/other\""
-out=$(run "$r" "$VAULT/Projects/Multi/Multi.md")
+fixture_wiki Multi "sentry: \"acme/web, globex/other\""
+out=$(run "$r" "$PROJECTS_ROOT/Multi/wiki/project.md")
 expect "override list: first" "$out" "sentry: acme/web"
 expect "override list: second" "$out" "sentry: globex/other"
 
-# Note without the override → derived
-fixture_note Plain "repo: https://git.acme.test/acme"
-expect "note without override derives" "$(run "$r" "$VAULT/Projects/Plain/Plain.md")" "sentry: acme/api"
+# project.md without the override → derived
+fixture_wiki Plain "repo: acme/plain-wiki"
+expect "project.md without override derives" "$(run "$r" "$PROJECTS_ROOT/Plain/wiki/project.md")" "sentry: acme/api"
 
 # No DSN committed
 fixture_repo "$PROJECTS_ROOT/bare"
 out=$(run "$PROJECTS_ROOT/bare"); rc=$?
 expect "no dsn: none" "$out" "sentry: none"
-expect "no dsn: reason" "$out" "reason: no Sentry DSN committed in $PROJECTS_ROOT/bare; set sentry: <org>/<project> in the project note"
+expect "no dsn: reason" "$out" "reason: no Sentry DSN committed in $PROJECTS_ROOT/bare; set sentry: <org>/<project> in the wiki's project.md"
 [ $rc -eq 0 ] && pass "failure exits 0" || fail "failure exits 0 (got $rc)"
 
 # Not a git repo

@@ -10,7 +10,7 @@ Works in any repo whose Sentry DSNs are committed, from any folder. Everything i
 
 ## Terms
 
-- **Lookup**: `${CLAUDE_SKILL_DIR}/project.sh`, run with `VAULT` and `PROJECTS_ROOT` set to the vault and projects root named in `~/.claude/CLAUDE.md`. It prints `key: value` lines; `project: none` comes with a `reason:`.
+- **Lookup**: `${CLAUDE_SKILL_DIR}/project.sh`, run with `PROJECTS_ROOT` set to the projects root named in `~/.claude/CLAUDE.md` when it is given `--name`. It prints `key: value` lines (`dir`, `project`, `wiki`, `board`, …); `project: none` comes with a `reason:`.
 - **`<local>`**: the project's main checkout (the lookup's `dir`). Every git command runs as `git -C <local> …` or `git -C <worktree> …`, so the current folder never matters.
 - **`<id>`**: the issue's short id, lowercased (`ACME-4F2` → `acme-4f2`).
 - **Worktree**: `<local>/.claude/worktrees/sentry-fix-<id>` on branch `sentry-fix/<id>`.
@@ -19,14 +19,14 @@ Works in any repo whose Sentry DSNs are committed, from any folder. Everything i
 ## 1. Find the project
 
 - Run the lookup in the current folder.
-- `project: none`, or the caller named another project (e.g. `/briefing` hands over the project name) → run the lookup with `--note <project name>`.
-- Still no `dir` → ask Quinn for the project folder once. With a note, write the answer into its frontmatter as `local: <folder>`, so the lookup finds it next time.
+- `project: none`, or the caller named another project (e.g. `/briefing` hands over the project name) → run the lookup with `--name <project name>`.
+- Still no `dir` → ask Quinn for the project folder once.
 
-**Done when:** `<local>` is a git checkout, and the project note is known or confirmed absent.
+**Done when:** `<local>` is a git checkout, and `<settings>` (the lookup's `wiki` + `/project.md`) is known or confirmed absent.
 
 ## 2. Derive the Sentry setup
 
-1. **Projects**: `${CLAUDE_SKILL_DIR}/sentry-projects.sh <local> [<note>]` prints one `sentry: <org>/<project>` line per project (the note's `sentry` property wins over DSNs). `sentry: none` → show the reason; if no DSN is committed, or none belongs to a Sentry organization Quinn can see, ask Quinn once for `<org>/<project>` and write it into the note as `sentry: <org>/<project>`. `skipped:` lines → mention them in the report. Auth errors → stop with the fix (`sentry auth login`).
+1. **Projects**: `${CLAUDE_SKILL_DIR}/sentry-projects.sh <local> [<settings>]` prints one `sentry: <org>/<project>` line per project (the settings file's `sentry` property wins over DSNs). `sentry: none` → show the reason; if no DSN is committed, or none belongs to a Sentry organization Quinn can see, ask Quinn once for `<org>/<project>` and write it into `<settings>` front matter as `sentry: <org>/<project>`. `skipped:` lines → mention them in the report. Auth errors → stop with the fix (`sentry auth login`).
 2. **Environment** per project: `sentry api projects/<org>/<project>/environments/` lists `staging` → filter on `environment:staging`; else no environment filter.
 3. **Releases** per project: `sentry release list <org>/<project> --limit 1 --json` returns one → fixed issues get resolved `--in @next`; none → they stay unresolved and the report says `PR open`.
 4. **Base branch** `<base>`: `git -C <local> symbolic-ref --short refs/remotes/origin/HEAD` without its `origin/` (e.g. `main`). Unset → `git -C <local> remote set-head origin --auto` and read it again.

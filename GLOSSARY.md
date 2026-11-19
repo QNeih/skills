@@ -4,6 +4,10 @@ Quinn's personal Claude Code skills: the ticket flow (`/ticket`, `/work`, `/send
 
 ## Language
 
+**Board**:
+A project's ticket list: a GitHub Project in the project's wiki repo, where a ticket's id is its issue number. Construct uses Jira instead.
+_Avoid_: vault board, Kanban file
+
 **To-do**:
 An open line in the vault's briefing notes, tagged with its project. Quinn writes one with `/note`.
 _Avoid_: briefing note, project note
@@ -25,7 +29,7 @@ A check of one of a skill's scripts against fixed inputs, with no model involved
 _Avoid_: unit test, bash test
 
 **Live test**:
-A run of a whole skill through the model in a fixture vault and project, judged by the files, board and branches it leaves behind.
+A run of a whole skill through the model in a fixture vault, wiki and project, judged by the files, board and branches it leaves behind.
 _Avoid_: end-to-end test, `claude -p` test
 
 **Brain**:

@@ -16,7 +16,7 @@ Keep a list of what you created, what was already there and what you skipped; st
 ## 1. Project
 
 ```bash
-VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh --note "<project>"
+VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/vault-lookup.sh --note "<project>"
 ```
 
 Try the whole argument as `<project>` first. `project: none` and the argument has several words → the last word is the repo name and the rest is `<project>`; run it again. Still `project: none` → say its `reason:` and stop.

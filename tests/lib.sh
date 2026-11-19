@@ -31,6 +31,74 @@ fixture_repo() {
   [ -z "${2:-}" ] || git -C "$1" remote add origin "$2"
 }
 
+# --- Stand-in gh and wiki fixture (the GitHub boards) ---
+# fixture_gh: a fake gh first on PATH. It appends each call's arguments (space-joined) as one
+# line to $GH_LOG and prints the canned answer whose key is the longest prefix of the call;
+# no match prints nothing and succeeds. `repo clone <repo> <dir>` also creates <dir> as an empty git repo. Needs fixture_new first. Sets GH_DIR, GH_LOG.
+fixture_gh() {
+  export GH_DIR="$FIX/gh-canned" GH_LOG="$FIX/gh.log"
+  mkdir -p "$FIX/bin" "$GH_DIR"; : > "$GH_LOG"
+  cat > "$FIX/bin/gh" <<'GH'
+#!/usr/bin/env bash
+call="$*"
+printf '%s\n' "$call" >> "$GH_LOG"
+# gh repo clone <owner/repo> <dir>: leave an empty git repo with that origin, like cloning an empty repo
+if [ "$1 $2" = "repo clone" ] && [ -n "${4:-}" ]; then
+  mkdir -p "$4" && git -C "$4" init -q -b main --template= && git -C "$4" remote add origin "https://github.com/$3.git"
+fi
+best=""
+for k in "$GH_DIR"/*.key; do
+  [ -f "$k" ] || continue
+  key=$(cat "$k")
+  if [ "$call" = "$key" ] || [[ "$call" == "$key "* ]]; then
+    [ "${#key}" -gt "${#best}" ] && { best=$key; file="${k%.key}.json"; }
+  fi
+done
+if [ -n "$best" ]; then
+  # a gh_seq answer: the n-th matching call prints the n-th line (the last line repeats)
+  if [ -f "${file%.json}.seq" ]; then
+    c="${file%.json}.count"; n=$(( $(cat "$c" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$c"
+    total=$(wc -l < "${file%.json}.seq" | tr -d ' ')
+    [ "$n" -le "$total" ] || n=$total
+    sed -n "${n}p" "${file%.json}.seq"
+  else
+    cat "$file"
+  fi
+fi
+exit 0
+GH
+  chmod +x "$FIX/bin/gh"
+  export PATH="$FIX/bin:$PATH"
+}
+# gh_can <call prefix> <json>: canned answer for calls starting with the prefix
+gh_can() {
+  local n; n=$(find "$GH_DIR" -name '*.key' | wc -l | tr -d ' ')
+  printf '%s' "$1" > "$GH_DIR/$n.key"; printf '%s\n' "$2" > "$GH_DIR/$n.json"
+}
+# gh_seq <call prefix> <answer>...: answers the matching calls one after the other, one argument each
+gh_seq() {
+  local n; n=$(find "$GH_DIR" -name '*.key' | wc -l | tr -d ' ')
+  printf '%s' "$1" > "$GH_DIR/$n.key"; : > "$GH_DIR/$n.json"; shift
+  printf '%s\n' "$@" > "$GH_DIR/$n.seq"
+}
+# gh_calls: the logged calls, one per line
+gh_calls() { cat "$GH_LOG"; }
+
+# fixture_wiki <name> [project.md settings line...]: $PROJECTS_ROOT/<name>/{<name>,wiki};
+# wiki/project.md holds the settings as front matter.
+fixture_wiki() {
+  local name=$1; shift
+  fixture_repo "$PROJECTS_ROOT/$name/$name"
+  fixture_repo "$PROJECTS_ROOT/$name/wiki"
+  { echo '---'; printf '%s\n' "$@"; echo '---'; } > "$PROJECTS_ROOT/$name/wiki/project.md"
+  git -C "$PROJECTS_ROOT/$name/wiki" add project.md
+  git -C "$PROJECTS_ROOT/$name/wiki" -c user.name=t -c user.email=t@acme.test commit -q -m project
+}
+# fixture_wiki_worktree <name> <ticket>: worktree of the project repo on feature/<ticket>
+fixture_wiki_worktree() {
+  git -C "$PROJECTS_ROOT/$1/$1" worktree add -q "$PROJECTS_ROOT/$1/$1/.claude/worktrees/$2" -b "feature/$2"
+}
+
 # --- claude -p harness (live tests) ---
 # Runs use Quinn's real config (a temp CLAUDE_CONFIG_DIR is not logged in), so:
 # skills are installed as t-<name> (personal skills win name clashes), the fixture

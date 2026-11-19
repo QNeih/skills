@@ -12,20 +12,19 @@ The steps are the same on every board. What a board does at a step lives in its 
 
 | Board | Board file |
 | --- | --- |
-| Vault Kanban file (`board: vault`) | `${CLAUDE_SKILL_DIR}/VAULT.md` |
-| Jira (`board: jira-candidate`, or a link on an Atlassian site) | `${CLAUDE_SKILL_DIR}/JIRA.md` |
+| GitHub Project (`board: github`) | `${CLAUDE_SKILL_DIR}/GITHUB.md` |
+| Jira (`board: jira`, or a link on an Atlassian site) | `${CLAUDE_SKILL_DIR}/JIRA.md` |
 | Any other link or text, e.g. Azure DevOps | `${CLAUDE_SKILL_DIR}/OTHER.md` |
 
 ## 1. Project and board
 
-The vault path and the projects root are set in `~/.claude/CLAUDE.md` (a project `CLAUDE.md` may replace them). Run:
+Run from the project folder (a worktree works too):
 
 ```bash
-VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
+bash ${CLAUDE_SKILL_DIR}/project.sh
 ```
 
-- `project: none` → stop and print its `reason:`.
-- Then follow `${CLAUDE_SKILL_DIR}/BOARD.md` to get the board (on a Jira candidate it checks the key first), and read its board file.
+- Follow `${CLAUDE_SKILL_DIR}/BOARD.md` to get the board (`project: none` → it asks the board question), then read the board's file.
 - `<dir>` is the `dir:` line: the main checkout, or the project folder without git. **Git** means `git -C <dir> rev-parse` succeeds; without git, skip every git step and write no branch anywhere.
 
 **Done when:** project, `<dir>`, board and git-or-not are known, and the board file is read.
@@ -33,8 +32,8 @@ VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
 ## 2. Pick the ticket
 
 - `$ARGUMENTS` matches `[A-Z][A-Z0-9]+-[0-9]+` → that id.
-- Digits only → on a number-only tracker (`OTHER.md` › Ids) the digits are the id; else `<key>-<digits>`, `<key>` from the board file (vault: the lookup's `key:`). No key → stop and ask for the full id.
-- A number-only tracker's ref (`AB#1234`) → its number is the id.
+- Digits, with or without `#` → on GitHub or a number-only tracker (`OTHER.md` › Ids) the digits are the id; else `<key>-<digits>`, `<key>` from the lookup's `key:`. No key → stop and ask for the full id.
+- A number-only tracker's ref (`AB#1234`) or a GitHub ref (`owner/repo#12`) → its number is the id.
 - Empty → the board file's **Pick**: print the ranked list of unblocked tickets to Quinn, then take its top ticket.
 - Anything else → stop and ask for a ticket.
 
@@ -117,7 +116,7 @@ Then start the route in this session, with the `ticket.md` path as its input. Wi
   - When it reports, send the review's findings worth fixing to that sub-agent with SendMessage.
 - `/diagnosing-bugs`, `/grill-with-docs`, `/wayfinder` → read `~/.claude/skills/<name>/SKILL.md` and follow it, opening with a question to Quinn.
 - `/wayfinder` adds, while this session orchestrates its map:
-  - When the vault shows the current ticket `status: closed`, start the next frontier ticket in a new session without asking (with git: `claude --bg -w <its id>` from `<dir>`, so it works in that ticket's own worktree), and post one line naming it and why so Quinn can stop it. A report that only says "waiting on user" is not a close.
+  - When the current ticket's file shows `status: closed`, start the next frontier ticket in a new session without asking (with git: `claude --bg -w <its id>` from `<dir>`, so it works in that ticket's own worktree), and post one line naming it and why so Quinn can stop it. A report that only says "waiting on user" is not a close.
   - One ticket session at a time; research tickets go to background subagents alongside.
   - Archive the closed ticket's session right away: an idle unarchived session shows as waiting on Quinn.
   - Still ask before writing tickets for "Not yet specified" items and before starting `/to-spec`.

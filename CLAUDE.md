@@ -11,7 +11,7 @@ Rules for changing this repo. Terms: `GLOSSARY.md`.
 
 - `SKILL.md` and every other file an agent reads (this file, a file a skill points to) follow the `writing-for-agents` skill. Load it before writing or reviewing one.
 - Only a change that creates a skill, or rewrites most of an existing one, goes through the `skill-creator` skill, once: draft, then its eval loop. Where its writing guide disagrees with `writing-for-agents`, `writing-for-agents` wins.
-- For a skill that writes to git, a board or the vault, `skill-creator`'s test runs happen inside a fixture from `tests/lib.sh`, so the real vault and real projects stay untouched.
+- For a skill that writes to git, a board or the vault, `skill-creator`'s test runs happen inside a fixture from `tests/lib.sh`, so the real vault, real boards (GitHub Projects) and real projects stay untouched.
 
 ## Tests
 
