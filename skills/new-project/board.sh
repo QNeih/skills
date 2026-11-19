@@ -64,6 +64,15 @@ create)
 
   set_line "$wiki/project.md" board github
   set_line "$wiki/project.md" project "$number"
+
+  # Commit project.md and push, so the settings reach the wiki repo and colleagues
+  git -C "$wiki" add project.md
+  if ! git -C "$wiki" diff --cached --quiet; then
+    git -C "$wiki" commit -q -m "Board settings" -- project.md
+  fi
+  if git -C "$wiki" remote get-url origin >/dev/null 2>&1 && git -C "$wiki" rev-parse -q --verify HEAD >/dev/null; then
+    git -C "$wiki" push -q -u origin HEAD
+  fi
   echo "wiki: $wiki"; echo "repo: $repo"; echo "number: $number"; echo "owner: $owner"
   ;;
 set)

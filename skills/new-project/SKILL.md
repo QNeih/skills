@@ -1,112 +1,81 @@
 ---
 name: new-project
-description: Set up a new or existing project — folder and local git, project note, board, sidebar group, optional wiki — creating only what's missing. Never creates a GitHub repo.
+description: Set up a new or existing project — folder layout, project repo, wiki repo, GitHub board, sidebar group, optional brain wiki — creating only what's missing.
 argument-hint: "[name | clone URL], or nothing for the current folder"
 disable-model-invocation: true
 ---
 
 # New project
 
-`/new-project [name|clone URL]` makes a project ready in one go. Every step checks first and creates only what's missing, so a re-run on an existing project is safe. It never creates a GitHub repo: owner and visibility stay Quinn's call.
+`/new-project [name|clone URL]` makes a project ready in one go. Every step checks first and creates only what's missing, so a re-run on an existing project is safe.
 
-The vault path and the projects root are set in `~/.claude/CLAUDE.md` (a project `CLAUDE.md` may replace them). The lookup below is:
+A project `x` is the folder `<projects root>/x/` with two private repos: `x/` (the project repo) and `wiki/` (the wiki repo, which holds the board and `project.md`). The projects root is set in `~/.claude/CLAUDE.md` (a project `CLAUDE.md` may replace it). The lookup below prints the project's lines:
 
 ```bash
-cd <folder> && VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
+cd <folder> && PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
 ```
 
-Keep a list of what you created and what was already there; step 8 prints it.
+Keep a list of what you created and what was already there; step 6 prints it.
 
-## 1. Folder and git
+## 1. Folder and repo
 
-- **Empty** → the current folder: the lookup's `dir:` line run from here (the main checkout, also from a worktree). Leave it as it is: no `git init`, no move, even outside the projects root.
-- **Clone URL** (`https://…`, `git@…`, `ssh://…`) → `<repo>` is the last path part without `.git`. `<projects root>/<repo>` exists → use it untouched. Else `git clone <url> "<projects root>/<repo>"`.
-- **Name** → the first that exists:
-  1. `VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh --note "<name>"` prints a `dir:` that exists.
-  2. A folder directly under the projects root whose name matches `<name>` lowercased with spaces and hyphens removed.
+`<name>` is the project folder's name, `<project folder>` is `<projects root>/<name>` and `<repo>` is `<project folder>/<name>`.
 
-  Use that folder untouched. None → `mkdir "<projects root>/<name>"` and `git -C "<projects root>/<name>" init`.
+- **Empty** → the current folder: the lookup's `dir:` line run from here (the main checkout, also from a worktree). Its parent is `<project folder>`. A parent whose name differs from the folder's own → stop: "<dir> is not in the layout `<name>/<name>`: move it first."
+- **Clone URL** (`https://…`, `git@…`, `ssh://…`) → `<name>` is the last path part without `.git`. `<repo>` exists → use it untouched. Else `git clone <url> "<repo>"`, creating the parent folder first.
+- **Name** → `<repo>` exists → use it untouched. Else `mkdir -p "<repo>"` and `git -C "<repo>" init`.
 
-`<folder>` is its absolute path with symlinks resolved (`cd <folder> && pwd -P`) from here on.
+A repo made by `git init` has no origin: ask once "Owner for the new repos: <owner>? (a GitHub user or org)". Then `gh repo create <owner>/<name> --private --source "<repo>" --remote origin`, and remember `<owner>`.
 
-**Done when:** `<folder>` exists, and was cloned or `git init`-ed only if it was just created.
+`<repo>` is its absolute path with symlinks resolved (`cd <repo> && pwd -P`) from here on.
 
-## 2. Name
+**Done when:** `<repo>` exists inside `<name>/`, and has an origin or a remembered `<owner>`.
 
-Run the lookup.
+## 2. Board
 
-- `project: <name>` → the project has a note. Its name is the display name; say so, don't ask.
-- `project: none` → suggest a name from the folder or repo name: hyphens, underscores and dots become spaces, words start upper case, all-caps parts stay (`ACME-Proto` → "ACME Proto", `acme-shop` → "Acme Shop"). Ask once: "Name for the note and sidebar group: <suggestion>? Reply ok or another name."
+Run the lookup from `<repo>`.
 
-`<name>` is used for both.
+- `board: jira`, or `board:` a link or text → the board exists; go to the next step.
+- `board: github` → it exists when `number:` and `repo:` print; else run the create below.
+- `project: none` → run the create below. `<repo>` has no wiki yet: the one command makes the wiki repo, the Project, the labels, the `wiki/` clone and `wiki/project.md`, so an existing repo gets its board in this one step.
 
-**Done when:** Quinn confirmed `<name>`, or it came from the existing note.
-
-## 3. Note
-
-`<note>` is `<vault>/Projects/<name>/<name>.md`. It exists → leave its text as it is and go to the check below.
-
-Else draft one line on what the project is from the folder's `README*` or `CLAUDE.md`. Neither → ask once: "What is it, and for which client? (skip to leave it out)". Write:
-
-```markdown
----
-tags: [project]
-client: <client>
----
-
-# <name>
-
-<one line>
-
-## Links
-
-- <origin as a web link>
+```bash
+bash ${CLAUDE_SKILL_DIR}/board.sh create "<repo>" [--owner <owner>]
 ```
 
-Leave out `client` unless Quinn named one, the line if Quinn skipped, and `## Links` when `git -C <folder> remote get-url origin` fails. No `status`, no `updated`, no empty sections.
+Pass `--owner` only when `<repo>` has no origin; otherwise the wiki and the Project get the origin's owner. The script commits `wiki/project.md` and pushes it. It prints `wiki:`, `repo:`, `number:` and `owner:`; rerun the lookup and use its lines.
 
-**Check**: the lookup prints `project: <name>`, and `project.sh --note "<name>"` prints `dir: <folder>`. Both pass → done. Else add one property to the frontmatter and check again:
+Tasks that live elsewhere, on Quinn's word: after `create`, `bash ${CLAUDE_SKILL_DIR}/board.sh set "<wiki>" board "<link, text or jira>"`, and for Jira also `set "<wiki>" key "<KEY>"`.
 
-- `<folder>` is directly under the projects root and has an origin → `repo: <origin>`.
-- Otherwise, or still failing → `local: <folder>`.
+**Done when:** the lookup prints `project: <name>` with `board:`, and for `github` also `number:` and `repo:`.
 
-Still failing after `local` → report it as could not fix, with both lookups' `reason:` lines as the cause.
-
-**Done when:** the note exists and both lookups find each other, or the reason is printed.
-
-## 4. Board
-
-Run the lookup, then follow `${CLAUDE_SKILL_DIR}/BOARD.md`. It asks the board question only when the derivation fails; `obsidian` creates the board.
-
-**Done when:** BOARD.md's done line holds.
-
-## 5. Sidebar group
+## 3. Sidebar group
 
 Needs the desktop tools `create_group`, `move_sessions` and `change_directory` (load them with ToolSearch). Not available → this is the CLI: skip the step and say "Sidebar group skipped: not in the desktop app."
 
 1. `list_groups`. A group named `<square> - <name>` exists → use it.
 2. Else the square is the first of 🟥 🟧 🟨 🟩 🟦 🟪 🟫 ⬛ ⬜ that no group name starts with. All taken → ask which one. `create_group` with name `<square> - <name>`.
 3. `move_sessions` with `session_ids: ["self"]` and the group's id, unless `get_session` `self` shows it is already in it.
-4. `change_directory` to `<folder>`, unless the session already runs there. It takes effect when the turn ends; keep using absolute paths.
+4. `change_directory` to `<repo>`, unless the session already runs there. It takes effect when the turn ends; keep using absolute paths.
 
-**Done when:** this session is in the group and moving to `<folder>`, or the step is skipped with the reason said.
+**Done when:** this session is in the group and moving to `<repo>`, or the step is skipped with the reason said.
 
-## 6. Specs
+## 4. Specs
 
-The project is empty when `<folder>` holds nothing but `.git`. Then offer: "Plan it now? Type `/to-spec` for a small project or `/wayfinder` for a big one, here in this session." Not empty → no offer.
+The project is empty when `<repo>` holds nothing but `.git`. Then offer: "Plan it now? Type `/to-spec` for a small project or `/wayfinder` for a big one, here in this session." Not empty → no offer.
 
 **Done when:** the offer is made for an empty project, or it is not empty.
 
-## 7. Wiki
+## 5. Brain wiki
 
 `git -C "<vault>" remote get-url origin` fails → the vault is no brain: skip and say "Wiki skipped: `<vault>` is not a git repo with an origin."
 
-Else ask once: "Add a wiki? (yes/no)". Yes → run `/wiki <name>`, which takes it from here and prints its own lines. No → "Wiki skipped: Quinn said no."
+Else ask once: "Add a brain wiki? (yes/no)". Yes → run `/wiki <name>`, which takes it from here and prints its own lines. No → "Wiki skipped: Quinn said no."
 
 **Done when:** `/wiki` has run, or the step is skipped with the reason said.
 
-## 8. Report
+## 6. Report
 
-Print what was created, what was already there, and what was skipped or stopped and why, one line each: folder, git, note, board, sidebar group, wiki.
+Print what was created, what was already there, and what was skipped or stopped and why, one line each: folder, repo, wiki repo, Project, sidebar group, brain wiki.
 
 **Done when:** the report is printed.

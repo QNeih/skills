@@ -5,6 +5,10 @@
 SK="$REPO_DIR/skills/work"
 fixture_new
 fixture_gh
+# GitHub URLs resolve to local bare repos, so the push of project.md reaches a remote on disk
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.file://$FIX/remote/.insteadOf" GIT_CONFIG_VALUE_0=https://github.com/
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@acme.test GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@acme.test
+for r in QuinnNei/acme-wiki QuinnNei/beta-wiki lisegmbh/gamma-wiki; do git init -q --bare "$FIX/remote/$r.git"; done
 P="$PROJECTS_ROOT/acme"
 fixture_repo "$P/acme" https://github.com/QuinnNei/acme.git
 count() { gh_calls | grep -c -- "$1" || true; }
@@ -28,6 +32,9 @@ pm=$(cat "$P/wiki/project.md")
 expect "create: project.md is front matter" "$(head -1 <<<"$pm")" "---"
 expect "create: project.md board" "$pm" "board: github"
 expect "create: project.md Project number" "$pm" "project: 7"
+expect "create: commits project.md in the wiki" "$(git -C "$P/wiki" log --format=%s)" "Board settings"
+expect "create: pushes project.md to the wiki's origin" "$(git -C "$FIX/remote/QuinnNei/acme-wiki.git" show main:project.md)" "project: 7"
+[ -z "$(git -C "$P/wiki" status --porcelain)" ] && pass "create: wiki is clean" || fail "create: wiki is clean"
 
 # rerun: everything exists, nothing is created twice
 reset_gh
@@ -37,6 +44,7 @@ bash "$SK/board.sh" create "$P/acme" >/dev/null
 for c in 'repo create' 'project create' 'project link' 'repo clone'; do
   [ "$(count "^$c")" = 0 ] && pass "rerun: no '$c'" || fail "rerun: no '$c'"
 done
+[ "$(git -C "$P/wiki" rev-list --count HEAD)" = 1 ] && pass "rerun: no second commit" || fail "rerun: no second commit"
 [ "$(grep -c '^project:' "$P/wiki/project.md")" = 1 ] && pass "rerun: one project line" || fail "rerun: one project line"
 
 # half-made: wiki repo exists but no local Project record; the Project of that title is reused
