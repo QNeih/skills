@@ -31,7 +31,7 @@ The `gh` facts come from GitHub docs and read-only calls (2026-11-19). Dashboard
 ## Setup (one time)
 
 1. `gh auth refresh -s project` (done 2026-11-19).
-2. Decide owner per project: org `lisegmbh` or `QuinnNei`.
+2. The owner is the project repo's owner.
 3. Turn on the Project workflows "item closed → Done" and "PR merged → Done" (web UI only; defaults on per docs).
 
 ## Migration
