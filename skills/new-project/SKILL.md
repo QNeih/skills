@@ -1,6 +1,6 @@
 ---
 name: new-project
-description: Set up a new or existing project — folder and local git, project note, board, sidebar group — creating only what's missing. Never creates a GitHub repo.
+description: Set up a new or existing project — folder and local git, project note, board, sidebar group, optional wiki — creating only what's missing. Never creates a GitHub repo.
 argument-hint: "[name | clone URL], or nothing for the current folder"
 disable-model-invocation: true
 ---
@@ -15,7 +15,7 @@ The vault path and the projects root are set in `~/.claude/CLAUDE.md` (a project
 cd <folder> && VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
 ```
 
-Keep a list of what you created and what was already there; step 7 prints it.
+Keep a list of what you created and what was already there; step 8 prints it.
 
 ## 1. Folder and git
 
@@ -97,8 +97,16 @@ The project is empty when `<folder>` holds nothing but `.git`. Then offer: "Plan
 
 **Done when:** the offer is made for an empty project, or it is not empty.
 
-## 7. Report
+## 7. Wiki
 
-Print what was created, what was already there, and what was skipped or stopped and why, one line each: folder, git, note, board, sidebar group.
+`git -C "<vault>" remote get-url origin` fails → the vault is no brain: skip and say "Wiki skipped: `<vault>` is not a git repo with an origin."
+
+Else ask once: "Add a wiki? (yes/no)". Yes → run `/wiki <name>`, which takes it from here and prints its own lines. No → "Wiki skipped: Quinn said no."
+
+**Done when:** `/wiki` has run, or the step is skipped with the reason said.
+
+## 8. Report
+
+Print what was created, what was already there, and what was skipped or stopped and why, one line each: folder, git, note, board, sidebar group, wiki.
 
 **Done when:** the report is printed.
