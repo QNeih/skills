@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Project lookup. Prints `key: value` lines; always exits 0 so callers read the reason.
-#   project.sh             project of the current folder: project, note, dir, board, key
-#   project.sh --note NAME folder of a project note: project, note, dir, board, key
+#   vault-lookup.sh             project of the current folder: project, note, dir, board, key
+#   vault-lookup.sh --note NAME folder of a project note: project, note, dir, board, key
 # Env: VAULT (Obsidian vault), PROJECTS_ROOT (folder holding the project checkouts).
 set -u
 

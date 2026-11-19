@@ -20,7 +20,7 @@ disable-model-invocation: true
 bash ${CLAUDE_SKILL_DIR}/project.sh
 ```
 
-- `project: none` → stop and print its `reason:`.
+- `project: none` with a `reason:` that names a missing wiki → create the wiki and board: `bash ${CLAUDE_SKILL_DIR}/board.sh create "<dir: line>"`, then run the lookup again. Any other `reason:` → stop and print it.
 - `board: github` → GitHub; every board call goes through `bash ${CLAUDE_SKILL_DIR}/tickets.sh` (`list`, `show <n>`, `create`).
 - `board: jira` → Jira through the claude.ai Atlassian MCP server, project `key:` from the lookup. Its tools are missing or unauthenticated → stop and ask Quinn to run `/mcp` → "claude.ai Atlassian".
 - Any other value → stop: "/ticket writes GitHub and Jira boards only; <project>'s board is <board>."
