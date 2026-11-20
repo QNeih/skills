@@ -7,8 +7,8 @@ vault=${1:?usage: wiki.sh VAULT PROJECT [REMOTE]}
 project=${2:?usage: wiki.sh VAULT PROJECT [REMOTE]}
 remote=${3:-}
 here=$(cd "$(dirname "$0")" && pwd)
-dir="$vault/Projects/$project/wiki"
-ignore='Projects/*/wiki/'
+dir="$vault/wiki/projects/$project"
+ignore='wiki/projects/*/'
 
 # The wiki is its own repo, so the brain leaves it out of its commits
 touch "$vault/.gitignore"

@@ -9,7 +9,7 @@ set -euo pipefail
 brain=${1:?usage: brain-sync.sh <brain path>}
 [ -d "$brain/.git" ] || { echo "brain-sync: $brain is not a git repo" >&2; exit 1; }
 
-git -C "$brain" add -A -- . ':(exclude)Projects/*/wiki' ':(exclude)Projects/*/wiki/*'
+git -C "$brain" add -A -- . ':(exclude,glob)wiki/projects/*/**'
 if ! git -C "$brain" diff --cached --quiet; then
   git -C "$brain" commit -q -m "$(date +%F)"
 fi

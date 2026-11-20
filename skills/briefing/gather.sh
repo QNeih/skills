@@ -12,7 +12,7 @@ export LC_ALL=C
 here=$(cd "$(dirname "$0")" && pwd)
 [ -d "${VAULT:-}" ] || { echo "error: vault ${VAULT:-(VAULT not set)} not found"; exit 1; }
 # macOS hides iCloud folders from a process without Full Disk Access: the glob below would just find no projects.
-err=$(ls "$VAULT/Projects" 2>&1 >/dev/null) || { echo "error: can't read the vault: $err"; exit 1; }
+err=$(ls "$VAULT/wiki/projects" 2>&1 >/dev/null) || { echo "error: can't read the vault: $err"; exit 1; }
 notes_file="$VAULT/Briefing notes.md"
 
 # --done N...: numbers as the briefing showed them; resolve all to file lines before ticking any
@@ -71,11 +71,12 @@ is_project() {
 }
 # active: <name>\t<note> per active project
 active() {
-  for d in "$VAULT"/Projects/*/; do
-    d=${d%/}; n=$d/${d##*/}.md
+  for n in "$VAULT"/wiki/projects/*.md; do
+    case "$n" in *" Board.md") continue ;; esac
     [ -f "$n" ] && is_project "$n" || continue
     case "$(prop "$n" status)" in done|archived) continue ;; esac
-    printf '%s\t%s\n' "${d##*/}" "$n"
+    d=${n##*/}
+    printf '%s\t%s\n' "${d%.md}" "$n"
   done
 }
 # contacts <note>: one entry per line, from a block (`- a`) or inline (`[a, b]`) list; quotes stripped

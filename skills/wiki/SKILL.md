@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # Wiki
 
-`/wiki <project> [repo name]` gives a project a wiki: its own private GitHub repo, cloned inside the brain at `Projects/<Name>/wiki`, fed once a day from the project's notes. Every step checks first and creates only what's missing, so a re-run on a project that has a wiki changes nothing.
+`/wiki <project> [repo name]` gives a project a wiki: its own private GitHub repo, cloned inside the brain at `wiki/projects/<Name>`, fed once a day from the project's sources in `raw/<Name>`. Every step checks first and creates only what's missing, so a re-run on a project that has a wiki changes nothing.
 
 The brain is the vault. Its path and the projects root are set in `~/.claude/CLAUDE.md` (a project `CLAUDE.md` may replace them).
 
@@ -25,7 +25,7 @@ Only the `project:` line counts; a wiki needs no checkout, so `dir: none` is fin
 
 - `<name>`: the `project:` line.
 - `<repo>`: the repo name from the argument, else `<name>-wiki` with spaces as hyphens.
-- `<wiki>`: `<vault>/Projects/<name>/wiki`.
+- `<wiki>`: `<vault>/wiki/projects/<name>`.
 
 **Done when:** `<name>`, `<repo>` and `<wiki>` are set, or you stopped with the reason.
 
@@ -72,7 +72,8 @@ A command that fails → could not fix, with its message as the cause; go on wit
 The wiki carries its own setup steps. Follow `<wiki>/setup-prompt.md` with these answers in place of its questions:
 
 - brain folder: `<vault>`
-- project-notes folder: `<vault>/Projects/<name>`
+- project-notes folder: `<vault>/raw/<name>`, created when missing
+- step 2 (Place): leave the wiki where it is, without asking
 
 It records the folders and schedules the daily wiki task, or says why it could not.
 

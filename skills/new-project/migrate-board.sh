@@ -12,7 +12,7 @@
 # created again (its column rule is applied again, so a failed run can be repeated; In Progress
 # only moves a card that is still Todo). When the run
 # is complete the board file moves to <vault>/Archive/. The vault is VAULT, else two folders
-# above the board file's folder (<vault>/Projects/<name>/<board file>).
+# above the board file's folder (<vault>/wiki/projects/<board file>).
 # Needs gh, jq, and board.sh, tickets.sh and project.sh next to this script.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)

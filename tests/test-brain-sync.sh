@@ -28,24 +28,24 @@ bash "$SYNC" "$BRAIN" >/dev/null 2>&1; rc=$?
 [ "$(remote_count)" = "$before" ] && pass "no change: no new commit" || fail "no change: no new commit"
 
 # wiki folder is never part of the commit, with or without an ignore line
-mkdir -p "$BRAIN/Projects/Acme/wiki"
-echo page > "$BRAIN/Projects/Acme/wiki/page.md"
-echo note > "$BRAIN/Projects/Acme/Acme.md"
+mkdir -p "$BRAIN/wiki/projects/Acme"
+echo page > "$BRAIN/wiki/projects/Acme/page.md"
+echo note > "$BRAIN/wiki/projects/Acme.md"
 printf 'x' > "$BRAIN/.gitignore"
 bash "$SYNC" "$BRAIN" >/dev/null 2>&1
 files=$(remote_files)
-expect "wiki folder: project note is committed" "$files" "Projects/Acme/Acme.md"
-grep -q 'wiki' <<<"$files" && fail "wiki folder: left out of the commit" || pass "wiki folder: left out of the commit"
+expect "wiki folder: project note is committed" "$files" "wiki/projects/Acme.md"
+grep -q 'wiki/projects/Acme/\|wiki/projects/Acme$' <<<"$files" && fail "wiki folder: left out of the commit" || pass "wiki folder: left out of the commit"
 expect "wiki folder: ignore file not edited" "$(cat "$BRAIN/.gitignore")" "x"
 
 # a wiki folder that is itself a git repo is left out too
-git init -q -b main "$BRAIN/Projects/Acme/wiki"
-git -C "$BRAIN/Projects/Acme/wiki" commit -q --allow-empty -m w
+git init -q -b main "$BRAIN/wiki/projects/Acme"
+git -C "$BRAIN/wiki/projects/Acme" commit -q --allow-empty -m w
 echo again > "$BRAIN/again.md"
 bash "$SYNC" "$BRAIN" >/dev/null 2>&1
 files=$(remote_files)
 expect "wiki repo: other file is committed" "$files" "again.md"
-grep -q 'wiki' <<<"$files" && fail "wiki repo: left out of the commit" || pass "wiki repo: left out of the commit"
+grep -q 'wiki/projects/Acme/\|wiki/projects/Acme$' <<<"$files" && fail "wiki repo: left out of the commit" || pass "wiki repo: left out of the commit"
 
 # nothing changed and nothing unpushed: the network is not touched
 git -C "$BRAIN" remote set-url origin "$FIX/missing.git"

@@ -21,10 +21,10 @@ main_dir() {
 
 # Note paths, one per line
 notes() {
-  local d
-  for d in "$VAULT"/Projects/*/; do
-    d=${d%/}
-    [ -f "$d/${d##*/}.md" ] && echo "$d/${d##*/}.md"
+  local n
+  for n in "$VAULT"/wiki/projects/*.md; do
+    case "$n" in *" Board.md") continue ;; esac
+    [ -f "$n" ] && echo "$n"
   done
 }
 note_name() { basename "$1" .md; }

@@ -6,8 +6,8 @@ SK="$REPO_DIR/skills/new-project/migrate-board.sh"
 fixture_new; fixture_gh
 # No settings file yet: the migration makes the board first
 fixture_repo "$PROJECTS_ROOT/acme/acme" https://github.com/QuinnNei/acme.git
-mkdir -p "$VAULT/Projects/Acme"
-BOARD="$VAULT/Projects/Acme/Acme Board.md"
+mkdir -p "$VAULT/wiki/projects"
+BOARD="$VAULT/wiki/projects/Acme Board.md"
 # Cards newest first, as the vault keeps them
 {
   printf -- '---\n\nkanban-plugin: board\n\n---\n\n## To do\n\n'
@@ -92,13 +92,13 @@ expect "rerun: a kept card already Done keeps its Status" "$(grep -c '^project i
 # --key wins over the cards' key; cards under several keys give the board none
 one_card() { mkdir -p "$(dirname "$1")"; printf -- '## To do\n\n- [ ] **%s-1 · One**\n- [ ] **%s-2 · Two**\n' "$2" "$3" > "$1"; }
 fixture_repo "$PROJECTS_ROOT/beta" https://github.com/QuinnNei/beta.git
-one_card "$VAULT/Projects/Beta/Beta Board.md" OLD OLD
+one_card "$VAULT/wiki/projects/Beta Board.md" OLD OLD
 : > "$GH_LOG"
-bash "$SK" "$VAULT/Projects/Beta/Beta Board.md" "$PROJECTS_ROOT/beta" --key NEW >/dev/null 2>&1
+bash "$SK" "$VAULT/wiki/projects/Beta Board.md" "$PROJECTS_ROOT/beta" --key NEW >/dev/null 2>&1
 expect "--key names the board" "$(gh_calls)" "project create --owner QuinnNei --title beta (NEW) --format json --jq .number"
 fixture_repo "$PROJECTS_ROOT/gamma" https://github.com/QuinnNei/gamma.git
-one_card "$VAULT/Projects/Gamma/Gamma Board.md" AAA BBB
+one_card "$VAULT/wiki/projects/Gamma Board.md" AAA BBB
 : > "$GH_LOG"
-bash "$SK" "$VAULT/Projects/Gamma/Gamma Board.md" "$PROJECTS_ROOT/gamma" >/dev/null 2>&1
+bash "$SK" "$VAULT/wiki/projects/Gamma Board.md" "$PROJECTS_ROOT/gamma" >/dev/null 2>&1
 expect "cards under two keys: board without a key" "$(gh_calls)" "project create --owner QuinnNei --title gamma --format json --jq .number"
 done_testing

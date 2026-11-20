@@ -28,12 +28,12 @@ out=$("$GATHER" --add-contact Acme tom@acme.test ANNA@acme.test 2>&1)
 expect "add: prints what was added" "$out" "contacts Acme: added tom@acme.test"
 expect "add: new entry read back" "$(c Acme)" "contact: tom@acme.test"
 [ "$(c Acme | grep -c '^contact:')" = 3 ] && pass "add: existing entry (any case) not added twice" || fail "add: existing entry (any case) not added twice"
-expect "add: other properties kept" "$(cat "$VAULT/Projects/Acme/Acme.md")" "status: active"
+expect "add: other properties kept" "$(cat "$VAULT/wiki/projects/Acme.md")" "status: active"
 expect "add: client kept" "$(c Acme)" "client: Acme Corp"
 "$GATHER" --add-contact Quiet "@quiet.test" 'Quiet "ops" chat' >/dev/null
 expect "add: no contacts yet → list created" "$(c Quiet)" "contact: @quiet.test"
 expect "add: quotes survive" "$(c Quiet)" 'contact: Quiet "ops" chat'
-expect "add: @ entries quoted (YAML)" "$(cat "$VAULT/Projects/Quiet/Quiet.md")" '  - "@quiet.test"'
+expect "add: @ entries quoted (YAML)" "$(cat "$VAULT/wiki/projects/Quiet.md")" '  - "@quiet.test"'
 expect "add: still a project" "$("$GATHER" --contacts)" "# Quiet"
 "$GATHER" --add-contact Beta new@beta.test >/dev/null
 expect "add: inline list kept with new entry" "$(c Beta)" "contact: Beta dev chat"
