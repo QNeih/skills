@@ -1,6 +1,6 @@
 ---
 name: send
-description: Ship the current branch on any board — commit by concern, fix its leftovers, rebase, lint, test, push, open or reuse the PR, move the ticket (GitHub: the PR's `Closes` line closes it on merge), then clean up the branch, the ticket worktree and the ticket's files. A ticket branch with nothing on it is closed instead: the ticket closes with the reason, same cleanup. Closes the flow /work starts.
+description: Ship the current branch on any board — commit by concern, fix its leftovers, rebase, lint, test, push, open or reuse the PR, move the ticket (on GitHub, the PR's `Closes` line closes it on merge), then clean up the branch, the ticket worktree and the ticket's files. A ticket branch with nothing on it is closed instead; the ticket closes with the reason, same cleanup. Closes the flow /work starts.
 argument-hint: "[draft] [notes for the commit and PR wording, or the close reason]"
 ---
 
