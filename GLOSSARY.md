@@ -5,7 +5,7 @@ Quinn's personal Claude Code skills: the ticket flow (`/ticket`, `/work`, `/send
 ## Language
 
 **Board**:
-A project's ticket list: a GitHub Project in the project's wiki repo, where a ticket's id is its issue number. Construct uses Jira instead.
+A project's ticket list: a GitHub Project, in the project's wiki repo or, for a project without a wiki, in its code repo, where a ticket's id is its issue number. Construct uses Jira instead.
 _Avoid_: vault board, Kanban file
 
 **To-do**:

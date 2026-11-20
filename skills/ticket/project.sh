@@ -7,6 +7,9 @@
 # Settings come from wiki/project.md (front matter): board, repo, project (the Project's number),
 # owner, key. `board` defaults to github; `repo` and `owner` default to the wiki's origin, `owner`
 # then to the project repo's origin. A line with no value is not printed.
+# A project without a wiki folder keeps the same settings in <main checkout>/.claude/project.md;
+# `repo` and `owner` then default to the code repo's origin and no `wiki:` line is printed.
+# With neither file the output is `project: none` and a reason naming both places.
 # Env: PROJECTS_ROOT (folder holding the projects), needed only for --name.
 set -u
 
@@ -40,15 +43,21 @@ none() { echo "project: none"; echo "reason: $1"; exit 0; }
 
 # Print the lookup lines for the main checkout $1
 report() {
-  local dir=$1 root wiki settings board repo owner number key pr
+  local dir=$1 root wiki settings board repo owner number key pr base
   root=$(dirname "$dir"); wiki="$root/wiki"; settings="$wiki/project.md"
   echo "dir: $dir"
-  [ -d "$wiki" ] || none "no wiki at $wiki: run the board step to create the wiki and the board"
+  if [ -d "$wiki" ]; then
+    base=$wiki
+  elif [ -f "$dir/.claude/project.md" ]; then
+    base=$dir; settings="$dir/.claude/project.md"
+  else
+    none "no wiki at $wiki and no settings at $dir/.claude/project.md: run the board step to create the wiki and the board"
+  fi
   echo "project: $(basename "$root")"
-  echo "wiki: $wiki"
+  [ "$base" != "$wiki" ] || echo "wiki: $wiki"
   board=$(prop "$settings" board)
   echo "board: ${board:-github}"
-  repo=$(prop "$settings" repo); [ -n "$repo" ] || repo=$(origin_repo "$wiki")
+  repo=$(prop "$settings" repo); [ -n "$repo" ] || repo=$(origin_repo "$base")
   owner=$(prop "$settings" owner)
   [ -n "$owner" ] || owner=${repo%%/*}
   [ -n "$owner" ] || { pr=$(origin_repo "$dir"); owner=${pr%%/*}; }

@@ -39,7 +39,7 @@ expect "dsn: server project" "$out" "sentry: acme/api"
 out=$(cd /tmp && run "$r")
 expect "dsn: from another folder" "$out" "sentry: acme/web"
 
-# Override in the wiki's project.md wins; sentry is not called
+# Override in the project's settings file (wiki/project.md or .claude/project.md) wins; sentry is not called
 fixture_wiki Acme "sentry: acme/web"
 rm -f "$FIX/sentry-calls"
 out=$(run "$r" "$PROJECTS_ROOT/Acme/wiki/project.md")
@@ -60,7 +60,7 @@ expect "project.md without override derives" "$(run "$r" "$PROJECTS_ROOT/Plain/w
 fixture_repo "$PROJECTS_ROOT/bare"
 out=$(run "$PROJECTS_ROOT/bare"); rc=$?
 expect "no dsn: none" "$out" "sentry: none"
-expect "no dsn: reason" "$out" "reason: no Sentry DSN committed in $PROJECTS_ROOT/bare; set sentry: <org>/<project> in the wiki's project.md"
+expect "no dsn: reason" "$out" "reason: no Sentry DSN committed in $PROJECTS_ROOT/bare; set sentry: <org>/<project> in the project's settings file (wiki/project.md or .claude/project.md)"
 [ $rc -eq 0 ] && pass "failure exits 0" || fail "failure exits 0 (got $rc)"
 
 # Not a git repo

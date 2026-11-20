@@ -25,7 +25,7 @@ The projects root is set in `~/.claude/CLAUDE.md` (a project `CLAUDE.md` may rep
 PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
 ```
 
-`<dir>` is its `dir:` line: the main checkout, or the project folder without git. **Git** means `git -C <dir> rev-parse` succeeds. Its `board:` line is the board: `github`, `jira`, or another tracker's link or text; `repo:` is the GitHub board's wiki repo (`owner/name`). `project: none` → no board from the lookup; go on.
+`<dir>` is its `dir:` line: the main checkout, or the project folder without git. **Git** means `git -C <dir> rev-parse` succeeds. Its `board:` line is the board: `github`, `jira`, or another tracker's link or text; `repo:` is the GitHub board's repo (`owner/name`: the wiki repo, or the code repo when the project has no wiki). `project: none` → no board from the lookup; go on.
 
 Find the ticket. Its files are `<dir>/.scratch/<id>-<slug>/ticket.md` (title line `# <id>: …`, then `ref:`, `base:`, `board:`, and on Jira and other boards `branch:`) and `<dir>/.handoffs/HANDOFF-<id>.md`.
 
@@ -140,7 +140,7 @@ Runs after a successful push, even if the PR step failed; on a close, right afte
   2. `getTransitionsForJiraIssue` → the transition whose target status is `Code Review` (any case) → `transitionJiraIssue`.
   3. No such transition → report the available target statuses. MCP tools missing or unauthenticated → tell Quinn to run `/mcp` → "claude.ai Atlassian".
 - **Another tracker** → through its connector, move the item to its review state (with a PR) or its done state (without git), and add the PR link. No connector reachable → name the missing one.
-- **Close on Jira or another tracker** (instead of the Jira and Another tracker bullets): the state comes from `close:` in the settings file `<wiki>/project.md` (the lookup's `wiki:`).
+- **Close on Jira or another tracker** (instead of the Jira and Another tracker bullets): the state comes from `close:` in the settings file: `<wiki>/project.md` (the lookup's `wiki:`), or `<dir>/.claude/project.md` when the lookup prints no `wiki:` line.
   - No `close:` line → ask Quinn once: "Which state does closing a ticket without code move it to in <project>? Name the state, or `leave`." Save the answer as `close: "<answer>"` in that file's frontmatter, before the closing `---`. No wiki (`project: none`) → ask, don't save.
   - `leave` → don't move the item; report "close <ref> on the tracker yourself" with its link.
   - Else move the item to that state (Jira: the transition whose target status matches, any case) and add the comment `Closed without code: <reason>`. No such transition → report the available target statuses and change nothing.

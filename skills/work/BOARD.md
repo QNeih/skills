@@ -4,10 +4,10 @@ Shared by `/work`, `/ticket` and `/new-project`. Input: the project lookup's lin
 
 Read the lookup's `board:` line:
 
-- `github` → the GitHub Project linked to the wiki repo.
+- `github` → the GitHub Project (linked to the wiki repo, or to the code repo when the project has no wiki).
 - `jira` → Jira, with the lookup's `key:`. Tools of the claude.ai Atlassian MCP server missing or unauthenticated → stop and ask Quinn to run `/mcp` → "claude.ai Atlassian".
 - Any other value → that board. It is a link or text Quinn gave; a link names tool and project at once.
-- `project: none` (no wiki yet) → ask the board question.
+- `project: none` (no wiki and no `.claude/project.md` yet) → ask the board question.
 
 **Board question**, asked once, word for word:
 

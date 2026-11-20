@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # Ticket
 
-`/ticket <text>` creates one ticket on the project's board, shaped like the tickets already there, so `/work` can pick it up. On GitHub the ticket is an issue in the project's wiki repo, added to the Project in `Todo`; its number is its id.
+`/ticket <text>` creates one ticket on the project's board, shaped like the tickets already there, so `/work` can pick it up. On GitHub the ticket is an issue in the repo the lookup's `repo:` names (the wiki repo, or the code repo when the project has no wiki), added to the Project in `Todo`; its number is its id.
 
 ## 0. Arguments
 
@@ -20,7 +20,7 @@ disable-model-invocation: true
 bash ${CLAUDE_SKILL_DIR}/project.sh
 ```
 
-- `project: none` with a `reason:` that names a missing wiki → create the wiki and board: `bash ${CLAUDE_SKILL_DIR}/board.sh create "<dir: line>"`, then run the lookup again. Any other `reason:` → stop and print it.
+- `project: none` with a `reason:` that names a missing wiki and missing settings → create the wiki and board: `bash ${CLAUDE_SKILL_DIR}/board.sh create "<dir: line>"`, then run the lookup again. Any other `reason:` → stop and print it.
 - `board: github` → GitHub; every board call goes through `bash ${CLAUDE_SKILL_DIR}/tickets.sh` (`list`, `show <n>`, `create`).
 - `board: jira` → Jira through the claude.ai Atlassian MCP server, project `key:` from the lookup. Its tools are missing or unauthenticated → stop and ask Quinn to run `/mcp` → "claude.ai Atlassian".
 - Any other value → stop: "/ticket writes GitHub and Jira boards only; <project>'s board is <board>."

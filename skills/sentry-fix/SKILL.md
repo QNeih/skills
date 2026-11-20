@@ -22,7 +22,7 @@ Works in any repo whose Sentry DSNs are committed, from any folder. Everything i
 - `project: none`, or the caller named another project (e.g. `/briefing` hands over the project name) → run the lookup with `--name <project name>`.
 - Still no `dir` → ask Quinn for the project folder once.
 
-**Done when:** `<local>` is a git checkout, and `<settings>` (the lookup's `wiki` + `/project.md`) is known or confirmed absent.
+**Done when:** `<local>` is a git checkout, and `<settings>` (the lookup's `wiki` + `/project.md`, or `<local>/.claude/project.md` when it prints no `wiki`) is known or confirmed absent.
 
 ## 2. Derive the Sentry setup
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Project lookup (skills/work/project.sh): layout, worktree, settings, Jira, no wiki.
+# Project lookup (skills/work/project.sh): layout, worktree, settings (wiki or code repo), Jira, no wiki.
 . "$(dirname "$0")/lib.sh"
 LOOKUP="$REPO_DIR/skills/work/project.sh"
 fixture_new
@@ -68,8 +68,34 @@ expect "other board" "$(lookup "$PROJECTS_ROOT/trello/trello")" "board: https://
 fixture_repo "$PROJECTS_ROOT/lone/lone"
 out=$(lookup "$PROJECTS_ROOT/lone/lone"); rc=$?
 expect "no wiki: no project" "$out" "project: none"
-expect "no wiki: reason" "$out" "reason: no wiki at $PROJECTS_ROOT/lone/wiki: run the board step to create the wiki and the board"
+expect "no wiki: reason names both places" "$out" "reason: no wiki at $PROJECTS_ROOT/lone/wiki and no settings at $PROJECTS_ROOT/lone/lone/.claude/project.md: run the board step to create the wiki and the board"
 [ $rc -eq 0 ] && pass "no wiki exits 0" || fail "no wiki exits 0 (got $rc)"
+
+# No wiki folder, settings in the code repo's .claude/project.md
+fixture_repo "$PROJECTS_ROOT/solo/solo" https://github.com/QNeih/solo.git
+mkdir -p "$PROJECTS_ROOT/solo/solo/.claude"
+printf '%s\n' --- "project: 3" --- > "$PROJECTS_ROOT/solo/solo/.claude/project.md"
+out=$(lookup "$PROJECTS_ROOT/solo/solo"); rc=$?
+expect "code settings: project" "$out" "project: solo"
+expect "code settings: board defaults to github" "$out" "board: github"
+expect "code settings: repo defaults to the code repo's origin" "$out" "repo: QNeih/solo"
+expect "code settings: owner defaults to the origin's owner" "$out" "owner: QNeih"
+expect "code settings: number" "$out" "number: 3"
+absent "$out" wiki
+[ $rc -eq 0 ] && pass "code settings exit 0" || fail "code settings exit 0 (got $rc)"
+printf '%s\n' --- "project: 4" "owner: Other" "repo: Other/tickets" "key: SO" --- > "$PROJECTS_ROOT/solo/solo/.claude/project.md"
+fixture_wiki_worktree solo T-1
+out=$(lookup "$PROJECTS_ROOT/solo/solo/.claude/worktrees/T-1")
+expect "code settings: worktree reads the main checkout" "$out" "dir: $PROJECTS_ROOT/solo/solo"
+expect "code settings: repo override" "$out" "repo: Other/tickets"
+expect "code settings: owner override" "$out" "owner: Other"
+expect "code settings: key" "$out" "key: SO"
+# A wiki folder wins over .claude/project.md
+fixture_wiki both "board: jira"
+mkdir -p "$PROJECTS_ROOT/both/both/.claude"; printf '%s\n' --- "board: github" --- > "$PROJECTS_ROOT/both/both/.claude/project.md"
+out=$(lookup "$PROJECTS_ROOT/both/both")
+expect "wiki wins: board" "$out" "board: jira"
+expect "wiki wins: wiki line" "$out" "wiki: $PROJECTS_ROOT/both/wiki"
 
 # Not a git folder, no wiki
 mkdir -p "$FIX/plain/x"
