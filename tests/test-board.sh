@@ -59,6 +59,23 @@ expect "half-made: reuses the Project" "$out" "number: 4"
 expect "half-made: lists up to 200 Projects" "$(gh_calls | grep '^project list')" "project list --owner QuinnNei -L 200 --format json --jq .projects[] | select(.title == \"beta\") | .number"
 expect "half-made: links it" "$(gh_calls)" "project link 4 --owner QuinnNei --repo QuinnNei/beta-wiki"
 
+# wiki already cloned under another repo name: that repo holds the board, no <name>-wiki is made
+P4="$PROJECTS_ROOT/delta"
+fixture_repo "$P4/delta" https://github.com/QuinnNei/delta.git
+git init -q --bare "$FIX/remote/QuinnNei/delta-notes.git"
+git init -q -b main --template= "$P4/wiki" && git -C "$P4/wiki" remote add origin https://github.com/QuinnNei/delta-notes.git
+reset_gh
+gh_can 'repo view QuinnNei/delta-notes' 'QuinnNei/delta-notes'
+gh_can 'project create --owner QuinnNei' '11'
+out=$(bash "$SK/board.sh" create "$P4/delta")
+expect "cloned wiki: prints its repo" "$out" "repo: QuinnNei/delta-notes"
+expect "cloned wiki: links the Project to it" "$(gh_calls)" "project link 11 --owner QuinnNei --repo QuinnNei/delta-notes"
+expect "cloned wiki: labels go to it" "$(gh_calls)" "label create urgent --repo QuinnNei/delta-notes --force"
+for c in 'repo create' 'repo clone'; do
+  [ "$(count "^$c")" = 0 ] && pass "cloned wiki: no '$c'" || fail "cloned wiki: no '$c'"
+done
+expect "cloned wiki: pushes project.md to it" "$(git -C "$FIX/remote/QuinnNei/delta-notes.git" show main:project.md)" "project: 11"
+
 # project without a remote: the owner is given; without one it fails
 P3="$PROJECTS_ROOT/gamma"
 fixture_repo "$P3/gamma"

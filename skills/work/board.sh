@@ -2,7 +2,8 @@
 # File parts of the board step (BOARD.md): the GitHub board of a project in the folder layout
 # <projects root>/<name>/{<name>,wiki}.
 #   board.sh create PROJECT_DIR [--owner OWNER]
-#       make what is missing: private repo <name>-wiki, the Project <name>, labels urgent, bug,
+#       make what is missing: private repo <name>-wiki (or the repo of a wiki already cloned
+#       at <name>/wiki), the Project <name>, labels urgent, bug,
 #       hotfix, the link Project -> wiki repo, the wiki clone at <name>/wiki, wiki/project.md.
 #       OWNER defaults to the owner of PROJECT_DIR's origin. Safe to rerun: what exists is kept.
 #       Prints `wiki:`, `repo:`, `number:` and `owner:` lines.
@@ -41,7 +42,9 @@ create)
     pr=$(origin_repo "$dir"); owner=${pr%%/*}
   fi
   [ -n "$owner" ] || { echo "board.sh: $dir has no origin; pass --owner OWNER" >&2; exit 1; }
-  repo="$owner/$name-wiki"
+  # An existing wiki clone names the wiki repo (it may not be called <name>-wiki)
+  repo=$(origin_repo "$wiki")
+  [ -n "$repo" ] || repo="$owner/$name-wiki"
 
   # Wiki repo: private, same owner as the project repo
   if [ -z "$(gh repo view "$repo" --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)" ]; then
