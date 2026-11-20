@@ -24,7 +24,7 @@ Run from the project folder (a worktree works too):
 bash ${CLAUDE_SKILL_DIR}/project.sh
 ```
 
-- Follow `${CLAUDE_SKILL_DIR}/BOARD.md` to get the board (`project: none` → it asks the board question), then read the board's file.
+- Follow `${CLAUDE_SKILL_DIR}/BOARD.md` to get the board (no board yet → it asks the board question), then read the board's file.
 - `<dir>` is the `dir:` line: the main checkout, or the project folder without git. **Git** means `git -C <dir> rev-parse` succeeds; without git, skip every git step and write no branch anywhere.
 
 **Done when:** project, `<dir>`, board and git-or-not are known, and the board file is read.
@@ -32,8 +32,8 @@ bash ${CLAUDE_SKILL_DIR}/project.sh
 ## 2. Pick the ticket
 
 - `$ARGUMENTS` matches `[A-Z][A-Z0-9]+-[0-9]+` → that id.
-- Digits, with or without `#` → on GitHub or a number-only tracker (`OTHER.md` › Ids) the digits are the id; else `<key>-<digits>`, `<key>` from the lookup's `key:`. No key → stop and ask for the full id.
-- A number-only tracker's ref (`AB#1234`) or a GitHub ref (`owner/repo#12`) → its number is the id.
+- Digits, with or without `#` → on a number-only tracker (`OTHER.md` › Ids) the digits are the id; else `<key>-<digits>`, `<key>` from the lookup's `key:`. No key → on GitHub the digits are the id; elsewhere stop and ask for the full id.
+- A number-only tracker's ref (`AB#1234`) → its number is the id. A GitHub ref (`owner/repo#12`) → its number, read as digits above.
 - Empty → the board file's **Pick**: print the ranked list of unblocked tickets to Quinn, then take its top ticket.
 - Anything else → stop and ask for a ticket.
 

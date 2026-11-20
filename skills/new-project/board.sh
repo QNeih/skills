@@ -10,7 +10,8 @@
 #       `owner` setting, else the repo's owner; KEY defaults to the `key` setting.
 #       The Project is found again by the `project` setting, else by its title, with or without
 #       the ` (<KEY>)` part: a title's key is taken over when no key is known, and a title
-#       without one gets the known key added.
+#       without the key gets it added. A KEY given later, for a board that has none, is added to
+#       the title and the settings too.
 #       Safe to rerun: what exists is kept. Commits nothing.
 #       Prints `settings:`, `repo:`, `number:`, `owner:` and `key:` lines.
 #   board.sh set PROJECT_DIR KEY VALUE
@@ -77,7 +78,8 @@ create)
   [ -n "$owner" ] || owner=${repo%%/*}
   [ -n "$key" ] || key=$(prop key)
 
-  number=$(prop project)
+  # titled: whether the Project's title carries the key (yes, no, or unknown when found by number)
+  number=$(prop project); titled=unknown
   if [ -z "$number" ]; then
     # The owner's Projects titled <name> or <name> (<some key>), one per line: number TAB key
     found=$(gh project list --owner "$owner" -L 200 --format json | jq -r --arg n "$name" '
@@ -92,14 +94,18 @@ create)
     fi
     if [ -z "$pick" ]; then
       number=$(gh project create --owner "$owner" --title "$name${key:+ ($key)}" --format json --jq .number)
+      titled=yes
     else
       number=${pick%%$'\t'*}; titlekey=${pick#*$'\t'}
-      if [ -z "$key" ]; then key=$titlekey
-      elif [ -z "$titlekey" ]; then gh project edit "$number" --owner "$owner" --title "$name ($key)" >/dev/null
-      fi
+      [ -n "$key" ] || key=$titlekey
+      [ "$titlekey" = "$key" ] && titled=yes || titled=no
     fi
   fi
   [ -n "$number" ] || die "no Project number from gh"
+  # A key the title lacks, or a new key for a Project found by its number: the title gets it
+  if [ -n "$key" ] && { [ $titled = no ] || { [ $titled = unknown ] && [ "$key" != "$(prop key)" ]; }; }; then
+    gh project edit "$number" --owner "$owner" --title "$name ($key)" >/dev/null
+  fi
 
   # Link Project -> code repo, unless the repo already lists the Project
   linked=$(gh api graphql -F owner="${repo%%/*}" -F name="${repo#*/}" -f query='

@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # Ticket
 
-`/ticket <text>` creates one ticket on the project's board, shaped like the tickets already there, so `/work` can pick it up. On GitHub the ticket is an issue in the repo the lookup's `repo:` names (the wiki repo, or the code repo when the project has no wiki), added to the Project in `Todo`; its number is its id.
+`/ticket <text>` creates one ticket on the project's board, shaped like the tickets already there, so `/work` can pick it up. On GitHub the ticket is an issue in the project's code repo (the lookup's `repo:`), added to the Project in `Todo`. Its id is `<KEY>-<n>` when the lookup prints `key:` (`SKL-12`), else `#<n>`; `<n>` is the issue number.
 
 ## 0. Arguments
 
@@ -20,9 +20,10 @@ disable-model-invocation: true
 bash ${CLAUDE_SKILL_DIR}/project.sh
 ```
 
-- `project: none` with a `reason:` that names a missing wiki and missing settings → create the wiki and board: `bash ${CLAUDE_SKILL_DIR}/board.sh create "<dir: line>"`, then run the lookup again. Any other `reason:` → stop and print it.
-- `board: github` → GitHub; every board call goes through `bash ${CLAUDE_SKILL_DIR}/tickets.sh` (`list`, `show <n>`, `create`).
-- `board: jira` → Jira through the claude.ai Atlassian MCP server, project `key:` from the lookup. Its tools are missing or unauthenticated → stop and ask Quinn to run `/mcp` → "claude.ai Atlassian".
+Follow `${CLAUDE_SKILL_DIR}/BOARD.md` to get the board; with no board yet it asks the board question and creates one. Then:
+
+- `board: github` → GitHub; every board call goes through `bash ${CLAUDE_SKILL_DIR}/tickets.sh` (`list`, `show <n>`, `create`), which takes `<n>` or the id.
+- `board: jira` → Jira through the claude.ai Atlassian MCP server, project `key:` from the lookup.
 - Any other value → stop: "/ticket writes GitHub and Jira boards only; <project>'s board is <board>."
 
 **Done when:** the board is GitHub or Jira.
@@ -77,7 +78,7 @@ Write the title and body from the ticket text, in the board's language and body 
   bash ${CLAUDE_SKILL_DIR}/tickets.sh create --title "<title>" --body "<body>" --label "<a,b>" --blocked-by "<n,n>"
   ```
 
-  Leave out `--label` and `--blocked-by` when empty. It prints the issue number: the ticket id `#<n>`. A ticket with Needs shows as blocked on the board, and `/work` skips it until its blockers close.
+  Leave out `--label` and `--blocked-by` when empty. It prints the issue number `<n>`: the ticket id is `<KEY>-<n>`, or `#<n>` on a board without a key. A ticket with Needs shows as blocked on the board, and `/work` skips it until its blockers close.
 - Jira: `createJiraIssue` in project `<key>` (type `Bug` for a bug, else `Task`; summary, description, labels). Then one `createIssueLink` of type `Blocks` per Needs id, the Needs ticket as the blocker. The issue key is the ticket id.
 
 Print the id, the title and body, the labels, the blockers, and what it could not fix, and why.

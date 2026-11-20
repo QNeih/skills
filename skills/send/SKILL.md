@@ -25,12 +25,12 @@ The projects root is set in `~/.claude/CLAUDE.md` (a project `CLAUDE.md` may rep
 PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
 ```
 
-`<dir>` is its `dir:` line: the main checkout, or the project folder without git. **Git** means `git -C <dir> rev-parse` succeeds. Its `board:` line is the board: `github`, `jira`, or another tracker's link or text; `repo:` is the GitHub board's repo (`owner/name`: the wiki repo, or the code repo when the project has no wiki). `project: none` → no board from the lookup; go on.
+`<dir>` is its `dir:` line: the main checkout, or the project folder without git. **Git** means `git -C <dir> rev-parse` succeeds. Its `board:` line is the board: `github`, `jira`, or another tracker's link or text; `repo:` is the GitHub board's repo (`owner/name`, the code repo). `board: none` or `project: none` → no board from the lookup; go on.
 
 Find the ticket. Its files are `<dir>/.scratch/<id>-<slug>/ticket.md` (title line `# <id>: …`, then `ref:`, `base:`, `board:`, and on Jira and other boards `branch:`) and `<dir>/.handoffs/HANDOFF-<id>.md`.
 
-- **Git**: a session started in the main checkout that works on its ticket in the ticket worktree `/work` made (`<dir>/.claude/worktrees/<id>`) → `cd` there first; steps 1–9 run in it. `<branch>` = `git branch --show-current`. The `ticket.md` with the line `branch: <branch>` is the ticket. On GitHub the ticket stores no branch: the id is the issue number, the last path segment of `<branch>` (`feature/12` → `12`), and its folder is `<dir>/.scratch/12-*`.
-  - None → fallback for hand-cut branches: `<branch>` contains `[A-Z][A-Z0-9]+-[0-9]+` → that is the id and the ref, the board is the lookup's; `<branch>` ends in `/<digits>` on a GitHub board → that number is the id and the ref.
+- **Git**: a session started in the main checkout that works on its ticket in the ticket worktree `/work` made (`<dir>/.claude/worktrees/<id>`) → `cd` there first; steps 1–9 run in it. `<branch>` = `git branch --show-current`. The `ticket.md` with the line `branch: <branch>` is the ticket. On GitHub the ticket stores no branch: the id is the last path segment of `<branch>` (`feature/SKL-12` → `SKL-12`; on a board without a key `feature/12` → `12`), and its folder is `<dir>/.scratch/<id>-*`.
+  - None → fallback for hand-cut branches: `<branch>` contains `[A-Z][A-Z0-9]+-[0-9]+` → that is the id and the ref, the board is the lookup's; `<branch>` ends in `/<digits>` on a GitHub board → that number is the id.
   - Still none → no ticket: the PR goes out without one, no board move, no ticket files deleted. Say so.
 - **No git**: the `ticket.md` files with `branch: none` or no `branch:` line. `$ARGUMENTS` names an id → that one. Else one file → it. Else the ones whose ticket is `In Progress` on their board (GitHub: `bash ${CLAUDE_SKILL_DIR}/tickets.sh show <n>` prints `status`); exactly one → it, otherwise list them and ask. None → stop and print this line as is: `Nothing to send: no ticket in <dir>/.scratch.`
 
@@ -121,7 +121,7 @@ gh pr create --base <base> --assignee @me [--label <label>] --title "<title>" --
 
 - `--draft`: only when `$ARGUMENTS` has the word `draft`.
 - Label from `<branch>`'s prefix, case-insensitive: `hotfix/` → `hotfix`; `bugfix/` → `bugfix`; `feature/` → `feature`, else `enhancement`. Take the first of these that `gh label list` shows. None exists, or another prefix → open without a label and say so.
-- Title: `<ref>: <gist of the change>`; no ticket → the gist alone.
+- Title: `<ref>: <gist of the change>`; on GitHub `<id>: <gist of the change>` (`SKL-12: …`); no ticket → the gist alone.
 - Body: `## Summary` bullets from `ticket.md` and the commit subjects, then each observation from step 4 as one line `Observed: <what, where>`, then one link line in the tracker's syntax, last: GitHub → `Closes <repo>#<n>` (`<repo>` the lookup's `repo:`; merging into the default branch closes the ticket); Jira → `Jira: <link>` (the `board:` link; without `ticket.md`, `https://<site>/browse/<ref>`, site from `getAccessibleAtlassianResources`); Azure Boards → the ref alone (`AB#1234`), which links it; another tracker → the item's link; no ticket → no link line.
 
 **Merge on send**: a `CLAUDE.md` rule says to merge this repo's PRs on send, and the PR isn't a draft → `gh pr merge <url> --squash --delete-branch`. It fails → stop and show the output; the board move and cleanup don't run (GitHub: a merge into the default branch closes the ticket by itself).
@@ -140,8 +140,8 @@ Runs after a successful push, even if the PR step failed; on a close, right afte
   2. `getTransitionsForJiraIssue` → the transition whose target status is `Code Review` (any case) → `transitionJiraIssue`.
   3. No such transition → report the available target statuses. MCP tools missing or unauthenticated → tell Quinn to run `/mcp` → "claude.ai Atlassian".
 - **Another tracker** → through its connector, move the item to its review state (with a PR) or its done state (without git), and add the PR link. No connector reachable → name the missing one.
-- **Close on Jira or another tracker** (instead of the Jira and Another tracker bullets): the state comes from `close:` in the settings file: `<wiki>/project.md` (the lookup's `wiki:`), or `<dir>/.claude/project.md` when the lookup prints no `wiki:` line.
-  - No `close:` line → ask Quinn once: "Which state does closing a ticket without code move it to in <project>? Name the state, or `leave`." Save the answer as `close: "<answer>"` in that file's frontmatter, before the closing `---`. No wiki (`project: none`) → ask, don't save.
+- **Close on Jira or another tracker** (instead of the Jira and Another tracker bullets): the state comes from `close:` in the settings file `<dir>/.claude/project.md`.
+  - No `close:` line → ask Quinn once: "Which state does closing a ticket without code move it to in <project>? Name the state, or `leave`." Save the answer as `close: "<answer>"` in that file's front matter, before the closing `---`. With git and `<dir>` on its default branch → commit that file alone there and push it; another branch, or the push fails → report it as could not fix, with the cause. No settings file (`board: none` or `project: none`) → ask, don't save.
   - `leave` → don't move the item; report "close <ref> on the tracker yourself" with its link.
   - Else move the item to that state (Jira: the transition whose target status matches, any case) and add the comment `Closed without code: <reason>`. No such transition → report the available target statuses and change nothing.
 

@@ -1,8 +1,8 @@
 # GitHub board
 
-The board is a GitHub Project linked to the project's wiki repo; a ticket is an issue there. The ticket id and ref are the issue number `<n>`. The lookup's `repo:` is the wiki repo (`<owner>/<name>`).
+The board is a GitHub Project linked to the project's code repo; a ticket is an issue there, and `<n>` is its issue number. The ticket id is `<KEY>-<n>` when the lookup prints `key:` (`SKL-12`), else `<n>`. The ref is `<repo>#<n>`, `<repo>` the lookup's `repo:` (`<owner>/<name>`).
 
-Board writes go through `bash ${CLAUDE_SKILL_DIR}/tickets.sh`, run from inside the project.
+Board writes go through `bash ${CLAUDE_SKILL_DIR}/tickets.sh`, run from inside the project; it takes the id or `<n>` and prints `<n>`.
 
 ## With a PR
 

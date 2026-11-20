@@ -1,6 +1,6 @@
 ---
 name: new-project
-description: Set up a new or existing project — folder layout, project repo, wiki repo, GitHub board, sidebar group, optional brain wiki — creating only what's missing.
+description: Set up a new or existing project — folder, code repo, GitHub board, sidebar group, optional brain wiki — creating only what's missing.
 argument-hint: "[name | clone URL], or nothing for the current folder"
 disable-model-invocation: true
 ---
@@ -9,45 +9,36 @@ disable-model-invocation: true
 
 `/new-project [name|clone URL]` makes a project ready in one go. Every step checks first and creates only what's missing, so a re-run on an existing project is safe.
 
-A project `x` is the folder `<projects root>/x/` with two private repos: `x/` (the project repo) and `wiki/` (the wiki repo, which holds the board and `project.md`). The projects root is set in `~/.claude/CLAUDE.md` (a project `CLAUDE.md` may replace it). The lookup below prints the project's lines:
+A project `x` is one private code repo. Its checkout is `<projects root>/x` (flat) or `<projects root>/x/x` (nested: a project folder of the same name around it); a new project is flat. Its board is a GitHub Project linked to that repo, and its settings file is `.claude/project.md` in the checkout. The projects root is set in `~/.claude/CLAUDE.md` (a project `CLAUDE.md` may replace it). The lookup prints the project's lines:
 
 ```bash
-cd <folder> && PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
+cd <folder> && PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh [--name <name>]
 ```
 
 Keep a list of what you created and what was already there; step 6 prints it.
 
 ## 1. Folder and repo
 
-`<name>` is the project folder's name, `<project folder>` is `<projects root>/<name>` and `<repo>` is `<project folder>/<name>`.
+`<repo>` is the checkout and `<name>` its folder's name.
 
-- **Empty** → the current folder: the lookup's `dir:` line run from here (the main checkout, also from a worktree). Its parent is `<project folder>`. A parent whose name differs from the folder's own → stop: "<dir> is not in the layout `<name>/<name>`: move it first."
-- **Clone URL** (`https://…`, `git@…`, `ssh://…`) → `<name>` is the last path part without `.git`. `<repo>` exists → use it untouched. Else `git clone <url> "<repo>"`, creating the parent folder first.
-- **Name** → `<repo>` exists → use it untouched. Else `mkdir -p "<repo>"` and `git -C "<repo>" init`.
+- **Empty** → the current folder: `<repo>` is the lookup's `dir:` line run from here (the main checkout, also from a worktree).
+- **Clone URL** (`https://…`, `git@…`, `ssh://…`) → `<name>` is the last path part without `.git`. The lookup with `--name <name>` prints a `dir:` line → `<repo>` is that folder, untouched. Else `<repo>` is `<projects root>/<name>`: `git clone <url> "<repo>"`.
+- **Name** → the lookup with `--name <name>` prints a `dir:` line → `<repo>` is that folder, untouched. Else `<repo>` is `<projects root>/<name>`: `mkdir -p "<repo>"`.
 
-A repo made by `git init` has no origin: ask once "Owner for the new repos: <owner>? (a GitHub user or org)". Then `gh repo create <owner>/<name> --private --source "<repo>" --remote origin`, and remember `<owner>`.
+Then make what `<repo>` lacks:
+
+- No git (`git -C "<repo>" rev-parse` fails) → `git -C "<repo>" init`.
+- No origin (`git -C "<repo>" remote get-url origin` fails) → ask once "Owner for the new repo? (a GitHub user or org)", then `gh repo create <owner>/<name> --private --source "<repo>" --remote origin`.
 
 `<repo>` is its absolute path with symlinks resolved (`cd <repo> && pwd -P`) from here on.
 
-**Done when:** `<repo>` exists inside `<name>/`, and has an origin or a remembered `<owner>`.
+**Done when:** `<repo>` is a git checkout with an origin on GitHub.
 
 ## 2. Board
 
-Run the lookup from `<repo>`.
+Run the lookup from `<repo>` and follow `${CLAUDE_SKILL_DIR}/BOARD.md`. With no board yet it asks the board question, creates the board in the code repo and saves the settings file; a board that exists is left as it is.
 
-- `board: jira`, or `board:` a link or text → the board exists; go to the next step.
-- `board: github` → it exists when `number:` and `repo:` print; else run the create below.
-- `project: none` → run the create below. `<repo>` has no wiki yet: the one command makes the wiki repo, the Project, the labels, the `wiki/` clone and `wiki/project.md`, so an existing repo gets its board in this one step.
-
-```bash
-bash ${CLAUDE_SKILL_DIR}/board.sh create "<repo>" [--owner <owner>]
-```
-
-Pass `--owner` only when `<repo>` has no origin; otherwise the wiki and the Project get the origin's owner. The script commits `wiki/project.md` and pushes it. It prints `wiki:`, `repo:`, `number:` and `owner:`; rerun the lookup and use its lines.
-
-Tasks that live elsewhere, on Quinn's word: after `create`, `bash ${CLAUDE_SKILL_DIR}/board.sh set "<wiki>" board "<link, text or jira>"`, and for Jira also `set "<wiki>" key "<KEY>"`.
-
-**Done when:** the lookup prints `project: <name>` with `board:`, and for `github` also `number:` and `repo:`.
+**Done when:** the lookup prints `project: <name>` with a `board:` other than `none`, and for `github` also `number:` and `repo:`.
 
 ## 3. Sidebar group
 
@@ -62,7 +53,7 @@ Needs the desktop tools `create_group`, `move_sessions` and `change_directory` (
 
 ## 4. Specs
 
-The project is empty when `<repo>` holds nothing but `.git`. Then offer: "Plan it now? Type `/to-spec` for a small project or `/wayfinder` for a big one, here in this session." Not empty → no offer.
+The project is empty when `<repo>` holds nothing but `.git` and `.claude/`. Then offer: "Plan it now? Type `/to-spec` for a small project or `/wayfinder` for a big one, here in this session." Not empty → no offer.
 
 **Done when:** the offer is made for an empty project, or it is not empty.
 
@@ -76,6 +67,6 @@ Else ask once: "Add a brain wiki? (yes/no)". Yes → run `/wiki <name>`, which t
 
 ## 6. Report
 
-Print what was created, what was already there, and what was skipped or stopped and why, one line each: folder, repo, wiki repo, Project, sidebar group, brain wiki.
+Print what was created, what was already there, and what was skipped or stopped and why, one line each: folder, code repo, board, settings file, sidebar group, brain wiki.
 
 **Done when:** the report is printed.

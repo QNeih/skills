@@ -2,18 +2,33 @@
 
 Shared by `/work`, `/ticket` and `/new-project`. Input: the project lookup's lines (`project.sh`). Output: the project's board. `${CLAUDE_SKILL_DIR}` is the folder this file is in.
 
+`<dir>` is the lookup's `dir:` line. The **settings file** is `<dir>/.claude/project.md`; its front matter names the board.
+
 Read the lookup's `board:` line:
 
-- `github` → the GitHub Project (linked to the wiki repo, or to the code repo when the project has no wiki).
+- `github` with a `number:` line → the GitHub Project of that number, linked to the code repo (`repo:`).
 - `jira` → Jira, with the lookup's `key:`. Tools of the claude.ai Atlassian MCP server missing or unauthenticated → stop and ask Quinn to run `/mcp` → "claude.ai Atlassian".
+- `none`, `github` without a `number:` line, or `project: none` → no board yet: ask the board question.
 - Any other value → that board. It is a link or text Quinn gave; a link names tool and project at once.
-- `project: none` (no wiki and no `.claude/project.md` yet) → ask the board question.
 
 **Board question**, asked once, word for word:
 
 > Where are the tasks for <project> managed? Paste a link or describe it, or reply `github` and I'll create a board.
 
-- `github` → `bash ${CLAUDE_SKILL_DIR}/board.sh create <dir>`, `<dir>` the lookup's `dir:`. The board is the GitHub Project it makes.
-- A link or text → run the same `create` (the wiki holds the settings), then `bash ${CLAUDE_SKILL_DIR}/board.sh set <wiki> board "<answer>"`, `<wiki>` the `wiki:` line `create` printed. The board is the answer.
+- `github` → `bash ${CLAUDE_SKILL_DIR}/board.sh create <dir>`. It makes what is missing: the Project, its link to the code repo, the labels, the settings file. It fails → stop with its message.
+  - It prints a `key:` line → the board has its **key**: ticket ids are `<KEY>-<n>`, and the Project is titled `<project> (<KEY>)`.
+  - No `key:` line → ask once: "Key for <project>'s ticket ids, e.g. `SKL` for `SKL-12`? Reply `none` for plain issue numbers." A key → run the same `create` again with `--key <KEY>` added.
+- `jira` → `bash ${CLAUDE_SKILL_DIR}/board.sh set <dir> board jira`, then `set <dir> key <KEY>` with the Jira project key; ask for the key when Quinn gave none.
+- A link or text → `bash ${CLAUDE_SKILL_DIR}/board.sh set <dir> board "<answer>"`. The board is the answer.
 
-**Done when:** the board is GitHub, Jira with a known `key:`, or a link or text saved in the wiki's `project.md`.
+`create` and `set` write the settings file and commit nothing. With git, when `git -C <dir> status --porcelain -- .claude/project.md` prints a line: `<dir>` is on its default branch → commit that file alone and push it, so every worktree and colleague reads the same board:
+
+```bash
+git -C <dir> add .claude/project.md && git -C <dir> commit -m "Add board settings" -- .claude/project.md && git -C <dir> push -u origin HEAD
+```
+
+`<dir>` is on another branch, or the push fails → leave the file as it is and report it as could not fix, with the cause.
+
+Then run the lookup again and use its lines.
+
+**Done when:** the board is GitHub with a `number:`, Jira with a known `key:`, or a link or text saved in the settings file; and the settings file is committed and pushed, or reported as could not fix.

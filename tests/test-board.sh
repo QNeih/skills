@@ -94,6 +94,17 @@ expect "found by title without a key: reused" "$out" "number: 6"
 expect "found by title without a key: title gets the key" "$(gh_calls)" "project edit 6 --owner QuinnNei --title gamma (GAM)"
 [ "$(count '^project create')" = 0 ] && pass "found by title without a key: none created" || fail "found by title without a key: none created"
 
+# A key given later, for a board made without one: title and settings get it; the next run changes nothing
+reset_gh
+out=$(bash "$SK/board.sh" create "$F" --key SOL)
+expect "key given later: the title gets it" "$(gh_calls)" "project edit 3 --owner QNeih --title solo (SOL)"
+expect "key given later: saved" "$(settings "$F")" "key: SOL"
+expect "key given later: printed" "$out" "key: SOL"
+[ "$(count '^project create')" = 0 ] && pass "key given later: no second Project" || fail "key given later: no second Project"
+reset_gh
+bash "$SK/board.sh" create "$F" --key SOL >/dev/null
+[ "$(count '^project edit')" = 0 ] && pass "key already saved: title left alone" || fail "key already saved: title left alone"
+
 # A Project of that name under another key is another board: a new one is made
 P4="$PROJECTS_ROOT/delta/delta"
 fixture_repo "$P4" https://github.com/QuinnNei/delta.git
