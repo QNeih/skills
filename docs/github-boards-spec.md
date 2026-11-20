@@ -1,68 +1,87 @@
 # Spec: boards on GitHub
 
-The `gh` facts come from GitHub docs and read-only calls (2026-11-19). Dashboard, briefing and the wiki-to-brain sync are out of scope.
+A project's board lives in its code repo. The `gh` facts come from GitHub docs and from the live check below.
 
 ## Model
 
-- Project `x` = folder `/Projects/x/` with repo `x/` and wiki repo `wiki/`.
-- Board = GitHub Project (v2) linked to the wiki repo. Ticket = issue in the wiki repo. Id = issue number.
-- `wiki/project.md` holds the settings: `board: github | jira`, `sentry:`, `close:`, Jira `key:`.
-- Owner = the repo's owner. An org owner gives colleagues base-role access; a user owner only per-person invites.
+- **Project** `x` = one code repo. Its main checkout is `<projects root>/x` (flat) or `<projects root>/x/x` (nested, in a project folder of the same name). The project's name is the checkout folder's name.
+- **Board** = GitHub Project (v2) linked to the code repo, titled `<name> (<KEY>)`, e.g. `skills (SKL)`. Without a key the title is `<name>`.
+- **Ticket** = issue in the code repo. `<n>` is the issue number.
+- **Id** = `<KEY>-<n>` when the board has a key (`SKL-12`), else `<n>`, shown as `#<n>`. Branches are `feature/<id>`, `bugfix/<id>`, `hotfix/<id>`; a ticket is shown as `<id> · <title>`.
+- **Ref** = `<repo>#<n>`, the form a PR's `Closes` line uses.
+- **Settings file** = `<main checkout>/.claude/project.md`, committed on the default branch. Front matter:
 
-## Skill and script changes
+  | Key | Meaning | Default |
+  | --- | --- | --- |
+  | `board` | `github`, `jira`, or another tracker's link or text | `github` |
+  | `project` | the Project's number | none |
+  | `owner` | the Project's owner | the repo's owner |
+  | `key` | the key in the ticket ids (GitHub) or the Jira project key | none |
+  | `repo` | `owner/name` of the repo holding the issues | the checkout's origin |
+  | `sentry`, `close` | per-project choices of `/sentry-fix` and `/send` | none |
 
-| Part | Today | After |
-| --- | --- | --- |
-| `project.sh` | vault note, board file, key from cards | name from the parent folder, wiki at `../wiki`, settings from `wiki/project.md`; prints `board: github\|jira`, `wiki:`, `owner/repo` |
-| `board.sh` | `create` makes a vault board, `set` writes a note override | `create` makes wiki repo, Project, Status columns, link; `set` edits `project.md` |
-| `/work` pick | unblocked `To do` cards, `#urgent` first | `gh project item-list -L 200 --query "status:Todo"`, drop issues with an open blocker, `urgent` label first |
-| `/work` claim | move card to In progress | `item-edit` Status = In progress |
-| `/work` branch | name from tags; `Branch` line on card | name from labels (`bug`, `hotfix`) and issue number; no stored line |
-| `/work` import | card lines to `ticket.md` | issue body and comments to `ticket.md` (`gh issue view --json`) |
-| `/ticket` | append a card to `To do`, next key from board | `gh issue create` in the wiki repo, label, `addBlockedBy` for `Needs`, add to Project |
-| `/send` | card to Done, `PR <url>` line | PR body `Closes owner/wiki#n`; merge closes the issue; Project workflow sets Done; no board write |
-| `/send` close | card to Done with reason | close issue with a comment (`--reason`) |
-| `/new-project` | board question, `board.sh` | create repo and wiki repo, Project, `project.md`, folder layout |
-| `/briefing` | reads boards | out of scope; drop `vault_merged` |
-| `/note`, `/add-context`, `/sentry-fix` | project lookup | same lookup, new `project.sh` output |
-| `~/.claude/CLAUDE.md` | Vault path, Boards section | remove Vault; Boards: GitHub Project in the wiki repo; Jira for construct |
-| Jira path | `board: jira-candidate` | `board: jira` in `project.md`; flow unchanged |
+- A **wiki** repo is optional and holds pages only. In the nested layout it may sit next to the checkout as `<name>/wiki`. No board script reads or creates it.
+- An org owner gives colleagues base-role access to the Project; a user owner only per-person invites.
+
+## Scripts
+
+Copies of one script are identical in every skill that carries it; `tests/shared-copies.sh` compares them.
+
+| Script | Behaviour |
+| --- | --- |
+| `project.sh` | The lookup. Finds the main checkout from any folder inside it (nested when the checkout's parent folder has its name, else flat) or by `--name` under the projects root. Prints `dir:`, `project:`, `wiki:` (nested, when the folder exists), `board:`, `repo:`, `number:`, `owner:`, `key:`. Without a settings file: `board: none` and a `reason:`. Outside a checkout and without a settings file: `project: none` and a `reason:`. |
+| `board.sh create` | Makes what is missing: the Project (found again by the `project` setting, else by title), its link to the code repo, the labels `urgent`, `bug`, `hotfix`, the settings file. Commits nothing. |
+| `board.sh set` | Sets one line of the settings file; creates the file when missing. |
+| `tickets.sh` | `list`, `show`, `status`, `create`, `block`, `close` on issues in the code repo and their Project items. Takes `<n>`, `#<n>` or `<KEY>-<n>`; prints `<n>`. |
+| `migrate-board.sh` | One-off: a vault Kanban board becomes issues on the code repo's board. |
+
+## Skills
+
+| Skill | On a GitHub board |
+| --- | --- |
+| Board step (`BOARD.md`) | No board yet → asks where the tasks are managed; `github` → `board.sh create`, then asks for a key when the board has none; the settings file is committed on the default branch and pushed. |
+| `/work` pick | `tickets.sh list`: `Todo` items without an open blocker, `urgent` label first, then lowest number. |
+| `/work` claim | Status → In Progress. No assignee. |
+| `/work` branch | Name from the labels (`bug`, `hotfix`) and the id. Nothing stored on the ticket. |
+| `/work` import | Issue body and comments into `ticket.md`. |
+| `/ticket` | `tickets.sh create`: issue in the code repo, labels, blocked-by for Needs, added to the Project. |
+| `/send` | PR body ends with `Closes <repo>#<n>`. A merge into the default branch closes the issue and the Project sets Done. A merge into another base closes nothing, so `/send` closes the issue. |
+| `/send` close | Closes the issue as not planned, with the reason as a comment. |
+| `/new-project` | Folder, code repo, board step. A new project is flat. A wiki comes from `/wiki`, on request. |
+| `/note`, `/add-context`, `/sentry-fix` | Use the lookup's `dir:` and `project:`; `/sentry-fix` reads `sentry:` from the settings file. |
+| Jira | `board: jira` and `key:` in the settings file; flow unchanged. |
 
 ## Setup (one time)
 
-1. `gh auth refresh -s project` (done 2026-11-19).
-2. The owner is the project repo's owner.
-3. Turn on the Project workflows "item closed → Done" and "PR merged → Done" (web UI only; defaults on per docs).
+1. `gh auth refresh -s project`.
+2. Per Project, turn on the workflows "Item closed → Done" and "Pull request merged → Done" (web UI only; on by default per the docs).
 
-## Migration
+## Migration from a vault board
 
-1. Per project: create the wiki repo, Project, labels (`urgent`, `bug`, `hotfix`).
-2. Each card becomes an issue titled with the card title: To do → open, In progress → open with Status In progress, Done → closed. Tags become labels; `Needs:` becomes blocked-by.
-3. Old ids `SKL-n` are in the issue body first line (`was SKL-n`) so old branches and commits stay traceable. Old branches keep their names.
-4. Archive the vault boards, then remove the vault path from `CLAUDE.md`.
+`skills/new-project/migrate-board.sh VAULT_BOARD_FILE PROJECT_DIR [--owner OWNER] [--key KEY]`:
 
-## Live check (2026-11-19)
+1. Creates the board in the code repo. Without `--key` and without a `key` setting, the board gets the key the cards share.
+2. Each card becomes an issue titled with the card title: To do → open, In progress → open with Status In Progress, Done → closed. Tags become labels; `Needs:` becomes blocked-by.
+3. The old id is the first line of the issue body (`was SKL-n`), so old branches and commits stay traceable. Old branches keep their names. New ids count from the issue numbers, so `SKL-12` after the migration is not the card `SKL-12`.
+4. The vault board file moves to `<vault>/Archive/`.
 
-Owner rule: the owner of a project's wiki repo and Project is the project repo's owner. The sandbox below belongs to the personal account `QuinnNei`, because the account is an org `member` and the org `lisegmbh` sets `members_can_create_repositories: false`, so `gh repo create lisegmbh/...` returns HTTP 403. A member can create org Projects (empty test Project `sandbox-boards-test`, org number 10, left as is).
+## `gh` facts
 
-Sandbox (private): `QuinnNei/sandbox-boards-wiki`, `QuinnNei/sandbox-boards-code`, Project https://github.com/users/QuinnNei/projects/3 (`sandbox-boards-test`).
+Verified on 2026-11-19 in the sandbox `QuinnNei/sandbox-boards-wiki`, `QuinnNei/sandbox-boards-code`, Project https://github.com/users/QuinnNei/projects/3 (private, personal account), and on 2026-11-20 by read-only calls against `QNeih/skills`:
 
 | Behaviour | Result |
 | --- | --- |
-| Project linked to the wiki repo | Works: `gh project link 3 --owner QuinnNei --repo QuinnNei/sandbox-boards-wiki`. |
+| Project linked to a repo | Works: `gh project link <number> --owner <owner> --repo <owner>/<name>`. |
+| Reading which Projects a repo is linked to | Works: GraphQL `repository.projectsV2` returns `number`, `title` and `owner.login`. `board.sh create` links only when the Project is not in that list. |
 | Issues added to the Project | Works: `gh project item-add`. |
-| Blocked-by written and read across two repos | Works. `addBlockedBy` made wiki#2 blocked by wiki#1 and by code#1 (other repo). `blockedBy` returned both with `repository.nameWithOwner` and `state` OPEN. |
-| `Closes QuinnNei/sandbox-boards-wiki#2` from a squash-merged PR in the code repo | Works: wiki#2 is CLOSED (COMPLETED), `closedByPullRequestsReferences` names code PR 2. Closing worked while wiki#2 still had open blockers. |
-| Item status after the cross-repo close | Wiki#2 is `Done`; wiki#1 (untouched) stays `Todo`. Something set Done by itself; the API does not say which workflow did it. |
+| Blocked-by written and read, also across repos | Works. `addBlockedBy` (GraphQL; `gh` has no flag for it) links two issues; `blockedBy` returns each blocker with `repository.nameWithOwner` and `state`. |
+| `Closes <owner>/<name>#<n>` from a squash-merged PR | Works: the issue is CLOSED (COMPLETED) and `closedByPullRequestsReferences` names the PR. Closing worked while the issue still had open blockers. Checked with the PR and the issue in two repos; same-repo closing is GitHub's documented base case. |
+| Item status after the close | The closed issue's item is `Done`; untouched items stay `Todo`. |
+| `gh project item-list`, `gh project list` | Default limit 30: always pass `-L`. |
+| Org `lisegmbh` | An org member can create org Projects, and cannot create repos there (`members_can_create_repositories: false`, HTTP 403). |
 
-Decisions: GraphQL for blocked-by (gh 2.90.0 has no `--add-blocked-by`), `Closes <owner>/<wiki>#<n>` in the PR body, the Project moves a closed issue to Done, `gh project item-list` always with `-L` (its default limit is 30).
+Not verified:
 
-## Verified and not verified
-
-Verified by the live check: the rows above.
-
-Not verified, because only the Project's web UI shows it or no second owner exists:
-
-- Which Project workflow ("Item closed" or "Pull request merged", both Status = Done) set Done after the cross-repo close.
-- A Project under the org `lisegmbh`: created, but no wiki repo can be linked to it, since the org blocks repo creation.
-- `Closes` from a differently owned private repo: whether it closes the issue and links the PR, and whether the customer-owned PR shows a link to an issue it cannot open.
+- Which Project workflow ("Item closed" or "Pull request merged", both Status = Done) set Done after the close; only the web UI shows it.
+- A Project owned by another account than the repo's owner (`owner` setting): the link and the item writes.
+- Whether `gh project link` on an already linked Project is a no-op; `board.sh create` avoids the call.

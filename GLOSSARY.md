@@ -5,8 +5,16 @@ Quinn's personal Claude Code skills: the ticket flow (`/ticket`, `/work`, `/send
 ## Language
 
 **Board**:
-A project's ticket list: a GitHub Project, in the project's wiki repo or, for a project without a wiki, in its code repo, where a ticket's id is its issue number. Construct uses Jira instead.
-_Avoid_: vault board, Kanban file
+A project's ticket list: a GitHub Project linked to the project's code repo, where a ticket is an issue in that repo. Construct uses Jira instead.
+_Avoid_: vault board, Kanban file, wiki board
+
+**Key**:
+The short capital-letter name of a board, in its Project's title (`skills (SKL)`) and in front of every ticket id (`SKL-12` is issue 12). A board without one uses the bare issue number.
+_Avoid_: prefix, project code
+
+**Settings file**:
+`.claude/project.md` in a project's main checkout. Its front matter names the board, the Project's number and owner, the key, and per-project choices such as the Sentry projects.
+_Avoid_: project note, wiki settings, config
 
 **To-do**:
 An open line in the vault's briefing notes, tagged with its project. Quinn writes one with `/note`.
@@ -29,7 +37,7 @@ A check of one of a skill's scripts against fixed inputs, with no model involved
 _Avoid_: unit test, bash test
 
 **Live test**:
-A run of a whole skill through the model in a fixture vault, wiki and project, judged by the files, board and branches it leaves behind.
+A run of a whole skill through the model in a fixture vault and project, judged by the files, board and branches it leaves behind.
 _Avoid_: end-to-end test, `claude -p` test
 
 **Brain**:
@@ -37,7 +45,7 @@ One person's private Obsidian vault across all projects, kept as a git repo and 
 _Avoid_: second brain, knowledge base
 
 **Wiki**:
-One project's shared knowledge: Markdown pages in the project's own private repo, cloned inside each team member's brain.
+One project's shared knowledge: Markdown pages in a private repo of their own, cloned inside each team member's brain. Optional, and pages only: the board and the settings live in the code repo.
 _Avoid_: docs, knowledge base, GitHub wiki
 
 **Source log**:

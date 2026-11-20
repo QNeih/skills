@@ -82,13 +82,13 @@ flowchart TD
 | **Daily** | `briefing` | One whole-day briefing across every project: what I did last workday, what's next, Jira changes, new Sentry errors and Dependabot PRs, my PRs that conflict, mail and Teams messages waiting on me, today's meetings. | vault, Jira, Sentry, GitHub, Microsoft 365 |
 | | `dashboard` | Starts my full-screen local dashboard (next tickets, ticket workflow, background sessions) and brings its window to the front. The app lives in its own repo, `dashboard`, under the projects root. | dashboard repo |
 | | `note` | Saves a to-do for the briefing, tagged with the project I'm in. | vault |
-| **Ticket flow** | `ticket` | Adds one issue to the project's GitHub board (a Project in the wiki repo, or in the code repo when the project has no wiki; the id is the issue number), in the language of the issues already there. First asks what the text leaves open that would change the work. Given only an id, points to `/work`. | GitHub |
+| **Ticket flow** | `ticket` | Adds one issue to the project's GitHub board (a Project linked to the code repo; the id is the board's key and the issue number, `SKL-12`), in the language of the issues already there. First asks what the text leaves open that would change the work. Given only an id, points to `/work`. | GitHub |
 | | `work` | Claims a ticket on the project's board (GitHub Project, Jira, or any tracker with a connector), cuts its branch, imports it, and starts the route that works on it. | board (GitHub, Jira, other), repo |
 | | `build` | Runs a multi-session feature in one session: spec, tickets, test-first build in subagents, code review. | repo |
 | | `send` | Ships the branch: commit, fix its own leftovers, rebase onto the base branch, lint, test, push, PR with the tracker link, board card moved, the ticket's dev servers stopped, branch and worktree cleaned up. Names the other open PRs that now conflict. A ticket branch with nothing on it is closed instead: card to Done with the reason, same cleanup. | GitHub, board, repo |
 | **Maintenance** | `sentry-fix` | Fixes Sentry errors in their own worktrees and opens draft PRs; finds the Sentry projects from the DSNs in the code. | Sentry, GitHub |
 | | `dependabot-review` | Checks every open Dependabot PR in parallel: does it break the build, could it change behaviour. | GitHub |
-| **Setup and misc** | `new-project` | Sets up a project: folder and git, wiki repo, GitHub board, sidebar group. Creates only what's missing. | GitHub, repo |
+| **Setup and misc** | `new-project` | Sets up a project: folder and git, code repo, GitHub board, sidebar group. Creates only what's missing. | GitHub, repo |
 | | `wiki` | Gives a project a wiki: a private repo of shared pages inside the brain, fed once a day from the project's notes. Schedules the wiki task and the daily brain sync. Creates only what's missing. | vault, GitHub |
 | | `add-context` | Files an interview, transcript or meeting notes into a project's `context/` folder by its `INDEX.md`, merges it to main, and tells the running sessions what changed. | repo |
 | | `ask` | Answers questions about the codebase without changing files. | repo |
@@ -100,7 +100,7 @@ flowchart TD
     npx skills add QNeih/skills
 
 These are written for my setup and meant to be read and adapted. They expect:
-a wiki repo and a GitHub Project per project (Jira for projects that use it), an Obsidian vault for the briefing notes, the Microsoft 365 connector
+a GitHub Project per project, linked to its code repo, with the settings in the repo's `.claude/project.md` (Jira for projects that use it), an Obsidian vault for the briefing notes, the Microsoft 365 connector
 (`/briefing`), `gh`, the Jira MCP server and `acli` where a project uses Jira,
 and the `sentry` CLI where it uses Sentry.
 Put your projects root and vault path in `~/.claude/CLAUDE.md`.
