@@ -31,10 +31,10 @@ fixture_repo() {
   [ -z "${2:-}" ] || git -C "$1" remote add origin "$2"
 }
 
-# --- Stand-in gh and wiki fixture (the GitHub boards) ---
+# --- Stand-in gh and project fixture (the GitHub boards) ---
 # fixture_gh: a fake gh first on PATH. It appends each call's arguments (space-joined) as one
 # line to $GH_LOG and prints the canned answer whose key is the longest prefix of the call;
-# no match prints nothing and succeeds. `repo clone <repo> <dir>` also creates <dir> as an empty git repo. Needs fixture_new first. Sets GH_DIR, GH_LOG.
+# no match prints nothing and succeeds. Needs fixture_new first. Sets GH_DIR, GH_LOG.
 fixture_gh() {
   export GH_DIR="$FIX/gh-canned" GH_LOG="$FIX/gh.log"
   mkdir -p "$FIX/bin" "$GH_DIR"; : > "$GH_LOG"
@@ -42,10 +42,6 @@ fixture_gh() {
 #!/usr/bin/env bash
 call="$*"
 printf '%s\n' "$call" >> "$GH_LOG"
-# gh repo clone <owner/repo> <dir>: leave an empty git repo with that origin, like cloning an empty repo
-if [ "$1 $2" = "repo clone" ] && [ -n "${4:-}" ]; then
-  mkdir -p "$4" && git -C "$4" init -q -b main --template= && git -C "$4" remote add origin "https://github.com/$3.git"
-fi
 best=""
 for k in "$GH_DIR"/*.key; do
   [ -f "$k" ] || continue
@@ -84,19 +80,34 @@ gh_seq() {
 # gh_calls: the logged calls, one per line
 gh_calls() { cat "$GH_LOG"; }
 
-# fixture_wiki <name> [project.md settings line...]: $PROJECTS_ROOT/<name>/{<name>,wiki};
-# wiki/project.md holds the settings as front matter.
-fixture_wiki() {
+# fixture_settings <checkout> [settings line...]: <checkout>/.claude/project.md with the lines
+# as front matter, committed when <checkout> is a git repo
+fixture_settings() {
+  local dir=$1; shift
+  mkdir -p "$dir/.claude"
+  { echo '---'; [ $# -eq 0 ] || printf '%s\n' "$@"; echo '---'; } > "$dir/.claude/project.md"
+  [ ! -e "$dir/.git" ] || {
+    git -C "$dir" add .claude/project.md
+    git -C "$dir" -c user.name=t -c user.email=t@acme.test commit -q -m "Board settings"
+  }
+}
+# fixture_project <name> [settings line...]: nested layout, the checkout at
+# $PROJECTS_ROOT/<name>/<name> with its settings file
+fixture_project() {
   local name=$1; shift
   fixture_repo "$PROJECTS_ROOT/$name/$name"
-  fixture_repo "$PROJECTS_ROOT/$name/wiki"
-  { echo '---'; printf '%s\n' "$@"; echo '---'; } > "$PROJECTS_ROOT/$name/wiki/project.md"
-  git -C "$PROJECTS_ROOT/$name/wiki" add project.md
-  git -C "$PROJECTS_ROOT/$name/wiki" -c user.name=t -c user.email=t@acme.test commit -q -m project
+  fixture_settings "$PROJECTS_ROOT/$name/$name" "$@"
 }
-# fixture_wiki_worktree <name> <ticket>: worktree of the project repo on feature/<ticket>
-fixture_wiki_worktree() {
-  git -C "$PROJECTS_ROOT/$1/$1" worktree add -q "$PROJECTS_ROOT/$1/$1/.claude/worktrees/$2" -b "feature/$2"
+# fixture_project_flat <name> [settings line...]: flat layout, the checkout at
+# $PROJECTS_ROOT/<name> with its settings file
+fixture_project_flat() {
+  local name=$1; shift
+  fixture_repo "$PROJECTS_ROOT/$name"
+  fixture_settings "$PROJECTS_ROOT/$name" "$@"
+}
+# fixture_worktree <checkout> <ticket>: ticket worktree of the checkout on feature/<ticket>
+fixture_worktree() {
+  git -C "$1" worktree add -q "$1/.claude/worktrees/$2" -b "feature/$2"
 }
 
 # --- claude -p harness (live tests) ---
@@ -137,7 +148,8 @@ guard_check() {
   changed=$( { find "$vault" -newer "$GUARD_MARK"
                # skills/synced/ is Claude Code's own skill-sync cache, rewritten on every start
                find -L "$home/.claude/skills" "$home/.claude/briefing" -newer "$GUARD_MARK" | grep -v "^$home/.claude/skills/synced/"
-               find "$root"/*/.scratch "$root"/*/.handoffs -newer "$GUARD_MARK" | grep -v "^$root/skills/"
+               # flat and nested checkouts
+               find "$root"/*/.scratch "$root"/*/.handoffs "$root"/*/*/.scratch "$root"/*/*/.handoffs -newer "$GUARD_MARK" | grep -v "^$root/skills/"
              } 2>/dev/null)
   rm -f "$GUARD_MARK"
   [ -z "$changed" ] || { echo "guard: real files changed during the run:"; echo "$changed"; return 1; }

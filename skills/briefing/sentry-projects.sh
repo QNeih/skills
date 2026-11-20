@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sentry projects of a repo. Prints `sentry: <org>/<project>` lines, or `sentry: none` and
 # `reason:`; always exits 0 so callers read the reason.
-#   sentry-projects.sh <repo dir> [settings file: wiki/project.md or .claude/project.md]
+#   sentry-projects.sh <repo dir> [settings file: <main checkout>/.claude/project.md]
 # The settings file's `sentry` property (one or more `org/project`, comma-separated) wins. Otherwise every
 # DSN in the repo's tracked files (`*.ingest*.sentry.io/<id>`) maps to its project via `sentry api`.
 set -u
@@ -20,7 +20,7 @@ fi
 git -C "$dir" rev-parse 2>/dev/null || none "$dir is not a git repo"
 ids=$(git -C "$dir" grep -hIoE '[A-Za-z0-9.-]*\.ingest[A-Za-z0-9.-]*\.sentry\.io/[0-9]+' 2>/dev/null |
   sed 's|.*/||' | sort -u)
-[ -n "$ids" ] || none "no Sentry DSN committed in $dir; set sentry: <org>/<project> in the project's settings file (wiki/project.md or .claude/project.md)"
+[ -n "$ids" ] || none "no Sentry DSN committed in $dir; set sentry: <org>/<project> in $dir/.claude/project.md"
 
 # Projects of every organization the account sees (the user-level projects/ endpoint can be empty for org tokens).
 # ponytail: one page per organization (100 projects); paginate if an organization ever has more

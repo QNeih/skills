@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # Board operations on the project's GitHub board: every gh call the skills make on a ticket.
-# Run from inside the project (project.sh, next to this script, names the wiki repo, owner and
-# Project number). A ticket is an issue in the wiki repo; its number is its id.
+# Run from inside the project (project.sh, next to this script, names the code repo, the Project's
+# owner and number, and the key). A ticket is an issue in the code repo; <n> is its issue number.
+# Wherever a ticket is named, <n>, #<n> and <KEY>-<n> (the board's key) all work; output is always <n>.
 #   tickets.sh list                      unblocked To do tickets, urgent first, then lowest number;
-#                                        one per line: <number> TAB <labels, comma-joined> TAB <title>
+#                                        one per line: <n> TAB <labels, comma-joined> TAB <title>
 #   tickets.sh show <n>                  one JSON object: number, title, body, state, status,
 #                                        labels (names), comments ({author, body}),
 #                                        blockers ({ref: owner/name#n, state})
 #   tickets.sh status <n> <status>       todo | in-progress | done (any case, spaces or hyphens);
 #                                        prints `<n>: <Status>`
 #   tickets.sh create --title T [--body B] [--label a,b] [--blocked-by n,owner/name#n]
-#                                        creates the issue, adds it to the Project, prints its number
+#                                        creates the issue, adds it to the Project, prints <n>
 #   tickets.sh block <n> <n|owner/name#n>
 #                                        marks ticket <n> as blocked by the other ticket; prints `<n>: blocked by <ref>`
 #   tickets.sh close <n> --comment TEXT [--not-planned]
@@ -22,11 +23,25 @@ die() { echo "tickets.sh: $*" >&2; exit 1; }
 
 lookup=$(bash "$here/project.sh")
 field() { sed -n "s/^$1: //p" <<<"$lookup"; }
-[ "$(field project)" != none ] || die "$(field reason)"
+[ "$(field project)" != none ] && [ "$(field board)" != none ] || die "$(field reason)"
 [ "$(field board)" = github ] || die "board is $(field board), not github"
-REPO=$(field repo); OWNER=$(field owner); NUM=$(field number)
-[ -n "$REPO" ] && [ -n "$OWNER" ] && [ -n "$NUM" ] || die "project.md needs repo, owner and project (number)"
-WIKI_OWNER=${REPO%%/*}; WIKI_NAME=${REPO#*/}
+REPO=$(field repo); OWNER=$(field owner); NUM=$(field number); KEY=$(field key)
+[ -n "$REPO" ] && [ -n "$OWNER" ] && [ -n "$NUM" ] ||
+  die "$(field dir)/.claude/project.md needs project (the Project's number), and repo when the checkout has no origin"
+
+# num <ticket>: the issue number of <n>, #<n> or <KEY>-<n>; any other key fails
+num() {
+  local t=${1#\#}
+  case $t in
+    '') die "missing ticket number" ;;
+    *[!0-9]*)
+      [ -n "$KEY" ] || die "$1 is no ticket of this board: its tickets are plain numbers"
+      [ "${t%-*}" = "$KEY" ] || die "$1 is no ticket of this board (key $KEY)"
+      t=${t##*-}
+      case $t in ''|*[!0-9]*) die "$1 is no ticket id" ;; esac ;;
+  esac
+  echo "$t"
+}
 
 items() { gh project item-list "$NUM" --owner "$OWNER" -L 200 --format json; }
 
@@ -48,17 +63,17 @@ issue_id() { gh issue view "$2" --repo "$1" --json id | jq -r .id; }
 
 # blockers <n>: JSON array of {ref, state}
 blockers() {
-  gh api graphql -F owner="$WIKI_OWNER" -F name="$WIKI_NAME" -F number="$1" -f query='
+  gh api graphql -F owner="${REPO%%/*}" -F name="${REPO#*/}" -F number="$1" -f query='
 query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){blockedBy(first:50){nodes{number state repository{nameWithOwner}}}}}}' |
     jq -c '[.data.repository.issue.blockedBy.nodes[] | {ref: "\(.repository.nameWithOwner)#\(.number)", state}]'
 }
 
-# block <n> <ref>: ref is a number in the wiki repo or owner/name#n
+# block <n> <ref>: ref is a ticket of this board or owner/name#n
 block() {
   local b=$2 brepo bn
   case $b in
     */*#*) brepo=${b%#*}; bn=${b##*#} ;;
-    *) brepo=$REPO; bn=${b#\#} ;;
+    *) brepo=$REPO; bn=$(num "$b") ;;
   esac
   gh api graphql -F issueId="$(issue_id "$REPO" "$1")" -F blockingIssueId="$(issue_id "$brepo" "$bn")" -f query='
 mutation($issueId:ID!,$blockingIssueId:ID!){addBlockedBy(input:{issueId:$issueId,blockingIssueId:$blockingIssueId}){clientMutationId}}' >/dev/null
@@ -78,7 +93,7 @@ case $cmd in
     done || true
     ;;
   show)
-    n=${1:?ticket number}
+    n=$(num "${1:?ticket number}")
     issue=$(gh issue view "$n" --repo "$REPO" --json number,title,body,labels,comments,state)
     item=$(item_of "$n") || exit 1
     status=$(jq -r '.status // ""' <<<"${item:-null}")
@@ -89,7 +104,7 @@ case $cmd in
        blockers: $blockers}' <<<"$issue"
     ;;
   status)
-    n=${1:?ticket number}; want=${2:?status}
+    n=$(num "${1:?ticket number}"); want=${2:?status}
     case $(tr '[:upper:] _' '[:lower:]--' <<<"$want") in
       todo|to-do) name=Todo ;;
       in-progress) name="In Progress" ;;
@@ -132,11 +147,12 @@ case $cmd in
     echo "$n"
     ;;
   block)
-    block "${1:?ticket number}" "${2:?blocking ticket}"
-    echo "$1: blocked by $2"
+    n=$(num "${1:?ticket number}")
+    block "$n" "${2:?blocking ticket}"
+    echo "$n: blocked by $2"
     ;;
   close)
-    n=${1:?ticket number}; shift
+    n=$(num "${1:?ticket number}"); shift
     comment=; reason=
     while [ $# -gt 0 ]; do
       case $1 in
@@ -149,5 +165,5 @@ case $cmd in
     gh issue close "$n" --repo "$REPO" --comment "$comment" ${reason:+--reason "$reason"} >/dev/null
     echo "closed: $n"
     ;;
-  *) die "usage: tickets.sh list | show <n> | status <n> <status> | create --title T ... | close <n> --comment TEXT" ;;
+  *) die "usage: tickets.sh list | show <n> | status <n> <status> | create --title T ... | block <n> <ref> | close <n> --comment TEXT" ;;
 esac

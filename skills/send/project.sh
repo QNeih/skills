@@ -1,15 +1,30 @@
 #!/usr/bin/env bash
-# Project lookup from the folder layout: <projects root>/<name>/{<name>,wiki}. Prints `key: value`
-# lines; always exits 0 so callers read the reason.
-#   project.sh              project of the current folder (main checkout, worktree or subfolder):
-#                           dir, project, wiki, board, repo, number, owner, key
-#   project.sh --name NAME  same for the project folder <projects root>/NAME/NAME (--note is an alias)
-# Settings come from wiki/project.md (front matter): board, repo, project (the Project's number),
-# owner, key. `board` defaults to github; `repo` and `owner` default to the wiki's origin, `owner`
-# then to the project repo's origin. A line with no value is not printed.
-# A project without a wiki folder keeps the same settings in <main checkout>/.claude/project.md;
-# `repo` and `owner` then default to the code repo's origin and no `wiki:` line is printed.
-# With neither file the output is `project: none` and a reason naming both places.
+# Project lookup from the folder layout. Prints `key: value` lines; always exits 0 so callers read
+# the reason. A line with no value is not printed.
+#   project.sh              project of the current folder (main checkout, worktree or subfolder)
+#   project.sh --name NAME  project folder NAME under the projects root, ignoring case, spaces and
+#                           hyphens (--note is an alias)
+# Layouts:
+#   nested  <projects root>/<name>/<name>  the checkout sits in a project folder of its own name;
+#                                          a sibling `wiki` folder is optional and holds pages only
+#   flat    <projects root>/<name>         the folder is the checkout
+# From a folder: nested when the main checkout's parent folder has the checkout's name, else flat.
+# With --name: a folder that is no git checkout itself and holds a folder of its own name is
+# nested (that inner folder is the checkout); any other folder is flat.
+# Settings: the front matter of <main checkout>/.claude/project.md, the only settings file:
+# board, project (the GitHub Project's number), owner (the Project's owner), key, repo.
+# Lines, in this order:
+#   dir:      the main checkout (without git: the folder itself)
+#   project:  the checkout folder's name. `none` plus `reason:` when the folder is neither a git
+#             checkout nor holds a settings file, or when no folder matches NAME; the lookup
+#             ends there
+#   wiki:     the sibling wiki folder; only in the nested layout, only when it exists
+#   board:    the `board` setting, `github` when the settings file has none. Without a settings
+#             file: `none` plus a `reason:` saying the board step has not run, and no line below
+#   repo:     owner/name of the code repo: the `repo` setting, else the checkout's origin
+#   number:   the `project` setting
+#   owner:    the `owner` setting, else the repo's owner
+#   key:      the `key` setting; with one, a ticket's id is <key>-<issue number>
 # Env: PROJECTS_ROOT (folder holding the projects), needed only for --name.
 set -u
 
@@ -43,24 +58,22 @@ none() { echo "project: none"; echo "reason: $1"; exit 0; }
 
 # Print the lookup lines for the main checkout $1
 report() {
-  local dir=$1 root wiki settings board repo owner number key pr base
-  root=$(dirname "$dir"); wiki="$root/wiki"; settings="$wiki/project.md"
+  local dir=$1 name parent settings board repo owner number key
+  name=$(basename "$dir"); parent=$(dirname "$dir"); settings="$dir/.claude/project.md"
   echo "dir: $dir"
-  if [ -d "$wiki" ]; then
-    base=$wiki
-  elif [ -f "$dir/.claude/project.md" ]; then
-    base=$dir; settings="$dir/.claude/project.md"
-  else
-    none "no wiki at $wiki and no settings at $dir/.claude/project.md: run the board step to create the wiki and the board"
+  [ -f "$settings" ] || [ -e "$dir/.git" ] ||
+    none "$dir is no git checkout and has no settings file .claude/project.md"
+  echo "project: $name"
+  if [ "$(basename "$parent")" = "$name" ] && [ -d "$parent/wiki" ]; then echo "wiki: $parent/wiki"; fi
+  if [ ! -f "$settings" ]; then
+    echo "board: none"
+    echo "reason: no settings file $settings: the board step has not run"
+    exit 0
   fi
-  echo "project: $(basename "$root")"
-  [ "$base" != "$wiki" ] || echo "wiki: $wiki"
   board=$(prop "$settings" board)
   echo "board: ${board:-github}"
-  repo=$(prop "$settings" repo); [ -n "$repo" ] || repo=$(origin_repo "$base")
-  owner=$(prop "$settings" owner)
-  [ -n "$owner" ] || owner=${repo%%/*}
-  [ -n "$owner" ] || { pr=$(origin_repo "$dir"); owner=${pr%%/*}; }
+  repo=$(prop "$settings" repo); [ -n "$repo" ] || repo=$(origin_repo "$dir")
+  owner=$(prop "$settings" owner); [ -n "$owner" ] || owner=${repo%%/*}
   number=$(prop "$settings" project); key=$(prop "$settings" key)
   [ -z "$repo" ] || echo "repo: $repo"
   [ -z "$number" ] || echo "number: $number"
@@ -75,7 +88,8 @@ if [ "${1:-}" = --name ] || [ "${1:-}" = --note ]; then
   want=$(norm "${2:-}")
   for d in "$PROJECTS_ROOT"/*/; do
     d=${d%/}
-    if [ "$(norm "${d##*/}")" = "$want" ] && [ -d "$d/${d##*/}" ]; then report "$d/${d##*/}"; fi
+    [ "$(norm "${d##*/}")" = "$want" ] || continue
+    if [ ! -e "$d/.git" ] && [ -d "$d/${d##*/}" ]; then report "$d/${d##*/}"; else report "$d"; fi
   done
   none "no project folder named ${2:-} under the projects root"
 fi

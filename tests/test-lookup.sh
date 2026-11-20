@@ -1,115 +1,152 @@
 #!/usr/bin/env bash
-# Project lookup (skills/work/project.sh): layout, worktree, settings (wiki or code repo), Jira, no wiki.
+# Project lookup (skills/work/project.sh): nested and flat layout, worktree, settings file, no settings file, key, Jira, lookup by name.
 . "$(dirname "$0")/lib.sh"
 LOOKUP="$REPO_DIR/skills/work/project.sh"
 fixture_new
 lookup() { (cd "$1" && "$LOOKUP" "${@:2}" 2>&1); }
-absent() { grep -q "^$2:" <<<"$1" && fail "no $2 line" || pass "no $2 line"; }
+absent() { grep -q "^$2:" <<<"$1" && fail "$3: no $2 line" || pass "$3: no $2 line"; }
 
-# Layout: wiki next to the repo, settings from project.md, everything printed
-fixture_wiki acme "board: github" "project: 7" "owner: QuinnNei" "repo: QuinnNei/acme-wiki"
+# Nested layout: the checkout in a project folder of its own name, every setting printed
+fixture_project acme "board: github" "project: 7" "owner: QuinnNei" "repo: QuinnNei/acme" "key: ACM"
 out=$(lookup "$PROJECTS_ROOT/acme/acme"); rc=$?
-expect "layout: dir" "$out" "dir: $PROJECTS_ROOT/acme/acme"
-expect "layout: project is the parent folder's name" "$out" "project: acme"
-expect "layout: wiki" "$out" "wiki: $PROJECTS_ROOT/acme/wiki"
-expect "layout: board" "$out" "board: github"
-expect "layout: repo" "$out" "repo: QuinnNei/acme-wiki"
-expect "layout: number" "$out" "number: 7"
-expect "layout: owner" "$out" "owner: QuinnNei"
-absent "$out" key
+expect "nested: dir is the checkout" "$out" "dir: $PROJECTS_ROOT/acme/acme"
+expect "nested: project is the folder's name" "$out" "project: acme"
+expect "nested: board" "$out" "board: github"
+expect "nested: repo" "$out" "repo: QuinnNei/acme"
+expect "nested: number" "$out" "number: 7"
+expect "nested: owner" "$out" "owner: QuinnNei"
+expect "nested: key" "$out" "key: ACM"
+absent "$out" wiki "nested without a wiki folder"
+absent "$out" reason "nested with settings"
 [ $rc -eq 0 ] && pass "exits 0" || fail "exits 0 (got $rc)"
+
+# A sibling wiki folder is named, and its files are not read
+mkdir -p "$PROJECTS_ROOT/acme/wiki"
+printf '%s\n' --- "board: jira" "project: 99" --- > "$PROJECTS_ROOT/acme/wiki/project.md"
+out=$(lookup "$PROJECTS_ROOT/acme/acme")
+expect "nested: sibling wiki folder" "$out" "wiki: $PROJECTS_ROOT/acme/wiki"
+expect "a project.md in the wiki folder is not read: board" "$out" "board: github"
+expect "a project.md in the wiki folder is not read: number" "$out" "number: 7"
 
 # Subfolder of the main checkout
 mkdir -p "$PROJECTS_ROOT/acme/acme/src/deep"
-out=$(lookup "$PROJECTS_ROOT/acme/acme/src/deep")
-expect "subfolder: dir is the main checkout" "$out" "dir: $PROJECTS_ROOT/acme/acme"
+expect "subfolder: dir is the main checkout" "$(lookup "$PROJECTS_ROOT/acme/acme/src/deep")" "dir: $PROJECTS_ROOT/acme/acme"
 
-# Worktree inside the project repo and a worktree elsewhere resolve to the main checkout
-fixture_wiki_worktree acme SKL-1
-out=$(lookup "$PROJECTS_ROOT/acme/acme/.claude/worktrees/SKL-1")
+# A ticket worktree and a worktree elsewhere resolve to the main checkout and its settings file
+fixture_worktree "$PROJECTS_ROOT/acme/acme" ACM-1
+printf '%s\n' --- "project: 1" --- > "$PROJECTS_ROOT/acme/acme/.claude/worktrees/ACM-1/.claude/project.md"
+out=$(lookup "$PROJECTS_ROOT/acme/acme/.claude/worktrees/ACM-1")
 expect "worktree: dir" "$out" "dir: $PROJECTS_ROOT/acme/acme"
 expect "worktree: project" "$out" "project: acme"
+expect "worktree: settings of the main checkout, not the worktree's copy" "$out" "number: 7"
 expect "worktree: wiki" "$out" "wiki: $PROJECTS_ROOT/acme/wiki"
 git -C "$PROJECTS_ROOT/acme/acme" worktree add -q "$FIX/wt-acme" -b other
 expect "worktree elsewhere: dir" "$(lookup "$FIX/wt-acme")" "dir: $PROJECTS_ROOT/acme/acme"
 
-# Defaults: no settings → github; repo and owner from the wiki's origin
-fixture_wiki beta
-git -C "$PROJECTS_ROOT/beta/wiki" remote add origin git@github.com:Org/beta-wiki.git
+# Flat layout: the folder under the projects root is the checkout
+fixture_project_flat solo "project: 3"
+git -C "$PROJECTS_ROOT/solo" remote add origin https://github.com/QNeih/solo.git
+out=$(lookup "$PROJECTS_ROOT/solo")
+expect "flat: dir is the folder" "$out" "dir: $PROJECTS_ROOT/solo"
+expect "flat: project is the folder's name" "$out" "project: solo"
+expect "flat: board defaults to github" "$out" "board: github"
+expect "flat: repo defaults to the origin (https)" "$out" "repo: QNeih/solo"
+expect "flat: owner defaults to the repo's owner" "$out" "owner: QNeih"
+expect "flat: number" "$out" "number: 3"
+absent "$out" key "no key setting"
+# A wiki folder next to a flat checkout is another project's folder
+mkdir -p "$PROJECTS_ROOT/wiki"
+absent "$(lookup "$PROJECTS_ROOT/solo")" wiki "flat"
+fixture_worktree "$PROJECTS_ROOT/solo" 4
+out=$(lookup "$PROJECTS_ROOT/solo/.claude/worktrees/4")
+expect "flat worktree: dir" "$out" "dir: $PROJECTS_ROOT/solo"
+expect "flat worktree: project" "$out" "project: solo"
+
+# Settings override the origin: the board's repo and the Project's owner
+fixture_project_flat over "project: 4" "owner: Other" "repo: Other/tickets" "key: OV"
+git -C "$PROJECTS_ROOT/over" remote add origin git@github.com:Org/over.git
+out=$(lookup "$PROJECTS_ROOT/over")
+expect "override: repo" "$out" "repo: Other/tickets"
+expect "override: owner" "$out" "owner: Other"
+expect "override: key" "$out" "key: OV"
+
+# scp-like origin; an owner setting next to the origin's repo
+fixture_project beta "owner: lisegmbh"
+git -C "$PROJECTS_ROOT/beta/beta" remote add origin git@github.com:Org/beta.git
 out=$(lookup "$PROJECTS_ROOT/beta/beta")
-expect "default board" "$out" "board: github"
-expect "repo from the wiki origin (scp-like)" "$out" "repo: Org/beta-wiki"
-expect "owner from the wiki origin" "$out" "owner: Org"
-absent "$out" number
+expect "repo from the origin (scp-like)" "$out" "repo: Org/beta"
+expect "owner setting wins over the repo's owner" "$out" "owner: lisegmbh"
+absent "$out" number "no project setting"
 
-# https origin with .git
-fixture_wiki gamma
-git -C "$PROJECTS_ROOT/gamma/wiki" remote add origin https://github.com/Org2/gamma-wiki.git
-expect "repo from an https origin" "$(lookup "$PROJECTS_ROOT/gamma/gamma")" "repo: Org2/gamma-wiki"
-
-# No wiki remote: owner from the project repo's origin, no repo line
-fixture_wiki delta "project: 3"
-git -C "$PROJECTS_ROOT/delta/delta" remote add origin https://github.com/Own/delta.git
+# No origin and no repo setting: no repo and no owner line
+fixture_project delta "project: 3"
 out=$(lookup "$PROJECTS_ROOT/delta/delta")
-expect "owner from the project repo" "$out" "owner: Own"
-absent "$out" repo
+expect "no origin: number still printed" "$out" "number: 3"
+absent "$out" repo "no origin"
+absent "$out" owner "no origin"
 
 # Jira: board and key from the settings
-fixture_wiki construct "board: jira" "key: CON"
-out=$(lookup "$PROJECTS_ROOT/construct/construct")
+fixture_project_flat construct "board: jira" "key: CON"
+out=$(lookup "$PROJECTS_ROOT/construct")
 expect "jira: board" "$out" "board: jira"
 expect "jira: key" "$out" "key: CON"
 
 # Another tracker: the board value is printed as written
-fixture_wiki trello "board: https://boards.acme.test/org/trello"
+fixture_project trello "board: https://boards.acme.test/org/trello"
 expect "other board" "$(lookup "$PROJECTS_ROOT/trello/trello")" "board: https://boards.acme.test/org/trello"
 
-# No wiki: project none, a reason that names the board step
-fixture_repo "$PROJECTS_ROOT/lone/lone"
+# No settings file: the project is known, the board is not
+fixture_repo "$PROJECTS_ROOT/lone/lone" https://github.com/QNeih/lone.git
+mkdir -p "$PROJECTS_ROOT/lone/wiki"
 out=$(lookup "$PROJECTS_ROOT/lone/lone"); rc=$?
-expect "no wiki: no project" "$out" "project: none"
-expect "no wiki: reason names both places" "$out" "reason: no wiki at $PROJECTS_ROOT/lone/wiki and no settings at $PROJECTS_ROOT/lone/lone/.claude/project.md: run the board step to create the wiki and the board"
-[ $rc -eq 0 ] && pass "no wiki exits 0" || fail "no wiki exits 0 (got $rc)"
+expect "no settings, nested: dir" "$out" "dir: $PROJECTS_ROOT/lone/lone"
+expect "no settings, nested: project" "$out" "project: lone"
+expect "no settings, nested: wiki" "$out" "wiki: $PROJECTS_ROOT/lone/wiki"
+expect "no settings, nested: board none" "$out" "board: none"
+expect "no settings, nested: reason names the file and the board step" "$out" "reason: no settings file $PROJECTS_ROOT/lone/lone/.claude/project.md: the board step has not run"
+for k in repo number owner key; do absent "$out" "$k" "no settings"; done
+[ $rc -eq 0 ] && pass "no settings exits 0" || fail "no settings exits 0 (got $rc)"
+fixture_repo "$PROJECTS_ROOT/bare"
+out=$(lookup "$PROJECTS_ROOT/bare")
+expect "no settings, flat: project" "$out" "project: bare"
+expect "no settings, flat: board none" "$out" "board: none"
 
-# No wiki folder, settings in the code repo's .claude/project.md
-fixture_repo "$PROJECTS_ROOT/solo/solo" https://github.com/QNeih/solo.git
-mkdir -p "$PROJECTS_ROOT/solo/solo/.claude"
-printf '%s\n' --- "project: 3" --- > "$PROJECTS_ROOT/solo/solo/.claude/project.md"
-out=$(lookup "$PROJECTS_ROOT/solo/solo"); rc=$?
-expect "code settings: project" "$out" "project: solo"
-expect "code settings: board defaults to github" "$out" "board: github"
-expect "code settings: repo defaults to the code repo's origin" "$out" "repo: QNeih/solo"
-expect "code settings: owner defaults to the origin's owner" "$out" "owner: QNeih"
-expect "code settings: number" "$out" "number: 3"
-absent "$out" wiki
-[ $rc -eq 0 ] && pass "code settings exit 0" || fail "code settings exit 0 (got $rc)"
-printf '%s\n' --- "project: 4" "owner: Other" "repo: Other/tickets" "key: SO" --- > "$PROJECTS_ROOT/solo/solo/.claude/project.md"
-fixture_wiki_worktree solo T-1
-out=$(lookup "$PROJECTS_ROOT/solo/solo/.claude/worktrees/T-1")
-expect "code settings: worktree reads the main checkout" "$out" "dir: $PROJECTS_ROOT/solo/solo"
-expect "code settings: repo override" "$out" "repo: Other/tickets"
-expect "code settings: owner override" "$out" "owner: Other"
-expect "code settings: key" "$out" "key: SO"
-# A wiki folder wins over .claude/project.md
-fixture_wiki both "board: jira"
-mkdir -p "$PROJECTS_ROOT/both/both/.claude"; printf '%s\n' --- "board: github" --- > "$PROJECTS_ROOT/both/both/.claude/project.md"
-out=$(lookup "$PROJECTS_ROOT/both/both")
-expect "wiki wins: board" "$out" "board: jira"
-expect "wiki wins: wiki line" "$out" "wiki: $PROJECTS_ROOT/both/wiki"
-
-# Not a git folder, no wiki
+# No git: a settings file makes the folder a project; without one there is none
+mkdir -p "$PROJECTS_ROOT/docs/docs/.claude"
+printf '%s\n' --- "board: github" "project: 5" "repo: QNeih/docs" --- > "$PROJECTS_ROOT/docs/docs/.claude/project.md"
+out=$(lookup "$PROJECTS_ROOT/docs/docs")
+expect "no git, settings: project" "$out" "project: docs"
+expect "no git, settings: repo" "$out" "repo: QNeih/docs"
+expect "no git, settings: owner" "$out" "owner: QNeih"
 mkdir -p "$FIX/plain/x"
-expect "no git, no wiki" "$(lookup "$FIX/plain/x")" "project: none"
+out=$(lookup "$FIX/plain/x"); rc=$?
+expect "no git, no settings: dir" "$out" "dir: $FIX/plain/x"
+expect "no git, no settings: no project" "$out" "project: none"
+expect "no git, no settings: reason" "$out" "reason: $FIX/plain/x is no git checkout and has no settings file .claude/project.md"
+absent "$out" board "no project"
+[ $rc -eq 0 ] && pass "no project exits 0" || fail "no project exits 0 (got $rc)"
 
-# The vault plays no part: no VAULT needed, a vault note is ignored
+# The vault plays no part: no VAULT needed
 expect "no VAULT needed" "$(cd "$PROJECTS_ROOT/acme/acme" && env -u VAULT "$LOOKUP" | sed -n 2p)" "project: acme"
 
-# Reverse lookup by name, ignoring case, spaces and hyphens
-fixture_wiki "Acme Proto" "project: 9"
+# Lookup by name, ignoring case, spaces and hyphens
+fixture_project "Acme Proto" "project: 9"
 out=$(lookup "$FIX" --name acme-proto)
-expect "reverse: dir" "$out" "dir: $PROJECTS_ROOT/Acme Proto/Acme Proto"
-expect "reverse: number" "$out" "number: 9"
-expect "reverse: --note alias" "$(lookup "$FIX" --note acme)" "project: acme"
-expect "reverse: no folder" "$(lookup "$FIX" --name Nope)" "reason: no project folder named Nope under the projects root"
+expect "by name, nested: dir is the inner checkout" "$out" "dir: $PROJECTS_ROOT/Acme Proto/Acme Proto"
+expect "by name, nested: project" "$out" "project: Acme Proto"
+expect "by name, nested: number" "$out" "number: 9"
+out=$(lookup "$FIX" --name SOLO)
+expect "by name, flat: dir is the folder" "$out" "dir: $PROJECTS_ROOT/solo"
+expect "by name, flat: number" "$out" "number: 3"
+expect "by name: --note alias" "$(lookup "$FIX" --note acme)" "dir: $PROJECTS_ROOT/acme/acme"
+# A flat checkout that holds a folder of its own name stays flat
+fixture_project_flat tool "project: 12"
+mkdir -p "$PROJECTS_ROOT/tool/tool"
+out=$(lookup "$FIX" --name tool)
+expect "by name: a checkout with an inner folder of its name is flat" "$out" "dir: $PROJECTS_ROOT/tool"
+expect "by name: its settings" "$out" "number: 12"
+expect "by name, no settings: board none" "$(lookup "$FIX" --name lone)" "board: none"
+expect "by name: no folder" "$(lookup "$FIX" --name Nope)" "reason: no project folder named Nope under the projects root"
+expect "by name: needs the projects root" "$(cd "$FIX" && env -u PROJECTS_ROOT "$LOOKUP" --name acme)" "reason: PROJECTS_ROOT must be set"
 
 done_testing

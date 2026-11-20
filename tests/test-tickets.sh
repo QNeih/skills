@@ -1,26 +1,29 @@
 #!/usr/bin/env bash
-# tickets.sh, the board operations script: what it prints and which gh calls it makes (stand-in gh).
+# tickets.sh, the board operations script: what it prints and which gh calls it makes (stand-in gh),
+# on issues in the code repo, with and without a key in the ticket ids.
 . "$(dirname "$0")/lib.sh"
 SK="$REPO_DIR/skills/work/tickets.sh"
 fixture_new; fixture_gh
-fixture_wiki acme 'board: github' 'project: 4' 'repo: QuinnNei/acme-wiki' 'owner: QuinnNei'
+# No repo and owner settings: both come from the checkout's origin
+fixture_project acme 'board: github' 'project: 4'
+git -C "$PROJECTS_ROOT/acme/acme" remote add origin https://github.com/QuinnNei/acme.git
 cd "$PROJECTS_ROOT/acme/acme" || exit 1
 t() { bash "$SK" "$@"; }
-bq() { printf 'api graphql -F owner=QuinnNei -F name=acme-wiki -F number=%s' "$1"; }
+bq() { printf 'api graphql -F owner=QuinnNei -F name=acme -F number=%s' "$1"; }
 
 gh_can 'project item-list 4 --owner QuinnNei -L 200 --format json' '{"items":[
- {"id":"I1","status":"Todo","labels":[],"content":{"type":"Issue","number":1,"title":"Old plain","repository":"QuinnNei/acme-wiki"}},
- {"id":"I2","status":"Todo","labels":["urgent"],"content":{"type":"Issue","number":2,"title":"Urgent blocked","repository":"QuinnNei/acme-wiki"}},
- {"id":"I3","status":"Todo","labels":["urgent","bug"],"content":{"type":"Issue","number":3,"title":"Urgent free","repository":"QuinnNei/acme-wiki"}},
- {"id":"I4","status":"In Progress","labels":[],"content":{"type":"Issue","number":4,"title":"Claimed","repository":"QuinnNei/acme-wiki"}},
- {"id":"I5","status":"Todo","labels":[],"content":{"type":"Issue","number":5,"title":"Newer plain","repository":"QuinnNei/acme-wiki"}},
- {"id":"I6","status":"Todo","labels":[],"content":{"type":"Issue","number":6,"title":"Blocker closed","repository":"QuinnNei/acme-wiki"}}]}'
+ {"id":"I1","status":"Todo","labels":[],"content":{"type":"Issue","number":1,"title":"Old plain","repository":"QuinnNei/acme"}},
+ {"id":"I2","status":"Todo","labels":["urgent"],"content":{"type":"Issue","number":2,"title":"Urgent blocked","repository":"QuinnNei/acme"}},
+ {"id":"I3","status":"Todo","labels":["urgent","bug"],"content":{"type":"Issue","number":3,"title":"Urgent free","repository":"QuinnNei/acme"}},
+ {"id":"I4","status":"In Progress","labels":[],"content":{"type":"Issue","number":4,"title":"Claimed","repository":"QuinnNei/acme"}},
+ {"id":"I5","status":"Todo","labels":[],"content":{"type":"Issue","number":5,"title":"Newer plain","repository":"QuinnNei/acme"}},
+ {"id":"I6","status":"Todo","labels":[],"content":{"type":"Issue","number":6,"title":"Blocker closed","repository":"QuinnNei/acme"}}]}'
 blk() { printf '{"data":{"repository":{"issue":{"blockedBy":{"nodes":[%s]}}}}}' "$1"; }
 gh_can "$(bq 1)" "$(blk '')"
 gh_can "$(bq 2)" "$(blk '{"number":9,"state":"OPEN","repository":{"nameWithOwner":"QuinnNei/acme-code"}}')"
 gh_can "$(bq 3)" "$(blk '')"
 gh_can "$(bq 5)" "$(blk '')"
-gh_can "$(bq 6)" "$(blk '{"number":1,"state":"CLOSED","repository":{"nameWithOwner":"QuinnNei/acme-wiki"}}')"
+gh_can "$(bq 6)" "$(blk '{"number":1,"state":"CLOSED","repository":{"nameWithOwner":"QuinnNei/acme"}}')"
 
 # list: To do only, no open blocker, urgent first, then lowest number
 out=$(t list)
@@ -32,7 +35,7 @@ expect "list: blocked and claimed tickets left out" "$(wc -l <<<"$out" | tr -d '
 expect "list: asks for 200 items" "$(gh_calls | head -1)" "project item-list 4 --owner QuinnNei -L 200 --format json"
 
 # show: one JSON object
-gh_can 'issue view 2 --repo QuinnNei/acme-wiki --json number,title,body,labels,comments,state' '{"number":2,"title":"Urgent blocked","body":"Text","state":"OPEN","labels":[{"name":"urgent"}],"comments":[{"author":{"login":"q"},"body":"hi"}]}'
+gh_can 'issue view 2 --repo QuinnNei/acme --json number,title,body,labels,comments,state' '{"number":2,"title":"Urgent blocked","body":"Text","state":"OPEN","labels":[{"name":"urgent"}],"comments":[{"author":{"login":"q"},"body":"hi"}]}'
 out=$(t show 2)
 expect "show: number" "$(jq -c .number <<<"$out")" "2"
 expect "show: body" "$(jq -r .body <<<"$out")" "Text"
@@ -53,16 +56,16 @@ expect "status: Done option" "$(gh_calls | tail -1)" "project item-edit --id I5 
 t status 5 later >/dev/null 2>&1 && fail "status: unknown name fails" || pass "status: unknown name fails"
 
 # create: issue, Project item, blockers (own-repo number and other-repo ref)
-gh_can 'issue create' 'https://github.com/QuinnNei/acme-wiki/issues/12'
-gh_can 'issue view 12 --repo QuinnNei/acme-wiki --json id' '{"id":"ID12"}'
-gh_can 'issue view 3 --repo QuinnNei/acme-wiki --json id' '{"id":"ID3"}'
+gh_can 'issue create' 'https://github.com/QuinnNei/acme/issues/12'
+gh_can 'issue view 12 --repo QuinnNei/acme --json id' '{"id":"ID12"}'
+gh_can 'issue view 3 --repo QuinnNei/acme --json id' '{"id":"ID3"}'
 gh_can 'issue view 9 --repo QuinnNei/acme-code --json id' '{"id":"ID9"}'
 : > "$GH_LOG"
 out=$(t create --title "New thing" --body "Body text" --label urgent,bug --blocked-by "3,QuinnNei/acme-code#9")
 expect "create: prints the number" "$out" "12"
 log=$(gh_calls)
-expect "create: issue with labels" "$log" "issue create --repo QuinnNei/acme-wiki --title New thing --body Body text --label urgent --label bug"
-expect "create: added to the Project" "$log" "project item-add 4 --owner QuinnNei --url https://github.com/QuinnNei/acme-wiki/issues/12"
+expect "create: issue with labels" "$log" "issue create --repo QuinnNei/acme --title New thing --body Body text --label urgent --label bug"
+expect "create: added to the Project" "$log" "project item-add 4 --owner QuinnNei --url https://github.com/QuinnNei/acme/issues/12"
 grep -q '^api graphql -F issueId=ID12 -F blockingIssueId=ID3 -f query=' <<<"$log" \
   && pass "create: blocked by own-repo ticket" || fail "create: blocked by own-repo ticket"
 grep -q '^api graphql -F issueId=ID12 -F blockingIssueId=ID9 ' <<<"$log" \
@@ -74,9 +77,9 @@ grep -q 'addBlockedBy\|--label' "$GH_LOG" && fail "create: no labels or blockers
 # close: with comment; not planned when no code
 : > "$GH_LOG"
 t close 5 --comment "Merged in a PR" >/dev/null
-expect "close: comment" "$(gh_calls | tail -1)" "issue close 5 --repo QuinnNei/acme-wiki --comment Merged in a PR"
+expect "close: comment" "$(gh_calls | tail -1)" "issue close 5 --repo QuinnNei/acme --comment Merged in a PR"
 t close 6 --comment "No code needed" --not-planned >/dev/null
-expect "close: not planned" "$(gh_calls | tail -1)" "issue close 6 --repo QuinnNei/acme-wiki --comment No code needed --reason not planned"
+expect "close: not planned" "$(gh_calls | tail -1)" "issue close 6 --repo QuinnNei/acme --comment No code needed --reason not planned"
 
 # block: one blocker on an existing ticket
 : > "$GH_LOG"
@@ -86,15 +89,49 @@ grep -q '^api graphql -F issueId=ID12 -F blockingIssueId=ID3 -f query=' <<<"$(gh
   && pass "block: adds the blocked-by link" || fail "block: adds the blocked-by link"
 
 # a full item list (200) without the ticket: fails loudly, never "not on the Project"
-fixture_wiki big 'board: github' 'project: 8' 'repo: QuinnNei/big-wiki' 'owner: QuinnNei'
+fixture_project_flat big 'board: github' 'project: 8' 'repo: QuinnNei/big'
 gh_can 'project item-list 8 --owner QuinnNei -L 200 --format json' "$(jq -nc '{items: [range(1; 201) | {id: "X\(.)", status: "Todo", labels: [], content: {type: "Issue", number: ., title: "t"}}]}')"
-gh_can 'issue view 500 --repo QuinnNei/big-wiki --json number,title,body,labels,comments,state' '{"number":500,"title":"x","body":"","state":"OPEN","labels":[],"comments":[]}'
-gh_can 'api graphql -F owner=QuinnNei -F name=big-wiki -F number=500' "$(blk '')"
-cd "$PROJECTS_ROOT/big/big" || exit 1
+gh_can 'issue view 500 --repo QuinnNei/big --json number,title,body,labels,comments,state' '{"number":500,"title":"x","body":"","state":"OPEN","labels":[],"comments":[]}'
+gh_can 'api graphql -F owner=QuinnNei -F name=big -F number=500' "$(blk '')"
+cd "$PROJECTS_ROOT/big" || exit 1
 limit="tickets.sh: ticket 500 not found in the first 200 Project items: the board exceeds the item-list limit"
 err=$(t status 500 done 2>&1) && fail "full list: status fails" || expect "full list: status names the limit" "$err" "$limit"
 err=$(t show 500 2>&1) && fail "full list: show fails" || expect "full list: show names the limit" "$err" "$limit"
 
+# Ticket ids. Without a key setting: <n> and #<n>; a keyed id is refused
+cd "$PROJECTS_ROOT/acme/acme" || exit 1
+: > "$GH_LOG"
+expect "no key: #<n> is the number" "$(t status '#5' done)" "5: Done"
+err=$(t show ACM-2 2>&1) && fail "no key: a keyed id fails" || expect "no key: a keyed id says why" "$err" "tickets.sh: ACM-2 is no ticket of this board: its tickets are plain numbers"
+# With a key: <KEY>-<n>, #<n> and <n> name the same issue; output stays the number
+bash "$REPO_DIR/skills/work/board.sh" set . key ACM >/dev/null
+expect "key: <KEY>-<n> shows the issue" "$(t show ACM-2 | jq -c .number)" "2"
+expect "key: status takes <KEY>-<n>, prints the number" "$(t status ACM-5 in-progress)" "5: In Progress"
+expect "key: the bare number still works" "$(t status 5 todo)" "5: Todo"
+: > "$GH_LOG"
+expect "key: close takes <KEY>-<n>" "$(t close ACM-6 --comment "Done")" "closed: 6"
+expect "key: close reaches the issue number" "$(gh_calls | tail -1)" "issue close 6 --repo QuinnNei/acme --comment Done"
+: > "$GH_LOG"
+expect "key: block takes keyed ids" "$(t block ACM-12 ACM-3)" "12: blocked by ACM-3"
+grep -q '^api graphql -F issueId=ID12 -F blockingIssueId=ID3 -f query=' <<<"$(gh_calls)" \
+  && pass "key: block links the two issues" || fail "key: block links the two issues"
+out=$(t create --title "Keyed" --body "b" --blocked-by "ACM-3")
+expect "key: create prints the number" "$out" "12"
+: > "$GH_LOG"
+err=$(t close OTH-6 --comment x 2>&1) && fail "key: another board's id fails" || expect "key: another board's id says why" "$err" "tickets.sh: OTH-6 is no ticket of this board (key ACM)"
+err=$(t show ACM-x 2>&1) && fail "key: an id without a number fails" || pass "key: an id without a number fails"
+expect "key: a refused id reaches no gh call" "$([ -z "$(gh_calls)" ] && echo none)" "none"
+
+# no board yet: fails with the lookup's reason
+fixture_repo "$PROJECTS_ROOT/bare"
+cd "$PROJECTS_ROOT/bare" || exit 1
+err=$(t list 2>&1) && fail "no settings: fails" || expect "no settings: says the board step has not run" "$err" "tickets.sh: no settings file $PROJECTS_ROOT/bare/.claude/project.md: the board step has not run"
+# a Jira board: fails
+fixture_project_flat jira 'board: jira' 'key: CON'
+cd "$PROJECTS_ROOT/jira" && { err=$(t list 2>&1) && fail "jira board: fails" || expect "jira board: says so" "$err" "tickets.sh: board is jira, not github"; }
+# settings without the Project's number: fails
+fixture_project_flat half 'board: github' 'repo: QuinnNei/half'
+cd "$PROJECTS_ROOT/half" && { t list >/dev/null 2>&1 && fail "no Project number: fails" || pass "no Project number: fails"; }
 # no project: fails
 cd "$FIX" && { t list >/dev/null 2>&1 && fail "no project: fails" || pass "no project: fails"; }
 done_testing

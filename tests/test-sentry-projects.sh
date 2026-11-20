@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sentry projects of a repo (skills/sentry-fix/sentry-projects.sh): DSN derivation and the project.md override.
+# Sentry projects of a repo (skills/sentry-fix/sentry-projects.sh): DSN derivation and the settings file's override.
 # `sentry` is a stub on PATH; no live service is called.
 . "$(dirname "$0")/lib.sh"
 SCRIPT="$REPO_DIR/skills/sentry-fix/sentry-projects.sh"
@@ -39,28 +39,29 @@ expect "dsn: server project" "$out" "sentry: acme/api"
 out=$(cd /tmp && run "$r")
 expect "dsn: from another folder" "$out" "sentry: acme/web"
 
-# Override in the project's settings file (wiki/project.md or .claude/project.md) wins; sentry is not called
-fixture_wiki Acme "sentry: acme/web"
+# Override in the project's settings file (.claude/project.md) wins; sentry is not called
+fixture_project Acme "sentry: acme/web"
 rm -f "$FIX/sentry-calls"
-out=$(run "$r" "$PROJECTS_ROOT/Acme/wiki/project.md")
+out=$(run "$r" "$PROJECTS_ROOT/Acme/Acme/.claude/project.md")
 expect "override: project" "$out" "sentry: acme/web"
 [ "$(grep -c '^sentry:' <<<"$out")" -eq 1 ] && pass "override: narrows to one" || fail "override: narrows to one: $out"
 [ ! -f "$FIX/sentry-calls" ] && pass "override: no sentry call" || fail "override: no sentry call"
 
-fixture_wiki Multi "sentry: \"acme/web, globex/other\""
-out=$(run "$r" "$PROJECTS_ROOT/Multi/wiki/project.md")
+fixture_project_flat Multi "sentry: \"acme/web, globex/other\""
+out=$(run "$r" "$PROJECTS_ROOT/Multi/.claude/project.md")
 expect "override list: first" "$out" "sentry: acme/web"
 expect "override list: second" "$out" "sentry: globex/other"
 
-# project.md without the override → derived
-fixture_wiki Plain "repo: acme/plain-wiki"
-expect "project.md without override derives" "$(run "$r" "$PROJECTS_ROOT/Plain/wiki/project.md")" "sentry: acme/api"
+# settings file without the override, or a settings path with no file → derived
+fixture_project Plain "repo: acme/plain"
+expect "settings without override derive" "$(run "$r" "$PROJECTS_ROOT/Plain/Plain/.claude/project.md")" "sentry: acme/api"
+expect "missing settings file derives" "$(run "$r" "$r/.claude/project.md")" "sentry: acme/api"
 
 # No DSN committed
 fixture_repo "$PROJECTS_ROOT/bare"
 out=$(run "$PROJECTS_ROOT/bare"); rc=$?
 expect "no dsn: none" "$out" "sentry: none"
-expect "no dsn: reason" "$out" "reason: no Sentry DSN committed in $PROJECTS_ROOT/bare; set sentry: <org>/<project> in the project's settings file (wiki/project.md or .claude/project.md)"
+expect "no dsn: reason" "$out" "reason: no Sentry DSN committed in $PROJECTS_ROOT/bare; set sentry: <org>/<project> in $PROJECTS_ROOT/bare/.claude/project.md"
 [ $rc -eq 0 ] && pass "failure exits 0" || fail "failure exits 0 (got $rc)"
 
 # Not a git repo

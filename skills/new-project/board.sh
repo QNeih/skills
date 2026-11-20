@@ -1,15 +1,33 @@
 #!/usr/bin/env bash
-# File parts of the board step (BOARD.md): the GitHub board of a project in the folder layout
-# <projects root>/<name>/{<name>,wiki}.
-#   board.sh create PROJECT_DIR [--owner OWNER]
-#       make what is missing: private repo <name>-wiki (or the repo of a wiki already cloned
-#       at <name>/wiki), the Project <name>, labels urgent, bug,
-#       hotfix, the link Project -> wiki repo, the wiki clone at <name>/wiki, wiki/project.md.
-#       OWNER defaults to the owner of PROJECT_DIR's origin. Safe to rerun: what exists is kept.
-#       Prints `wiki:`, `repo:`, `number:` and `owner:` lines.
-#   board.sh set WIKI_DIR KEY VALUE
-#       set one line of WIKI_DIR/project.md (replaced, or added at the end of the front matter)
+# File parts of the board step (BOARD.md): a project's GitHub board and its settings file,
+# <main checkout>/.claude/project.md. PROJECT_DIR is the checkout, or any folder inside it.
+#   board.sh create PROJECT_DIR [--owner OWNER] [--key KEY]
+#       make what is missing: the Project titled `<name> (<KEY>)` (`<name>` without a key), its
+#       link to the code repo, the labels urgent, bug and hotfix in the code repo, and the settings
+#       file with board, project, key, and owner when it is not the repo's owner.
+#       <name> is the checkout folder's name. The code repo is the `repo` setting, else the
+#       checkout's origin; it has to exist on GitHub. OWNER, the Project's owner, defaults to the
+#       `owner` setting, else the repo's owner; KEY defaults to the `key` setting.
+#       The Project is found again by the `project` setting, else by its title, with or without
+#       the ` (<KEY>)` part: a title's key is taken over when no key is known, and a title
+#       without one gets the known key added.
+#       Safe to rerun: what exists is kept. Commits nothing.
+#       Prints `settings:`, `repo:`, `number:`, `owner:` and `key:` lines.
+#   board.sh set PROJECT_DIR KEY VALUE
+#       set one line of the settings file (replaced, or added at the end of the front matter);
+#       creates the file when it is missing
 set -eu
+die() { echo "board.sh: $*" >&2; exit 1; }
+
+# Main checkout of the folder (also from worktrees and subfolders); no git → the folder itself
+main_dir() {
+  local common
+  if common=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+    (cd "$(dirname "$common")" && pwd -P)
+  else
+    (cd "$1" && pwd -P)
+  fi
+}
 
 # owner/name of the origin of git folder $1 (https, ssh and scp-like URLs), else nothing
 origin_repo() {
@@ -18,70 +36,93 @@ origin_repo() {
   awk -F'[/:]' 'NF >= 2 { print $(NF-1) "/" $NF }' <<<"$u"
 }
 
-# set_line FILE KEY VALUE: one front matter line; creates the front matter when the file has none
+# prop KEY: front matter property of the settings file, quotes stripped
+prop() {
+  awk -v k="$1" 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit }
+    index($0, k ":") == 1 { v = substr($0, length(k) + 2); gsub(/^[ \t"\x27]+|[ \t"\x27]+$/, "", v); print v; exit }' "$settings" 2>/dev/null || true
+}
+
+# set_line KEY VALUE: one front matter line of the settings file; creates file and front matter when missing
 set_line() {
-  local file=$1 key=$2 value=$3
-  if [ "$(head -1 "$file" 2>/dev/null)" != --- ]; then
-    { printf -- '---\n---\n'; cat "$file" 2>/dev/null || true; } > "$file.tmp" && mv "$file.tmp" "$file"
+  local key=$1 value=$2
+  mkdir -p "$(dirname "$settings")"
+  if [ "$(head -1 "$settings" 2>/dev/null)" != --- ]; then
+    { printf -- '---\n---\n'; cat "$settings" 2>/dev/null || true; } > "$settings.tmp" && mv "$settings.tmp" "$settings"
   fi
   awk -v key="$key" -v line="$key: $value" '
     NR > 1 && !end && index($0, key ":") == 1 { print line; set = 1; next }
     NR > 1 && !end && $0 == "---" { if (!set) print line; end = 1 }
-    { print }' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+    { print }' "$settings" > "$settings.tmp" && mv "$settings.tmp" "$settings"
 }
 
+usage="usage: board.sh create PROJECT_DIR [--owner OWNER] [--key KEY] | set PROJECT_DIR KEY VALUE"
 cmd=${1:-}
 case $cmd in
 create)
-  dir=${2:?usage: board.sh create PROJECT_DIR [--owner OWNER]}
-  owner=
-  if [ "${3:-}" = --owner ]; then owner=${4:?--owner needs a value}; fi
-  dir=$(cd "$dir" && pwd -P)
-  root=$(dirname "$dir"); name=$(basename "$root"); wiki="$root/wiki"
-  if [ -z "$owner" ]; then
-    pr=$(origin_repo "$dir"); owner=${pr%%/*}
-  fi
-  [ -n "$owner" ] || { echo "board.sh: $dir has no origin; pass --owner OWNER" >&2; exit 1; }
-  # An existing wiki clone names the wiki repo (it may not be called <name>-wiki)
-  repo=$(origin_repo "$wiki")
-  [ -n "$repo" ] || repo="$owner/$name-wiki"
+  dir=${2:?$usage}; shift 2
+  owner=; key=
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --owner) owner=${2:?--owner needs a value}; shift 2 ;;
+      --key) key=${2:?--key needs a value}; shift 2 ;;
+      *) die "create: unknown argument $1" ;;
+    esac
+  done
+  dir=$(main_dir "$dir"); settings="$dir/.claude/project.md"
+  # NFC, so a folder name with decomposed umlauts finds the Project titled with composed ones
+  name=$(perl -CSA -MUnicode::Normalize -le 'print NFC shift' "$(basename "$dir")")
+  repo=$(prop repo); [ -n "$repo" ] || repo=$(origin_repo "$dir")
+  [ -n "$repo" ] || die "$dir has no origin: the board needs the code repo on GitHub"
+  [ -n "$owner" ] || owner=$(prop owner)
+  [ -n "$owner" ] || owner=${repo%%/*}
+  [ -n "$key" ] || key=$(prop key)
 
-  # Wiki repo: private, same owner as the project repo
-  if [ -z "$(gh repo view "$repo" --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)" ]; then
-    gh repo create "$repo" --private
-  fi
-
-  # Wiki clone at <name>/wiki
-  [ -d "$wiki/.git" ] || gh repo clone "$repo" "$wiki"
-
-  # Project: the one project.md names, else the one titled <name>, else a new one
-  number=$(awk 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit } /^project:/ { sub(/^project:[ \t]*/, ""); print; exit }' "$wiki/project.md" 2>/dev/null || true)
+  number=$(prop project)
   if [ -z "$number" ]; then
-    number=$(gh project list --owner "$owner" -L 200 --format json --jq ".projects[] | select(.title == \"$name\") | .number" | head -1)
-    [ -n "$number" ] || number=$(gh project create --owner "$owner" --title "$name" --format json --jq .number)
-    gh project link "$number" --owner "$owner" --repo "$repo"
+    # The owner's Projects titled <name> or <name> (<some key>), one per line: number TAB key
+    found=$(gh project list --owner "$owner" -L 200 --format json | jq -r --arg n "$name" '
+      .projects[]
+      | (.title | if . == $n then "" elif startswith($n + " (") and endswith(")") then .[($n | length) + 2:-1] else null end) as $k
+      | select($k != null) | "\(.number)\t\($k)"')
+    if [ -n "$key" ]; then
+      pick=$(awk -F'\t' -v k="$key" '$2 == k { print; exit }' <<<"$found")
+      [ -n "$pick" ] || pick=$(awk -F'\t' '$2 == "" { print; exit }' <<<"$found")
+    else
+      pick=$(head -1 <<<"$found")
+    fi
+    if [ -z "$pick" ]; then
+      number=$(gh project create --owner "$owner" --title "$name${key:+ ($key)}" --format json --jq .number)
+    else
+      number=${pick%%$'\t'*}; titlekey=${pick#*$'\t'}
+      if [ -z "$key" ]; then key=$titlekey
+      elif [ -z "$titlekey" ]; then gh project edit "$number" --owner "$owner" --title "$name ($key)" >/dev/null
+      fi
+    fi
   fi
+  [ -n "$number" ] || die "no Project number from gh"
+
+  # Link Project -> code repo, unless the repo already lists the Project
+  linked=$(gh api graphql -F owner="${repo%%/*}" -F name="${repo#*/}" -f query='
+query($owner:String!,$name:String!){repository(owner:$owner,name:$name){projectsV2(first:100){nodes{number owner{... on User{login} ... on Organization{login}}}}}}' |
+    jq -r --arg o "$owner" --arg n "$number" '
+      [.data.repository.projectsV2.nodes[] | select((.number | tostring) == $n and (.owner.login | ascii_downcase) == ($o | ascii_downcase))] | length')
+  [ "${linked:-0}" != 0 ] || gh project link "$number" --owner "$owner" --repo "$repo" >/dev/null
 
   # --force makes an existing label a no-op update
-  for l in urgent bug hotfix; do gh label create "$l" --repo "$repo" --force; done
+  for l in urgent bug hotfix; do gh label create "$l" --repo "$repo" --force >/dev/null; done
 
-  set_line "$wiki/project.md" board github
-  set_line "$wiki/project.md" project "$number"
-
-  # Commit project.md and push, so the settings reach the wiki repo and colleagues
-  git -C "$wiki" add project.md
-  if ! git -C "$wiki" diff --cached --quiet; then
-    git -C "$wiki" commit -q -m "Board settings" -- project.md
-  fi
-  if git -C "$wiki" remote get-url origin >/dev/null 2>&1 && git -C "$wiki" rev-parse -q --verify HEAD >/dev/null; then
-    git -C "$wiki" push -q -u origin HEAD
-  fi
-  echo "wiki: $wiki"; echo "repo: $repo"; echo "number: $number"; echo "owner: $owner"
+  set_line board github
+  set_line project "$number"
+  [ -z "$key" ] || set_line key "$key"
+  [ "$owner" = "${repo%%/*}" ] || set_line owner "$owner"
+  echo "settings: $settings"; echo "repo: $repo"; echo "number: $number"; echo "owner: $owner"
+  [ -z "$key" ] || echo "key: $key"
   ;;
 set)
-  wiki=${2:?usage: board.sh set WIKI_DIR KEY VALUE}; key=${3:?missing KEY}; value=${4:?missing VALUE}
-  set_line "$wiki/project.md" "$key" "$value"
-  echo "saved: $key in $wiki/project.md"
+  dir=${2:?$usage}; key=${3:?missing KEY}; value=${4:?missing VALUE}
+  dir=$(main_dir "$dir"); settings="$dir/.claude/project.md"
+  set_line "$key" "$value"
+  echo "saved: $key in $settings"
   ;;
-*) echo "usage: board.sh create PROJECT_DIR [--owner OWNER] | set WIKI_DIR KEY VALUE" >&2; exit 2 ;;
+*) echo "$usage" >&2; exit 2 ;;
 esac
