@@ -2,16 +2,16 @@
 # /note through claude -p: line appended to <vault>/Briefing notes.md, with the project link inside a project.
 . "$(dirname "$0")/lib.sh"
 fixture_new
-fixture_note Acme
-fixture_repo "$PROJECTS_ROOT/acme"
-fixture_claude_md "$PROJECTS_ROOT/acme"
-install_skill "$REPO_DIR/skills/note" note "$PROJECTS_ROOT/acme"
+# The project is the checkout folder's name (flat layout); the vault holds only the notes file
+fixture_repo "$PROJECTS_ROOT/Acme"
+fixture_claude_md "$PROJECTS_ROOT/Acme"
+install_skill "$REPO_DIR/skills/note" note "$PROJECTS_ROOT/Acme"
 NOTES="$VAULT/Briefing notes.md"
 today=$(date +%F)
 export CLAUDE_MODEL=${CLAUDE_MODEL:-haiku} ALLOWED_TOOLS="Skill,Bash(VAULT=*),Bash(bash *)"
 
 # Inside a project, file missing → created, line ends with the project link
-run_claude "$PROJECTS_ROOT/acme" "/t-note call the tax office"
+run_claude "$PROJECTS_ROOT/Acme" "/t-note call the tax office"
 expect "inside project: line with link" "$(cat "$NOTES" 2>&1)" "- [ ] $today call the tax office [[Acme]]"
 
 # Outside a project, file saved without a final newline → appended on its own line, no link
@@ -24,7 +24,7 @@ expect "outside project: line without link" "$(cat "$NOTES")" "- [ ] $today buy 
 
 # Empty text → asks for it, writes nothing
 rm "$NOTES"
-run_claude "$PROJECTS_ROOT/acme" "/t-note"
+run_claude "$PROJECTS_ROOT/Acme" "/t-note"
 [ ! -e "$NOTES" ] && pass "empty text: nothing written" || fail "empty text: nothing written: $(cat "$NOTES")"
 grep -q '?' <<<"$CLAUDE_OUT" && pass "empty text: asks" || fail "empty text: asks: $CLAUDE_OUT"
 

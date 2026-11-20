@@ -2,7 +2,7 @@
 # Smoke run of the claude -p harness: a t-probe skill runs the project lookup in a fixture.
 . "$(dirname "$0")/lib.sh"
 fixture_new
-fixture_wiki acme "board: jira" "key: ACM"
+fixture_project acme "board: jira" "key: ACM"
 P="$PROJECTS_ROOT/acme/acme"
 fixture_claude_md "$P"
 

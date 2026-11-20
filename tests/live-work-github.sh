@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# /work on a GitHub board, through claude -p with the stand-in gh: picks the unblocked urgent ticket,
-# claims it (Status In Progress), cuts the branch from its labels, writes ticket.md with the body
-# and every comment, writes the handoff, prints the route; a ticket id gets its own worktree.
+# /work on a GitHub board in the code repo, through claude -p with the stand-in gh: picks the unblocked
+# urgent ticket, claims it (Status In Progress), cuts the branch from its labels, writes ticket.md with
+# the body and every comment, writes the handoff, prints the route; a ticket id gets its own worktree.
+# First on a board without a key (ids are issue numbers), then with the key ACM (ids are ACM-<n>).
 . "$(dirname "$0")/lib.sh"
 fixture_new; fixture_gh
 export CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
@@ -19,27 +20,27 @@ run_ticket() {
   run_claude "$1" "$2" --output-format stream-json --verbose
   CLAUDE_OUT=$(jq -rR 'fromjson? | select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' <<<"$CLAUDE_OUT")
 }
-bq() { printf 'api graphql -F owner=QuinnNei -F name=acme-wiki -F number=%s' "$1"; }
+bq() { printf 'api graphql -F owner=QuinnNei -F name=acme -F number=%s' "$1"; }
 blk() { printf '{"data":{"repository":{"issue":{"blockedBy":{"nodes":[%s]}}}}}' "$1"; }
 issue() { printf '{"number":%s,"title":"%s","body":"%s","state":"OPEN","labels":[%s],"comments":[%s]}' "$1" "$2" "$3" "$4" "$5"; }
 
-fixture_wiki acme 'board: github' 'project: 4' 'repo: QuinnNei/acme-wiki' 'owner: QuinnNei'
+fixture_project acme 'board: github' 'project: 4' 'repo: QuinnNei/acme'
 acme="$PROJECTS_ROOT/acme/acme"
 git -C "$acme" checkout -q -b develop
 git -C "$acme" -c user.name=t -c user.email=t@acme.test commit -q --allow-empty -m "develop work"
 git -C "$acme" checkout -q main
 
 gh_can 'project item-list 4 --owner QuinnNei -L 200 --format json' '{"items":[
- {"id":"I1","status":"Todo","labels":[],"content":{"type":"Issue","number":1,"title":"Add export button","repository":"QuinnNei/acme-wiki"}},
- {"id":"I2","status":"Todo","labels":["bug","urgent"],"content":{"type":"Issue","number":2,"title":"Login fails on Safari","repository":"QuinnNei/acme-wiki"}},
- {"id":"I3","status":"Todo","labels":["urgent"],"content":{"type":"Issue","number":3,"title":"Export as PDF","repository":"QuinnNei/acme-wiki"}},
- {"id":"I4","status":"In Progress","labels":[],"content":{"type":"Issue","number":4,"title":"Older work","repository":"QuinnNei/acme-wiki"}}]}'
+ {"id":"I1","status":"Todo","labels":[],"content":{"type":"Issue","number":1,"title":"Add export button","repository":"QuinnNei/acme"}},
+ {"id":"I2","status":"Todo","labels":["bug","urgent"],"content":{"type":"Issue","number":2,"title":"Login fails on Safari","repository":"QuinnNei/acme"}},
+ {"id":"I3","status":"Todo","labels":["urgent"],"content":{"type":"Issue","number":3,"title":"Export as PDF","repository":"QuinnNei/acme"}},
+ {"id":"I4","status":"In Progress","labels":[],"content":{"type":"Issue","number":4,"title":"Older work","repository":"QuinnNei/acme"}}]}'
 gh_can "$(bq 1)" "$(blk '')"
 gh_can "$(bq 2)" "$(blk '')"
-gh_can "$(bq 3)" "$(blk '{"number":1,"state":"OPEN","repository":{"nameWithOwner":"QuinnNei/acme-wiki"}}')"
-gh_can 'issue view 2 --repo QuinnNei/acme-wiki --json number,title,body,labels,comments,state' \
+gh_can "$(bq 3)" "$(blk '{"number":1,"state":"OPEN","repository":{"nameWithOwner":"QuinnNei/acme"}}')"
+gh_can 'issue view 2 --repo QuinnNei/acme --json number,title,body,labels,comments,state' \
   "$(issue 2 'Login fails on Safari' 'The login button does nothing on Safari 18.' '{"name":"bug"},{"name":"urgent"}' '{"author":{"login":"maria"},"body":"Reproduced on Safari 18.2 only."}')"
-gh_can 'issue view 1 --repo QuinnNei/acme-wiki --json number,title,body,labels,comments,state' \
+gh_can 'issue view 1 --repo QuinnNei/acme --json number,title,body,labels,comments,state' \
   "$(issue 1 'Add export button' 'Export the list as CSV.' '' '')"
 gh_can 'project view 4 --owner QuinnNei --format json' '{"id":"PVT_1"}'
 gh_can 'project field-list 4 --owner QuinnNei -L 200 --format json' '{"fields":[{"id":"F1","name":"Status","options":[{"id":"O1","name":"Todo"},{"id":"O2","name":"In Progress"},{"id":"O3","name":"Done"}]}]}'
@@ -61,20 +62,24 @@ git -C "$acme" merge-base --is-ancestor develop bugfix/2 2>/dev/null \
 t=$(ls "$acme"/.scratch/2-*/ticket.md 2>/dev/null | head -1)
 [ -n "$t" ] && pass "ticket.md in the main checkout, folder 2-<slug>" || fail "ticket.md in the main checkout, folder 2-<slug>"
 expect "ticket.md: branch" "$(cat "$t" 2>/dev/null)" "branch: bugfix/2"
-expect "ticket.md: ref" "$(cat "$t" 2>/dev/null)" "ref: QuinnNei/acme-wiki#2"
+expect "ticket.md: ref" "$(cat "$t" 2>/dev/null)" "ref: QuinnNei/acme#2"
 grep -q 'The login button does nothing on Safari 18' "$t" 2>/dev/null && pass "ticket.md: body" || fail "ticket.md: body"
 grep -q 'Reproduced on Safari 18.2 only' "$t" 2>/dev/null && grep -q 'maria' "$t" && pass "ticket.md: comment with author" || fail "ticket.md: comment with author"
 [ ! -e "$wt/.scratch" ] && pass "nothing in the worktree's .scratch" || fail "nothing in the worktree's .scratch"
 grep -qF "$t" "$acme/.handoffs/HANDOFF-2.md" 2>/dev/null \
   && pass "handoff HANDOFF-2.md points at ticket.md by absolute path" || fail "handoff HANDOFF-2.md points at ticket.md by absolute path"
 
-# --- run from the main checkout with an id: the ticket gets its own worktree ---
+# --- run from the main checkout with a number, on a board with a key: the id is ACM-1, in its own worktree ---
 git -C "$acme" checkout -q main
+fixture_settings "$acme" 'board: github' 'project: 4' 'repo: QuinnNei/acme' 'key: ACM'
 setup "$acme"
 ALLOWED_TOOLS="$ALLOWED_TOOLS,Bash(cd *)" run_ticket "$acme" "/t-work 1"
 expect "main checkout stays on main" "$(git -C "$acme" branch --show-current)" "main"
-expect "ticket worktree 1 on feature/1" "$(git -C "$acme/.claude/worktrees/1" branch --show-current 2>/dev/null)" "feature/1"
-[ -n "$(ls "$acme"/.scratch/1-*/ticket.md 2>/dev/null)" ] && [ ! -e "$acme/.claude/worktrees/1/.scratch" ] && pass "worktree run: ticket.md in the main checkout" \
-  || { fail "worktree run: ticket.md in the main checkout"; find "$acme" -name ticket.md; echo "$CLAUDE_OUT" | tail -15; }
-expect "worktree run: ticket 1 claimed" "$(gh_calls)" "project item-edit --id I1 --project-id PVT_1 --field-id F1 --single-select-option-id O2"
+expect "key: ticket worktree ACM-1 on feature/ACM-1" "$(git -C "$acme/.claude/worktrees/ACM-1" branch --show-current 2>/dev/null)" "feature/ACM-1"
+t=$(ls "$acme"/.scratch/ACM-1-*/ticket.md 2>/dev/null | head -1)
+[ -n "$t" ] && [ ! -e "$acme/.claude/worktrees/ACM-1/.scratch" ] && pass "key: ticket.md in the main checkout, folder ACM-1-<slug>" \
+  || { fail "key: ticket.md in the main checkout, folder ACM-1-<slug>"; find "$acme" -name ticket.md; echo "$CLAUDE_OUT" | tail -15; }
+expect "key: ref is the issue in the code repo" "$(cat "$t" 2>/dev/null)" "ref: QuinnNei/acme#1"
+[ -f "$acme/.handoffs/HANDOFF-ACM-1.md" ] && pass "key: handoff HANDOFF-ACM-1.md" || fail "key: handoff HANDOFF-ACM-1.md"
+expect "key: issue 1 claimed" "$(gh_calls)" "project item-edit --id I1 --project-id PVT_1 --field-id F1 --single-select-option-id O2"
 done_testing
