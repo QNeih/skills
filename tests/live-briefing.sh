@@ -38,7 +38,7 @@ chmod +x "$FIX/bin/"*
 # --- vault and projects: Shop has Did, Next, Sentry, Dependabot, a note; Jet only a Jira error; Quiet nothing ---
 fixture_note Shop; fixture_note Jet; fixture_note Quiet
 printf -- '- [ ] 2026-11-05 call the tax office\n- [ ] 2026-11-06 send the offer [[Shop]]\n' > "$VAULT/Briefing notes.md"
-printf -- '## To do\n\n- [ ] **SHP-6 · Later card**\n\n## In progress\n\n- [ ] **SHP-5 · Checkout total wrong**\n' > "$VAULT/Projects/Shop/Shop Board.md"
+printf -- '## To do\n\n- [ ] **SHP-6 · Later card**\n\n## In progress\n\n- [ ] **SHP-5 · Checkout total wrong**\n' > "$VAULT/wiki/projects/Shop Board.md"
 shop="$PROJECTS_ROOT/shop" jet="$PROJECTS_ROOT/jet"
 fixture_repo "$shop" git@github.com:acme/shop.git
 echo "dsn = 'https://k@o1.ingest.us.sentry.io/4501'" > "$shop/sentry.ts"

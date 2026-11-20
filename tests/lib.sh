@@ -17,11 +17,11 @@ fixture_new() {
   mkdir -p "$VAULT/Projects" "$PROJECTS_ROOT"
   trap 'rm -rf "$FIX"' EXIT
 }
-# fixture_note <name> [frontmatter line...]: <vault>/Projects/<name>/<name>.md
+# fixture_note <name> [frontmatter line...]: <vault>/wiki/projects/<name>.md
 fixture_note() {
   local name=$1; shift
-  mkdir -p "$VAULT/Projects/$name"
-  { echo '---'; echo 'tags: [project]'; printf '%s\n' "$@"; echo '---'; } > "$VAULT/Projects/$name/$name.md"
+  mkdir -p "$VAULT/wiki/projects"
+  { echo '---'; echo 'tags: [project]'; printf '%s\n' "$@"; echo '---'; } > "$VAULT/wiki/projects/$name.md"
 }
 # fixture_repo <path> [origin]: git repo with one commit
 fixture_repo() {

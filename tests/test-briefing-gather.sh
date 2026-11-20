@@ -34,7 +34,7 @@ fixture_note Acme
 fixture_note Old "status: done"
 fixture_note Gone "status: archived"
 fixture_note Quiet
-mkdir -p "$VAULT/Projects/Recipe"; printf -- '---\ntags: [cooking]\n---\n' > "$VAULT/Projects/Recipe/Recipe.md"
+mkdir -p "$VAULT/wiki/projects"; printf -- '---\ntags: [cooking]\n---\n' > "$VAULT/wiki/projects/Recipe.md"
 cat > "$VAULT/Briefing notes.md" <<'MD'
 - [ ] 2026-11-05 call the tax office
 - [x] 2026-11-05 already done [[Acme]]
@@ -129,7 +129,7 @@ expect "no activity: previous weekday" "$out" "last workday: 2026-10-30 Fri"
 
 # --- Next: vault board ---
 rm -rf "$BRIEFING_STATE"
-board="$VAULT/Projects/Acme/Acme Board.md"
+board="$VAULT/wiki/projects/Acme Board.md"
 cat > "$board" <<'MD'
 ---
 kanban-plugin: board
@@ -156,12 +156,12 @@ s=$(section Acme "$(gather)")
 expect "next: vault, in progress first" "$s" "next: ACM-5 · Working on it (in progress)"
 expect "next: vault, every in-progress card" "$s" "next: ACM-6 · And this (in progress)"
 grep -q 'ACM-2' <<<"$s" && fail "next: no to-do pick when in progress" || pass "next: no to-do pick when in progress"
-fixture_note Cards; mkdir -p "$VAULT/Projects/Cards"
-printf '## To do\n\n- [ ] **CRD-1 · Only card**\n' > "$VAULT/Projects/Cards/Cards Board.md"
+fixture_note Cards; mkdir -p "$VAULT/wiki/projects"
+printf '## To do\n\n- [ ] **CRD-1 · Only card**\n' > "$VAULT/wiki/projects/Cards Board.md"
 expect "next: vault board without a folder" "$(section Cards "$(gather "" "$(at "2026-11-09 12:00")")")" "next: CRD-1 · Only card (to do)"
-printf '## To do\n\n- [ ] **CRD-1 · Only card**\n\tSave reports. Then share.\n\tBraucht: nichts\n' > "$VAULT/Projects/Cards/Cards Board.md"
+printf '## To do\n\n- [ ] **CRD-1 · Only card**\n\tSave reports. Then share.\n\tBraucht: nichts\n' > "$VAULT/wiki/projects/Cards Board.md"
 expect "next: goal is the first sentence" "$(section Cards "$(gather "" "$(at "2026-11-09 12:00")")")" "next: CRD-1 · Only card — Save reports. (to do)"
-printf '## To do\n\n- [ ] **CRD-1 · Only card**\n\tLong text. More.\n\tZiel: Ship it\n' > "$VAULT/Projects/Cards/Cards Board.md"
+printf '## To do\n\n- [ ] **CRD-1 · Only card**\n\tLong text. More.\n\tZiel: Ship it\n' > "$VAULT/wiki/projects/Cards Board.md"
 expect "next: goal line wins" "$(section Cards "$(gather "" "$(at "2026-11-09 12:00")")")" "next: CRD-1 · Only card — Ship it (to do)"
 
 # --- Board: a card outside Done whose PR is merged moves to the end of Done, ticked ---
@@ -172,7 +172,7 @@ case "$*" in
   *) echo "unexpected: $*" >&2; exit 3 ;;
 esac
 SH
-cards="$VAULT/Projects/Cards/Cards Board.md"
+cards="$VAULT/wiki/projects/Cards Board.md"
 settings=$'%% kanban:settings\n```\n{}\n```\n%%'
 cat > "$cards" <<MD
 ## To do
