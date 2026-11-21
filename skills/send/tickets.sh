@@ -14,6 +14,9 @@
 #                                        creates the issue, adds it to the Project, prints <n>
 #   tickets.sh block <n> <n|owner/name#n>
 #                                        marks ticket <n> as blocked by the other ticket; prints `<n>: blocked by <ref>`
+#   tickets.sh edit <n> [--title T] [--body B]
+#                                        replaces the title, the body or both (one is required);
+#                                        prints `<n>: edited`
 #   tickets.sh close <n> --comment TEXT [--not-planned]
 #                                        closes with the comment; --not-planned for a ticket with no code
 # Item lists pass an explicit limit of 200 (gh's default is 30). Blocked-by goes through GraphQL.
@@ -151,6 +154,20 @@ case $cmd in
     block "$n" "${2:?blocking ticket}"
     echo "$n: blocked by $2"
     ;;
+  edit)
+    n=$(num "${1:?ticket number}"); shift
+    args=()
+    while [ $# -gt 0 ]; do
+      case $1 in
+        --title) args+=(--title "${2?}"); shift 2 ;;
+        --body) args+=(--body "${2?}"); shift 2 ;;
+        *) die "edit: unknown argument $1" ;;
+      esac
+    done
+    [ ${#args[@]} -gt 0 ] || die "edit: give --title, --body or both"
+    gh issue edit "$n" --repo "$REPO" "${args[@]}" >/dev/null
+    echo "$n: edited"
+    ;;
   close)
     n=$(num "${1:?ticket number}"); shift
     comment=; reason=
@@ -165,5 +182,5 @@ case $cmd in
     gh issue close "$n" --repo "$REPO" --comment "$comment" ${reason:+--reason "$reason"} >/dev/null
     echo "closed: $n"
     ;;
-  *) die "usage: tickets.sh list | show <n> | status <n> <status> | create --title T ... | block <n> <ref> | close <n> --comment TEXT" ;;
+  *) die "usage: tickets.sh list | show <n> | status <n> <status> | create --title T ... | block <n> <ref> | edit <n> [--title T] [--body B] | close <n> --comment TEXT" ;;
 esac
