@@ -43,10 +43,10 @@ origin_repo() {
   awk -F'[/:]' 'NF >= 2 { print $(NF-1) "/" $NF }' <<<"$u"
 }
 
-# prop KEY: front matter property of the settings file, quotes stripped
+# prop FILE KEY: front matter property of a settings file, quotes stripped
 prop() {
-  awk -v k="$1" 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit }
-    index($0, k ":") == 1 { v = substr($0, length(k) + 2); gsub(/^[ \t"\x27]+|[ \t"\x27]+$/, "", v); print v; exit }' "$settings" 2>/dev/null || true
+  awk -v k="$2" 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit }
+    index($0, k ":") == 1 { v = substr($0, length(k) + 2); gsub(/^[ \t"\x27]+|[ \t"\x27]+$/, "", v); print v; exit }' "$1" 2>/dev/null || true
 }
 
 # set_line KEY VALUE: one front matter line of the settings file; creates file and front matter when missing
@@ -78,14 +78,14 @@ create)
   dir=$(main_dir "$dir"); settings="$dir/.claude/project.md"
   # NFC, so a folder name with decomposed umlauts finds the Project titled with composed ones
   name=$(perl -CSA -MUnicode::Normalize -le 'print NFC shift' "$(basename "$dir")")
-  repo=$(prop repo); [ -n "$repo" ] || repo=$(origin_repo "$dir")
+  repo=$(prop "$settings" repo); [ -n "$repo" ] || repo=$(origin_repo "$dir")
   [ -n "$repo" ] || die "$dir has no origin: the board needs the code repo on GitHub"
-  [ -n "$owner" ] || owner=$(prop owner)
+  [ -n "$owner" ] || owner=$(prop "$settings" owner)
   [ -n "$owner" ] || owner=${repo%%/*}
-  [ -n "$key" ] || key=$(prop key)
+  [ -n "$key" ] || key=$(prop "$settings" key)
 
   # titled: whether the Project's title carries the key (yes, no, or unknown when found by number)
-  number=$(prop project); titled=unknown
+  number=$(prop "$settings" project); titled=unknown
   if [ -z "$number" ]; then
     # The owner's Projects titled <name> or <name> (<some key>), one per line: number TAB key
     found=$(gh project list --owner "$owner" -L 200 --format json | jq -r --arg n "$name" '
@@ -109,7 +109,7 @@ create)
   fi
   [ -n "$number" ] || die "no Project number from gh"
   # A key the title lacks, or a new key for a Project found by its number: the title gets it
-  if [ -n "$key" ] && { [ $titled = no ] || { [ $titled = unknown ] && [ "$key" != "$(prop key)" ]; }; }; then
+  if [ -n "$key" ] && { [ $titled = no ] || { [ $titled = unknown ] && [ "$key" != "$(prop "$settings" key)" ]; }; }; then
     gh project edit "$number" --owner "$owner" --title "$name ($key)" >/dev/null
   fi
 
@@ -140,9 +140,9 @@ suggest-key)
   dir=${2:?$usage}; dir=$(main_dir "$dir"); own="$dir/.claude/project.md"
   [ -n "${PROJECTS_ROOT:-}" ] || die "suggest-key: PROJECTS_ROOT must be set"
   used=()
-  for settings in "$PROJECTS_ROOT"/*/.claude/project.md "$PROJECTS_ROOT"/*/*/.claude/project.md; do
-    [ -f "$settings" ] && ! [ "$settings" -ef "$own" ] || continue
-    k=$(prop key); [ -z "$k" ] || used+=("$k")
+  for other in "$PROJECTS_ROOT"/*/.claude/project.md "$PROJECTS_ROOT"/*/*/.claude/project.md; do
+    [ -f "$other" ] && ! [ "$other" -ef "$own" ] || continue
+    k=$(prop "$other" key); [ -z "$k" ] || used+=("$k")
   done
   perl -CSA -MUnicode::Normalize -e '
     my ($name, @used) = @ARGV; my %used = map { uc($_) => 1 } @used;

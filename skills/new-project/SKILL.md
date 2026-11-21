@@ -32,13 +32,13 @@ Then make what `<repo>` lacks:
 
 `<repo>` is its absolute path with symlinks resolved (`cd <repo> && pwd -P`) from here on.
 
-**Done when:** `<repo>` is a git checkout with an origin; one this step created is on GitHub.
+**Done when:** `git -C "<repo>" remote get-url origin` prints a URL: the one `<repo>` already had, or the new GitHub repo.
 
 ## 2. Board
 
 Run the lookup from `<repo>` and follow `${CLAUDE_SKILL_DIR}/BOARD.md`, with one change: in place of its board question, the code host picks the answer. A board the lookup already names (GitHub with a `number:`, Jira, a link or text) stays as it is.
 
-- Origin on `github.com` → the answer is `github`: `board.sh create` makes the board, then the key question.
+- The origin's host contains `github` (`github.com`, an SSH alias like `github.com-work`, GitHub Enterprise) → the answer is `github`: `board.sh create` makes the board, then the key question.
 - Origin on another host (e.g. Azure DevOps) → ask once: "Where are the tasks for <project> managed? Paste the link of its tracker." The link is the answer.
 
 **Done when:** the lookup prints `project: <name>` with a `board:` other than `none`, and for `github` also `number:` and `repo:`.

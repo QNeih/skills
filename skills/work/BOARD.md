@@ -1,6 +1,6 @@
 # Board step
 
-Shared by `/work`, `/ticket` and `/new-project` (which picks the answer to the board question itself). Input: the project lookup's lines (`project.sh`). Output: the project's board. `${CLAUDE_SKILL_DIR}` is the folder this file is in.
+Shared by `/work`, `/ticket` and `/new-project`. Input: the project lookup's lines (`project.sh`). Output: the project's board. `${CLAUDE_SKILL_DIR}` is the folder this file is in.
 
 `<dir>` is the lookup's `dir:` line. The **settings file** is `<dir>/.claude/project.md`; its front matter names the board.
 
@@ -17,7 +17,13 @@ Read the lookup's `board:` line:
 
 - `github` → `bash ${CLAUDE_SKILL_DIR}/board.sh create <dir>`. It makes what is missing: the Project, its link to the code repo, the labels, the settings file. It fails → stop with its message.
   - It prints a `key:` line → the board has its **key**: ticket ids are `<KEY>-<n>`, and the Project is titled `<project> (<KEY>)`.
-  - No `key:` line → `PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/board.sh suggest-key <dir>` (the projects root is set in `~/.claude/CLAUDE.md`). It prints `suggestion: <ABC>` → ask once: "Key for <project>'s ticket ids? Reply `yes` for `<ABC>`, type another key, or `none` for plain issue numbers." It prints nothing → ask once: "Key for <project>'s ticket ids, e.g. `SKL` for `SKL-12`? Reply `none` for plain issue numbers." `yes` or a key → run the same `create` again with `--key <KEY>` added.
+  - No `key:` line → run `PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/board.sh suggest-key <dir>` (the projects root is set in `~/.claude/CLAUDE.md`), then ask the key question once:
+    - It prints `suggestion: <ABC>` → "Key for <project>'s ticket ids? Reply `yes` for `<ABC>`, type another key, or `none` for plain issue numbers."
+    - It prints nothing → "Key for <project>'s ticket ids, e.g. `SKL` for `SKL-12`? Reply `none` for plain issue numbers."
+  - The reply to the key question:
+    - `yes` → `<KEY>` is `<ABC>`; run the same `create` again with `--key <KEY>` added.
+    - Another key → `<KEY>` is that key in capitals; run the same `create` again with `--key <KEY>` added.
+    - `none` → the board has no key: ticket ids are plain issue numbers. Nothing more to run.
 - `jira` → `bash ${CLAUDE_SKILL_DIR}/board.sh set <dir> board jira`, then `set <dir> key <KEY>` with the Jira project key; ask for the key when Quinn gave none.
 - A link or text → `bash ${CLAUDE_SKILL_DIR}/board.sh set <dir> board "<answer>"`. The board is the answer.
 
