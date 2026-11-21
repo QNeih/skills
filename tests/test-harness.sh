@@ -18,7 +18,7 @@ grep -qF "$VAULT" "$PROJECTS_ROOT/acme/CLAUDE.md" && grep -qF "$PROJECTS_ROOT" "
 
 # Guard: stand-in real dirs, so nothing real is touched
 fake=$(cd "$src" && pwd -P)
-mkdir -p "$fake/vault" "$fake/home/.claude/skills" "$fake/home/.claude/briefing" "$fake/projects/skills/.scratch" "$fake/projects/other/.scratch"
+mkdir -p "$fake/vault" "$fake/home/.claude/skills" "$fake/projects/skills/.scratch" "$fake/projects/other/.scratch"
 export REAL_VAULT="$fake/vault" REAL_HOME="$fake/home" REAL_PROJECTS_ROOT="$fake/projects"
 guard_start
 touch "$fake/projects/skills/.scratch/ok.md"

@@ -3,7 +3,6 @@
 My Claude Code skills. Per ticket I type two commands, `/work` and `/send`;
 everything in between runs on its own and stops only where I have to decide.
 
-    /briefing     what's new or waiting on me, across all projects
     /dashboard    full-screen, keyboard-driven: next tickets, ticket workflow, session tree
     /ticket TEXT  add an issue to the project's GitHub board
     /work KEY     claim the ticket, pick a route (fix, grill, build, wayfinder), start it
@@ -21,17 +20,10 @@ Grey: Matt Pocock's skills. Everything else runs on its own.
 
 ```mermaid
 flowchart TD
-    briefing(["/briefing"]):::cmd --> brief["Brief: did, next, Jira, Sentry, Dependabot,<br/>conflicting PRs, mail, Teams, meetings, notes"]
-    brief --> reply{"Reply?"}:::gate
-    reply -- "fix all" --> sentryfix["sentry-fix<br/>one worktree per error"] --> draftpr["Draft PRs"]
-    reply -- "/dependabot-review" --> depreview["dependabot-review<br/>checks every open PR in parallel"]
-    reply -- "done n / add all" --> vaultnotes["Notes ticked,<br/>contacts added"]
-    reply -- "pick a ticket" --> ticket
-
-    dashboard(["/dashboard"]):::cmd --> dash["Per project: next tickets, sessions,<br/>new Sentry errors and Dependabot PRs"]
+    dashboard(["/dashboard"]):::cmd --> dash["Per project: tickets in progress, next ticket,<br/>conflicting PRs, Sentry issues, Dependabot PRs, sessions"]
     dash --> key{"Key?"}:::gate
-    key -- "s" --> sentryfix
-    key -- "d" --> depreview
+    key -- "s" --> sentryfix["sentry-fix<br/>one worktree per error"] --> draftpr["Draft PRs"]
+    key -- "d" --> depreview["dependabot-review<br/>checks every open PR in parallel"]
     key -- "→ on a ticket:<br/>background session" --> ticket
     key -- "→ on an imported ticket:<br/>background session" --> send
 
@@ -79,9 +71,7 @@ flowchart TD
 
 | | Skill | What it does | Uses |
 | --- | --- | --- | --- |
-| **Daily** | `briefing` | One whole-day briefing across every project: what I did last workday, what's next, Jira changes, new Sentry errors and Dependabot PRs, my PRs that conflict, mail and Teams messages waiting on me, today's meetings. | vault, Jira, Sentry, GitHub, Microsoft 365 |
-| | `dashboard` | Starts my full-screen local dashboard (next tickets, ticket workflow, background sessions) and brings its window to the front. The app lives in its own repo, `dashboard`, under the projects root. | dashboard repo |
-| | `note` | Saves a to-do for the briefing, tagged with the project I'm in. | vault |
+| **Daily** | `dashboard` | Starts my full-screen local dashboard (each project's state, ticket workflow, background sessions) and brings its window to the front. The app lives in its own repo, `dashboard`, under the projects root. | dashboard repo |
 | **Ticket flow** | `ticket` | Adds one issue to the project's GitHub board (a Project linked to the code repo; the id is the board's key and the issue number, `SKL-12`), in the language of the issues already there. First asks what the text leaves open that would change the work. Given only an id, points to `/work`. | GitHub |
 | | `work` | Claims a ticket on the project's board (GitHub Project, Jira, or any tracker with a connector), cuts its branch, imports it, and starts the route that works on it. | board (GitHub, Jira, other), repo |
 | | `build` | Runs a multi-session feature in one session: spec, tickets, test-first build in subagents, code review. | repo |
@@ -100,7 +90,7 @@ flowchart TD
     npx skills add QNeih/skills
 
 These are written for my setup and meant to be read and adapted. They expect:
-a GitHub Project per project, linked to its code repo, with the settings in the repo's `.claude/project.md` (Jira for projects that use it), an Obsidian vault for the briefing notes, the Microsoft 365 connector
-(`/briefing`), `gh`, the Jira MCP server and `acli` where a project uses Jira,
+a GitHub Project per project, linked to its code repo, with the settings in the repo's `.claude/project.md` (Jira for projects that use it), an Obsidian vault (the brain, for `/wiki`), the Microsoft 365 connector
+(`/add-context`), `gh`, the Jira MCP server and `acli` where a project uses Jira,
 and the `sentry` CLI where it uses Sentry.
 Put your projects root and vault path in `~/.claude/CLAUDE.md`.

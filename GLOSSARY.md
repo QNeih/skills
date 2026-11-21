@@ -1,6 +1,6 @@
 # Skills
 
-Quinn's personal Claude Code skills: the ticket flow (`/ticket`, `/work`, `/send`), the briefing, and the helpers around them.
+Quinn's personal Claude Code skills: the ticket flow (`/ticket`, `/work`, `/send`), the dashboard, and the helpers around them.
 
 ## Language
 
@@ -16,16 +16,12 @@ _Avoid_: prefix, project code
 `.claude/project.md` in a project's main checkout. Its front matter names the board, the Project's number and owner, the key, and per-project choices such as the Sentry projects.
 _Avoid_: project note, wiki settings, config
 
-**To-do**:
-An open line in the vault's briefing notes, tagged with its project. Quinn writes one with `/note`.
-_Avoid_: briefing note, project note
-
 **Leftover**:
 Something still wrong or unfinished on a ticket's branch before its PR opens. The session fixes it when the ticket's change caused it, or when a build, a test or data breaks.
 _Avoid_: loose end, open point
 
 **Could not fix**:
-Something a session could not fix or do, always reported with its cause. It is a report line, never a to-do.
+Something a session could not fix or do, always reported with its cause as a line of the session's report.
 _Avoid_: still open, known issue
 
 **Close**:

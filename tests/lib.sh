@@ -147,7 +147,7 @@ guard_check() {
   [ -d "$vault" ] || { echo "guard: real vault not found; set REAL_VAULT"; return 1; }
   changed=$( { find "$vault" -newer "$GUARD_MARK"
                # skills/synced/ is Claude Code's own skill-sync cache, rewritten on every start
-               find -L "$home/.claude/skills" "$home/.claude/briefing" -newer "$GUARD_MARK" | grep -v "^$home/.claude/skills/synced/"
+               find -L "$home/.claude/skills" -newer "$GUARD_MARK" | grep -v "^$home/.claude/skills/synced/"
                # flat and nested checkouts
                find "$root"/*/.scratch "$root"/*/.handoffs "$root"/*/*/.scratch "$root"/*/*/.handoffs -newer "$GUARD_MARK" | grep -v "^$root/skills/"
              } 2>/dev/null)
