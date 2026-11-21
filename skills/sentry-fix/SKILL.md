@@ -1,6 +1,6 @@
 ---
 name: sentry-fix
-description: Fix Sentry errors of a project in their own worktrees and open draft PRs. Use when Quinn or /briefing names Sentry short ids or says "fix all", or to triage a project's top unresolved errors.
+description: Fix Sentry errors of a project in their own worktrees and open draft PRs. Use when Quinn names Sentry short ids, or to triage a project's top unresolved errors.
 argument-hint: "[shortId ...] [project]"
 ---
 
@@ -19,7 +19,7 @@ Works in any repo whose Sentry DSNs are committed, from any folder. Everything i
 ## 1. Find the project
 
 - Run the lookup in the current folder.
-- `project: none`, or the caller named another project (e.g. `/briefing` hands over the project name) → run the lookup with `--name <project name>`.
+- `project: none`, or the caller named another project (the dashboard starts `/sentry-fix <project>`) → run the lookup with `--name <project name>`.
 - Still no `dir` → ask Quinn for the project folder once.
 
 **Done when:** `<local>` is a git checkout. `<settings>` is the project's settings file `<local>/.claude/project.md`, present or not.
