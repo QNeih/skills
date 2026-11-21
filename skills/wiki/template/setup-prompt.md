@@ -26,21 +26,7 @@ notes: /Users/mara/notes/customers/acme
 
 **Done when:** `.local` names two existing folders, the notes folder inside the brain folder, and git ignores `.local`.
 
-## 2. Place
-
-`<wiki>` is `<notes>/wiki` → nothing to do.
-
-Else offer: "Move this wiki to `<notes>/wiki`, so its pages sit next to your notes? (yes/no)"
-
-- Yes and `<notes>/wiki` is free → `mv "<wiki>" "<notes>/wiki"`. `<wiki>` is the new path from here on; say that Claude is opened there from now on.
-- Yes and `<notes>/wiki` is taken → say so and leave the wiki where it is.
-- No → leave it.
-
-`<wiki>` now lies inside the brain folder and `git -C "<brain>" check-ignore -q "<wiki>"` fails while the brain is a git repo → add one line to the report: "Your brain is a git repo: add `<wiki>` to its ignore list, the wiki is its own repo."
-
-**Done when:** the wiki is at `<notes>/wiki`, or the person's no or the taken folder is noted.
-
-## 3. Wiki task
+## 2. Wiki task
 
 The wiki task is a daily local scheduled task that follows `INGEST.md`. Only a local scheduled task fits, since it runs on this machine, where the notes are.
 
@@ -58,8 +44,14 @@ The tool writes the task; `~/.claude/scheduled-tasks` is its folder to write.
 
 **Done when:** the task exists, or the sentence is said.
 
-## 4. Report
+## 3. Report
 
-One line each: the two folders, where the wiki is, and the wiki task (scheduled, already there, or not scheduled and why). Then: "The first run ingests every source in `<notes>` that the source log lacks. Say "ingest" to run it now."
+One line each:
+
+- the two folders
+- the wiki task: scheduled, already there, or not scheduled and why
+- only when `<wiki>` lies inside the brain folder, the brain is a git repo and `git -C "<brain>" check-ignore -q "<wiki>"` fails: "Your brain is a git repo: add `<wiki>` to its ignore list, the wiki is its own repo."
+
+Then: "The first run ingests every source in `<notes>` that the source log lacks. Say "ingest" to run it now."
 
 **Done when:** the report is printed.
