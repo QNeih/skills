@@ -28,6 +28,14 @@ _Avoid_: preview server, app server
 Something still wrong or unfinished on a ticket's branch before its PR opens. The session fixes it when the ticket's change caused it, or when a build, a test or data breaks.
 _Avoid_: loose end, open point
 
+**Ticket worktree**:
+A ticket's own git worktree, `.claude/worktrees/<id>` in the project's main checkout, where all of the ticket's work happens so tickets can run in parallel.
+_Avoid_: ticket checkout, session worktree
+
+**Ticket files**:
+A ticket's local working state: its `.scratch/<id>-<slug>/` folder with `ticket.md`, and its handoff. They live in its ticket worktree, or in the project folder when there is no git, and go away when the ticket ships or closes.
+_Avoid_: scratch state, ticket notes
+
 **Could not fix**:
 Something a session could not fix or do, always reported with its cause as a line of the session's report.
 _Avoid_: still open, known issue

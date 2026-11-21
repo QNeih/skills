@@ -59,14 +59,14 @@ expect "claim: Status In Progress on ticket 2" "$(gh_calls)" "project item-edit 
 grep -q 'item-edit --id I[13] ' <<<"$(gh_calls)" && fail "claim: only ticket 2 changed" || pass "claim: only ticket 2 changed"
 git -C "$acme" merge-base --is-ancestor develop bugfix/2 2>/dev/null \
   && pass "branch: bugfix/2 from develop" || fail "branch: bugfix/2 from develop"
-t=$(ls "$acme"/.scratch/2-*/ticket.md 2>/dev/null | head -1)
-[ -n "$t" ] && pass "ticket.md in the main checkout, folder 2-<slug>" || fail "ticket.md in the main checkout, folder 2-<slug>"
+t=$(ls "$wt"/.scratch/2-*/ticket.md 2>/dev/null | head -1)
+[ -n "$t" ] && pass "ticket.md in the session's worktree, folder 2-<slug>" || fail "ticket.md in the session's worktree, folder 2-<slug>"
 expect "ticket.md: branch" "$(cat "$t" 2>/dev/null)" "branch: bugfix/2"
 expect "ticket.md: ref" "$(cat "$t" 2>/dev/null)" "ref: QuinnNei/acme#2"
 grep -q 'The login button does nothing on Safari 18' "$t" 2>/dev/null && pass "ticket.md: body" || fail "ticket.md: body"
 grep -q 'Reproduced on Safari 18.2 only' "$t" 2>/dev/null && grep -q 'maria' "$t" && pass "ticket.md: comment with author" || fail "ticket.md: comment with author"
-[ ! -e "$wt/.scratch" ] && pass "nothing in the worktree's .scratch" || fail "nothing in the worktree's .scratch"
-grep -qF "$t" "$acme/.handoffs/HANDOFF-2.md" 2>/dev/null \
+[ ! -e "$acme/.scratch" ] && pass "nothing in the main checkout's .scratch" || fail "nothing in the main checkout's .scratch"
+grep -qF "$t" "$wt/.handoffs/HANDOFF-2.md" 2>/dev/null \
   && pass "handoff HANDOFF-2.md points at ticket.md by absolute path" || fail "handoff HANDOFF-2.md points at ticket.md by absolute path"
 
 # --- run from the main checkout with a number, on a board with a key: the id is ACM-1, in its own worktree ---
@@ -76,10 +76,10 @@ setup "$acme"
 ALLOWED_TOOLS="$ALLOWED_TOOLS,Bash(cd *)" run_ticket "$acme" "/t-work 1"
 expect "main checkout stays on main" "$(git -C "$acme" branch --show-current)" "main"
 expect "key: ticket worktree ACM-1 on feature/ACM-1" "$(git -C "$acme/.claude/worktrees/ACM-1" branch --show-current 2>/dev/null)" "feature/ACM-1"
-t=$(ls "$acme"/.scratch/ACM-1-*/ticket.md 2>/dev/null | head -1)
-[ -n "$t" ] && [ ! -e "$acme/.claude/worktrees/ACM-1/.scratch" ] && pass "key: ticket.md in the main checkout, folder ACM-1-<slug>" \
-  || { fail "key: ticket.md in the main checkout, folder ACM-1-<slug>"; find "$acme" -name ticket.md; echo "$CLAUDE_OUT" | tail -15; }
+t=$(ls "$acme"/.claude/worktrees/ACM-1/.scratch/ACM-1-*/ticket.md 2>/dev/null | head -1)
+[ -n "$t" ] && [ ! -e "$acme/.scratch" ] && pass "key: ticket.md in the ticket worktree, folder ACM-1-<slug>" \
+  || { fail "key: ticket.md in the ticket worktree, folder ACM-1-<slug>"; find "$acme" -name ticket.md; echo "$CLAUDE_OUT" | tail -15; }
 expect "key: ref is the issue in the code repo" "$(cat "$t" 2>/dev/null)" "ref: QuinnNei/acme#1"
-[ -f "$acme/.handoffs/HANDOFF-ACM-1.md" ] && pass "key: handoff HANDOFF-ACM-1.md" || fail "key: handoff HANDOFF-ACM-1.md"
+[ -f "$acme/.claude/worktrees/ACM-1/.handoffs/HANDOFF-ACM-1.md" ] && [ ! -e "$acme/.handoffs" ] && pass "key: handoff HANDOFF-ACM-1.md in the ticket worktree" || fail "key: handoff HANDOFF-ACM-1.md in the ticket worktree"
 expect "key: issue 1 claimed" "$(gh_calls)" "project item-edit --id I1 --project-id PVT_1 --field-id F1 --single-select-option-id O2"
 done_testing

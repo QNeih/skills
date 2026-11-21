@@ -148,8 +148,10 @@ guard_check() {
   changed=$( { find "$vault" -newer "$GUARD_MARK"
                # skills/synced/ is Claude Code's own skill-sync cache, rewritten on every start
                find -L "$home/.claude/skills" -newer "$GUARD_MARK" | grep -v "^$home/.claude/skills/synced/"
-               # flat and nested checkouts
-               find "$root"/*/.scratch "$root"/*/.handoffs "$root"/*/*/.scratch "$root"/*/*/.handoffs -newer "$GUARD_MARK" | grep -v "^$root/skills/"
+               # flat and nested checkouts, and their ticket worktrees
+               find "$root"/*/.scratch "$root"/*/.handoffs "$root"/*/*/.scratch "$root"/*/*/.handoffs \
+                 "$root"/*/.claude/worktrees/*/.scratch "$root"/*/.claude/worktrees/*/.handoffs \
+                 "$root"/*/*/.claude/worktrees/*/.scratch "$root"/*/*/.claude/worktrees/*/.handoffs -newer "$GUARD_MARK" | grep -v "^$root/skills/"
              } 2>/dev/null)
   rm -f "$GUARD_MARK"
   [ -z "$changed" ] || { echo "guard: real files changed during the run:"; echo "$changed"; return 1; }

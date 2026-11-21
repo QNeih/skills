@@ -3,7 +3,7 @@
 # project's board has the key ACM (ids ACM-<n>, issue <n>); the project without git has none (ids are issue numbers). Close without a reason asks,
 # with one closes the issue as not planned with the reason; a PR body ends with `Closes <owner>/<repo>#<n>` and nothing is written to the
 # board; a leftover from the handoff fixed in its own commit; rebase onto a moved base, lint commit, test.sh, push and the
-# "PR on <host> not supported" stop; a ticket worktree is removed, port change and all; a failing test.sh is fixed in its own commit and the
+# "PR on <host> not supported" stop; a ticket worktree is removed, port change and the ticket files /work wrote into it and all; a failing test.sh is fixed in its own commit and the
 # branch pushed; without git: the issue closes, ticket files deleted.
 . "$(dirname "$0")/lib.sh"
 fixture_new; fixture_gh
@@ -24,7 +24,7 @@ only_line_commit() {
     [ "$(git -C "$remote" show --format= -U0 "$c" | grep -E '^[-+][^-+]')" = "$2" ] && echo "$c"
   done
 }
-# ticket <dir> <id> <slug> [base]: .scratch ticket.md and handoff, as /work writes them for a GitHub ticket (no branch line);
+# ticket <dir> <id> <slug> [base]: .scratch ticket.md and handoff in <dir>, as /work writes them for a GitHub ticket (no branch line);
 # the ref is the issue in the project's code repo
 ticket() {
   mkdir -p "$1/.scratch/$2-$3" "$1/.handoffs"
@@ -147,18 +147,19 @@ done
 [ "$(git -C "$acme" branch --show-current)" = bugfix/ACM-12 ] && [ -f "$acme/.scratch/ACM-12-login-fails/ticket.md" ] \
   && pass "stop: no cleanup" || fail "stop: no cleanup"
 
-# Ticket worktree no background session was started in, with a dev server's port moved: the port change is dropped, the worktree removed
+# Ticket worktree no background session was started in, its ticket files inside it, with a dev server's port moved:
+# the port change is dropped, the worktree removed
 wt="$acme/.claude/worktrees/ACM-14"
 git -C "$acme" checkout -q -B main origin/main
 fixture_worktree "$acme" ACM-14 && git -C "$wt" push -q -u origin HEAD 2>/dev/null
-ticket "$acme" ACM-14 worktree-ticket main
+ticket "$wt" ACM-14 worktree-ticket main
 sed -i.bak 's/5173/5174/g' "$wt/.claude/launch.json" && rm "$wt/.claude/launch.json.bak"
 run_send "$wt" "superseded by the rewrite"
 [ ! -e "$wt" ] && ! git -C "$acme" worktree list | grep -qF "$wt" \
   && pass "worktree: removed with its port change" || { fail "worktree: removed with its port change"; git -C "$wt" status --short; echo "$CLAUDE_OUT" | tail -20; }
 [ -z "$(git -C "$acme" branch --list feature/ACM-14)" ] && ! git -C "$remote" rev-parse -q --verify feature/ACM-14 >/dev/null \
   && pass "worktree: branch deleted locally and on origin" || fail "worktree: branch deleted locally and on origin"
-gh_calls | grep -qF 'issue close 14 --repo QuinnNei/acme --comment Closed without code: superseded by the rewrite --reason not planned' && [ ! -e "$acme/.scratch/ACM-14-worktree-ticket" ] \
+gh_calls | grep -qF 'issue close 14 --repo QuinnNei/acme --comment Closed without code: superseded by the rewrite --reason not planned' && [ ! -e "$wt/.scratch/ACM-14-worktree-ticket" ] \
   && pass "worktree: issue closed as not planned, ticket files deleted" || { fail "worktree: issue closed as not planned, ticket files deleted"; gh_calls; }
 
 # A failing test.sh nobody reported: fixed in its own commit, then the branch is pushed with the tests green
