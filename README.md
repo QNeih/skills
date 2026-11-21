@@ -82,8 +82,6 @@ flowchart TD
 | | `dependabot-review` | Checks every open Dependabot PR in parallel: does it break the build, could it change behaviour. | GitHub |
 | **Setup and misc** | `new-project` | Sets up a project: folder and git, code repo, GitHub board, sidebar group. Creates only what's missing. | GitHub, repo |
 | | `wiki` | Gives a project a wiki: a private repo of shared pages inside the brain, fed once a day from the project's notes. Schedules the wiki task and the daily brain sync. Creates only what's missing. | vault, GitHub |
-| | `add-context` | Files an interview, transcript or meeting notes into a project's `context/` folder by its `INDEX.md`, merges it to main, and tells the running sessions what changed. | repo |
-| | `ask` | Answers questions about the codebase without changing files. | repo |
 | | `cv-update` | Weekly: checks my GitHub PRs and `/teach` lessons against my CV and asks before editing it. | GitHub |
 
 ## Install
@@ -92,7 +90,7 @@ flowchart TD
     npx skills add QNeih/skills
 
 These are written for my setup and meant to be read and adapted. They expect:
-a GitHub Project per project, linked to its code repo, with the settings in the repo's `.claude/project.md` (Jira for projects that use it), an Obsidian vault (the brain, for `/wiki`), the Microsoft 365 connector
-(`/add-context`), `gh`, the Jira MCP server and `acli` where a project uses Jira,
+a GitHub Project per project, linked to its code repo, with the settings in the repo's `.claude/project.md` (Jira for projects that use it), an Obsidian vault (the brain, for `/wiki`),
+`gh`, the Jira MCP server and `acli` where a project uses Jira,
 and the `sentry` CLI where it uses Sentry.
 Put your projects root and vault path in `~/.claude/CLAUDE.md`.

@@ -33,7 +33,6 @@ Copies of one script are identical in every skill that carries it; `tests/shared
 | `board.sh create` | Makes what is missing: the Project (found again by the `project` setting, else by title), its link to the code repo, the labels `urgent`, `bug`, `hotfix`, the settings file. Commits nothing. |
 | `board.sh set` | Sets one line of the settings file; creates the file when missing. |
 | `tickets.sh` | `list`, `show`, `status`, `create`, `block`, `close` on issues in the code repo and their Project items. Takes `<n>`, `#<n>` or `<KEY>-<n>`; prints `<n>`. |
-| `migrate-board.sh` | One-off: a vault Kanban board becomes issues on the code repo's board. |
 
 ## Skills
 
@@ -48,22 +47,13 @@ Copies of one script are identical in every skill that carries it; `tests/shared
 | `/send` | PR body ends with `Closes <repo>#<n>`. A merge into the default branch closes the issue and the Project sets Done. A merge into another base closes nothing, so `/send` closes the issue. |
 | `/send` close | Closes the issue as not planned, with the reason as a comment. |
 | `/new-project` | Folder, code repo, board step. A new project is flat. A wiki comes from `/wiki`, on request. |
-| `/note`, `/add-context`, `/sentry-fix` | Use the lookup's `dir:` and `project:`; `/sentry-fix` reads `sentry:` from the settings file. |
+| `/sentry-fix` | Uses the lookup's `dir:` and `project:`, and reads `sentry:` from the settings file. |
 | Jira | `board: jira` and `key:` in the settings file; flow unchanged. |
 
 ## Setup (one time)
 
 1. `gh auth refresh -s project`.
 2. Per Project, turn on the workflows "Item closed → Done" and "Pull request merged → Done" (web UI only; on by default per the docs).
-
-## Migration from a vault board
-
-`skills/new-project/migrate-board.sh VAULT_BOARD_FILE PROJECT_DIR [--owner OWNER] [--key KEY]`:
-
-1. Creates the board in the code repo. Without `--key` and without a `key` setting, the board gets the key the cards share.
-2. Each card becomes an issue titled with the card title: To do → open, In progress → open with Status In Progress, Done → closed. Tags become labels; `Needs:` becomes blocked-by.
-3. The old id is the first line of the issue body (`was SKL-n`), so old branches and commits stay traceable. Old branches keep their names. New ids count from the issue numbers, so `SKL-12` after the migration is not the card `SKL-12`.
-4. The vault board file moves to `<vault>/Archive/`.
 
 ## `gh` facts
 
