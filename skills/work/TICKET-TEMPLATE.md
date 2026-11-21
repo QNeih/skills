@@ -18,6 +18,10 @@ Next: `/<skill>` — <one-line reason>
 
 <3–6 lines in glossary terms: what is asked, and what the comments changed>
 
+## Decisions
+
+<one line per decision: what, why, and the rejected option; `/grill-with-docs` writes them; "none" until then>
+
 ## Acceptance criteria
 
 <from the description, amended by comments; tag each amendment "(comment N)">
