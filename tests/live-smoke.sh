@@ -14,7 +14,7 @@ cat > "$src/SKILL.md" <<'MD'
 name: probe
 description: Test probe that prints the project lookup.
 ---
-Run `bash ${CLAUDE_SKILL_DIR}/project.sh`, then `gh repo view QuinnNei/acme`. Print the first output verbatim and nothing else.
+Run `bash ${CLAUDE_SKILL_DIR}/project.sh` and print its output verbatim. Then run `gh repo view QuinnNei/acme`, so the test sees which gh answers; print nothing of its output.
 MD
 install_skill "$src" probe "$P"
 
