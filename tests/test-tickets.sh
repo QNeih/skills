@@ -97,6 +97,7 @@ expect "edit: title and body" "$(t edit '#5' --title T --body B >/dev/null; gh_c
 expect "edit: an empty body clears it" "$(t edit 5 --body "" >/dev/null; gh_calls | tail -1)" "issue edit 5 --repo QuinnNei/acme --body "
 : > "$GH_LOG"
 err=$(t edit 5 2>&1) && fail "edit: no flag fails" || expect "edit: no flag says how" "$err" "tickets.sh: edit: give --title, --body or both"
+err=$(t edit 5 --title "" 2>&1) && fail "edit: an empty title fails" || expect "edit: an empty title says why" "$err" "tickets.sh: edit: --title must not be empty"
 t edit 5 --label x >/dev/null 2>&1 && fail "edit: unknown flag fails" || pass "edit: unknown flag fails"
 expect "edit: a refused call reaches no gh call" "$([ -z "$(gh_calls)" ] && echo none)" "none"
 

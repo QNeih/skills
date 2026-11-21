@@ -159,7 +159,7 @@ case $cmd in
     args=()
     while [ $# -gt 0 ]; do
       case $1 in
-        --title) args+=(--title "${2?}"); shift 2 ;;
+        --title) [ -n "${2?}" ] || die "edit: --title must not be empty"; args+=(--title "$2"); shift 2 ;;
         --body) args+=(--body "${2?}"); shift 2 ;;
         *) die "edit: unknown argument $1" ;;
       esac
