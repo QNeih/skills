@@ -4,6 +4,7 @@ My Claude Code skills. Per ticket I type two commands, `/work` and `/send`;
 everything in between runs on its own and stops only where I have to decide.
 
     /dashboard    full-screen, keyboard-driven: next tickets, ticket workflow, session tree
+    /start-project  start the project's servers and containers, open it in the browser
     /ticket TEXT  add an issue to the project's GitHub board
     /work KEY     claim the ticket, pick a route (fix, grill, build, wayfinder), start it
     /build        spec → tickets → test-first build in subagents → review
@@ -72,6 +73,7 @@ flowchart TD
 | | Skill | What it does | Uses |
 | --- | --- | --- | --- |
 | **Daily** | `dashboard` | Starts my full-screen local dashboard (each project's state, ticket workflow, background sessions) and brings its window to the front. The app lives in its own repo, `dashboard`, under the projects root. | dashboard repo |
+| | `start-project` | Starts every entry of the project's run file (`.claude/launch.json`: dev servers, containers) detached and opens the first entry's port in the browser. Without a run file it suggests one from the compose file or package scripts. A port another folder holds moves to a free one. The dashboard's "e" key runs it. | repo |
 | **Ticket flow** | `ticket` | Adds one issue to the project's GitHub board (a Project linked to the code repo; the id is the board's key and the issue number, `SKL-12`), in the language of the issues already there. First asks what the text leaves open that would change the work. Given only an id, points to `/work`. | GitHub |
 | | `work` | Claims a ticket on the project's board (GitHub Project, Jira, or any tracker with a connector), cuts its branch, imports it, and starts the route that works on it. | board (GitHub, Jira, other), repo |
 | | `build` | Runs a multi-session feature in one session: spec, tickets, test-first build in subagents, code review. | repo |
