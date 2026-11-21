@@ -48,6 +48,10 @@ _Avoid_: docs, knowledge base, GitHub wiki
 The file in a wiki that lists every source worked into its pages, one line each. A source is a note or file a person dropped into the project's folder in their brain.
 _Avoid_: ingest log, history
 
+**Decision note**:
+A source in the brain that holds one ticket's decisions with their reasons and rejected options, plus the ADRs and glossary entries the ticket added or changed. Written when the ticket ships or closes, so the brain and the project's wiki learn why, not what.
+_Avoid_: decision log, raw note
+
 **Wiki template**:
 The files every wiki starts with: its rules, its setup and ingest steps, an empty source log and an index.
 _Avoid_: scaffold, boilerplate
