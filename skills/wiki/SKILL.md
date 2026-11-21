@@ -9,19 +9,17 @@ disable-model-invocation: true
 
 `/wiki <project> [repo name]` gives a project a wiki: its own private GitHub repo, cloned inside the brain at `wiki/projects/<Name>`, fed once a day from the project's sources in `raw/<Name>`. Every step checks first and creates only what's missing, so a re-run on a project that has a wiki changes nothing.
 
-The brain is the vault. Its path and the projects root are set in `~/.claude/CLAUDE.md` (a project `CLAUDE.md` may replace them).
+The brain is the vault. Its path is set in `~/.claude/CLAUDE.md` (a project `CLAUDE.md` may replace it).
 
 Keep a list of what you created, what was already there and what you skipped; step 6 prints it.
 
 ## 1. Project
 
 ```bash
-VAULT=<vault> PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/vault-lookup.sh --note "<project>"
+VAULT=<vault> bash ${CLAUDE_SKILL_DIR}/vault-lookup.sh --note "<project>"
 ```
 
 Try the whole argument as `<project>` first. `project: none` and the argument has several words → the last word is the repo name and the rest is `<project>`; run it again. Still `project: none` → say its `reason:` and stop.
-
-Only the `project:` line counts; a wiki needs no checkout, so `dir: none` is fine.
 
 - `<name>`: the `project:` line.
 - `<repo>`: the repo name from the argument, else `<name>-wiki` with spaces as hyphens.
