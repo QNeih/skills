@@ -51,53 +51,86 @@ out=$(bash "$stop" "$FIX/missing"); rc=$?
 [ $rc -eq 1 ] && pass "missing folder: exit 1" || fail "missing folder: exit 1, got $rc"
 expect "missing folder: named" "$out" "error: worktree $FIX/missing not found"
 
-# --- Compose projects. A stand-in docker logs each call as `<cwd>: <args>`;
-# `ps` prints $DOCKER_PS, `ls` prints $DOCKER_LS, a call naming a subcommand in $DOCKER_FAIL exits 1.
+# --- Compose projects. A stand-in docker logs each call as `<cwd>: <args>`; `ls` prints $DOCKER_LS,
+# a call naming a subcommand in $DOCKER_FAIL exits 1 (`info` fails = daemon down).
 mkdir -p "$FIX/dockerbin" "$wt/docker" "$checkout/docker" "$wt/.claude"
 cat > "$FIX/dockerbin/docker" <<'SH'
 #!/usr/bin/env bash
 echo "$PWD: $*" >> "$DOCKER_LOG"
 for a in "$@"; do case " ${DOCKER_FAIL:-} " in *" $a "*) echo "cannot $a" >&2; exit 1 ;; esac; done
-for a in "$@"; do
-  case $a in ps) cat "$DOCKER_PS"; exit 0 ;; ls) cat "$DOCKER_LS"; exit 0 ;; esac
-done
+for a in "$@"; do case $a in ls) cat "$DOCKER_LS"; exit 0 ;; esac; done
 SH
 chmod +x "$FIX/dockerbin/docker"
-export DOCKER_LOG="$FIX/docker.log" DOCKER_PS="$FIX/docker-ps.json" DOCKER_LS="$FIX/docker-ls.json"
-cat > "$wt/.claude/launch.json" <<'JSON'
-{ "version": "0.0.1", "configurations": [
-  { "name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 },
-  { "name": "db", "runtimeExecutable": "docker", "runtimeArgs": ["compose", "-f", "c.yml", "up", "--build"], "cwd": "docker", "port": 5432 }
-] }
-JSON
-running() { echo '{"Project":"docker","Service":"db"}' > "$DOCKER_PS"; echo "[{\"Name\":\"docker\",\"Status\":\"running(1)\",\"ConfigFiles\":\"$1/docker/c.yml\"}]" > "$DOCKER_LS"; }
+cp "$FIX/dockerbin/docker" "$FIX/dockerbin/docker-compose"
+export DOCKER_LOG="$FIX/docker.log" DOCKER_LS="$FIX/docker-ls.json"
+launch() { printf '{ "version": "0.0.1", "configurations": [\n  { "name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 },\n  %s\n] }\n' "$1" > "$wt/.claude/launch.json"; }
+db='{ "name": "db", "runtimeExecutable": "docker", "runtimeArgs": ["compose", "-f", "c.yml", "up", "--build"], "cwd": "docker", "port": 5432 }'
+# project <config files>: `ls` lists one project with these comma-separated config files
+project() { echo "[{\"Name\":\"docker\",\"Status\":\"running(1)\",\"ConfigFiles\":\"$1\"}]" > "$DOCKER_LS"; }
 dstop() { : > "$DOCKER_LOG"; PATH="$FIX/dockerbin:$PATH" bash "$stop" "$wt"; }
+no_down() { ! grep -q " down$" "$DOCKER_LOG"; }
 
-running "$wt"
+launch "$db"; project "$wt/docker/c.yml"
 out=$(dstop); rc=$?
 [ $rc -eq 0 ] && pass "compose: exit 0" || fail "compose: exit 0, got $rc"
-grep -qxF "$wt/docker: compose -f c.yml down" "$DOCKER_LOG" && pass "compose: down with the entry's args before up, in its folder" || { fail "compose: down with the entry's args before up, in its folder"; cat "$DOCKER_LOG"; }
+grep -qxF "$wt/docker: compose -f c.yml down" "$DOCKER_LOG" && pass "compose (ls prints a JSON array): down with the entry's args before up, in its folder" || { fail "compose (ls prints a JSON array): down with the entry's args before up, in its folder"; cat "$DOCKER_LOG"; }
 expect "compose: one stopped line" "$out" "stopped: compose $wt/docker: docker compose -f c.yml down"
 
-running "$checkout"
+touch "$wt/docker/compose.yml"
+launch '{ "name": "db", "runtimeExecutable": "docker", "runtimeArgs": ["compose", "up"], "cwd": "docker", "port": 5432 }'
+project "$wt/docker/compose.yml"
 out=$(dstop); rc=$?
-[ $rc -eq 0 ] && pass "main checkout's project: exit 0" || fail "main checkout's project: exit 0, got $rc"
-! grep -q " down$" "$DOCKER_LOG" && pass "main checkout's project of the same name: no down" || { fail "main checkout's project of the same name: no down"; cat "$DOCKER_LOG"; }
-! grep -q "^stopped: " <<<"$out" && pass "main checkout's project: nothing reported stopped" || { fail "main checkout's project: nothing reported stopped"; echo "$out"; }
+[ $rc -eq 0 ] && grep -qxF "$wt/docker: compose down" "$DOCKER_LOG" && pass "no -f: the folder's default compose file is the entry's" || { fail "no -f: the folder's default compose file is the entry's"; echo "$out"; cat "$DOCKER_LOG"; }
+launch "$db"
 
-running "$wt"; : > "$DOCKER_PS"
+project "$checkout/docker/c.yml"
 out=$(dstop); rc=$?
-[ $rc -eq 0 ] && [ -z "$out" ] && ! grep -q " down$" "$DOCKER_LOG" && pass "no containers: no down, no output" || { fail "no containers: no down, no output"; echo "$out"; cat "$DOCKER_LOG"; }
+[ $rc -eq 0 ] && [ -z "$out" ] && no_down && pass "main checkout's project of the same name: no down, no output" || { fail "main checkout's project of the same name: no down, no output"; echo "$out"; cat "$DOCKER_LOG"; }
 
-running "$wt"
-out=$(DOCKER_FAIL=ps dstop); rc=$?
-[ $rc -eq 0 ] && [ -z "$out" ] && ! grep -q " down$" "$DOCKER_LOG" && pass "daemon not running: skipped, exit 0" || { fail "daemon not running: skipped, exit 0 (rc $rc)"; echo "$out"; }
+project "$wt/docker/c.yml,$checkout/docker/override.yml"
+out=$(dstop); rc=$?
+[ $rc -eq 0 ] && [ -z "$out" ] && no_down && pass "config files partly outside the worktree: skipped" || { fail "config files partly outside the worktree: skipped"; echo "$out"; cat "$DOCKER_LOG"; }
 
+echo '[]' > "$DOCKER_LS"
+out=$(dstop); rc=$?
+[ $rc -eq 0 ] && [ -z "$out" ] && no_down && pass "no project running: no down, no output" || { fail "no project running: no down, no output"; echo "$out"; }
+
+project "$wt/docker/c.yml"
+out=$(DOCKER_FAIL=info dstop); rc=$?
+[ $rc -eq 0 ] && [ -z "$out" ] && no_down && pass "daemon down: skipped silently, exit 0" || { fail "daemon down: skipped silently, exit 0 (rc $rc)"; echo "$out"; }
+
+out=$(DOCKER_FAIL=ls dstop); rc=$?
+[ $rc -eq 1 ] && no_down && pass "ls fails: exit 1, no down" || fail "ls fails: exit 1, no down (rc $rc)"
+expect "ls fails: error line" "$out" "error: compose $wt/docker: compose -f c.yml ls failed: cannot ls"
+
+echo 'not json' > "$DOCKER_LS"
+out=$(dstop); rc=$?
+[ $rc -eq 1 ] && grep -q "^error: compose $wt/docker: compose -f c.yml ls failed: " <<<"$out" && pass "ls prints no JSON: error line, exit 1" || { fail "ls prints no JSON: error line, exit 1 (rc $rc)"; echo "$out"; }
+
+project "$wt/docker/c.yml"
 out=$(DOCKER_FAIL=down dstop); rc=$?
 [ $rc -eq 1 ] && pass "down fails: exit 1" || fail "down fails: exit 1, got $rc"
-grep -q "^error: compose $wt/docker: docker compose -f c.yml down failed" <<<"$out" && pass "down fails: error line" || { fail "down fails: error line"; echo "$out"; }
+expect "down fails: error line" "$out" "error: compose $wt/docker: docker compose -f c.yml down failed: cannot down"
+
+launch '{ "name": "legacy", "runtimeExecutable": "docker-compose", "runtimeArgs": ["up"], "cwd": "docker" }'
+out=$(dstop); rc=$?
+[ $rc -eq 0 ] && no_down && pass "compose v1 entry: exit 0, no down" || fail "compose v1 entry: exit 0, no down (rc $rc)"
+expect "compose v1 entry: skipped line" "$out" "skipped: compose v1 entry legacy: bring it down by hand"
+
+echo '{ "configurations": [' > "$wt/.claude/launch.json"
+out=$(dstop); rc=$?
+[ $rc -eq 1 ] && grep -q "^error: $wt/.claude/launch.json unreadable: " <<<"$out" && pass "malformed run file: error line, exit 1" || { fail "malformed run file: error line, exit 1 (rc $rc)"; echo "$out"; }
+
+echo '{ "configurations": ["web", 3] }' > "$wt/.claude/launch.json"
+out=$(dstop); rc=$?
+[ $rc -eq 0 ] && [ -z "$out" ] && pass "entries that are not objects: ignored" || { fail "entries that are not objects: ignored (rc $rc)"; echo "$out"; }
+
+rm "$wt/.claude/launch.json"
+out=$(dstop); rc=$?
+[ $rc -eq 0 ] && [ -z "$out" ] && pass "no run file: no output, exit 0" || { fail "no run file: no output, exit 0 (rc $rc)"; echo "$out"; }
 
 # Docker not installed: PATH holds only the tools the script needs, so no docker can be found
+launch "$db"; project "$wt/docker/c.yml"
 mkdir -p "$FIX/minbin"
 for t in lsof ps sort sed paste tr cut sleep python3; do ln -s "$(command -v $t)" "$FIX/minbin/$t"; done
 out=$(PATH="$FIX/minbin" "$BASH" "$stop" "$wt"); rc=$?
