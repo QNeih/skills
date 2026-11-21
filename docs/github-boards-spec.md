@@ -47,7 +47,7 @@ Copies of one script are identical in every skill that carries it; `tests/shared
 | `/send` | PR body ends with `Closes <repo>#<n>`. A merge into the default branch closes the issue and the Project sets Done. A merge into another base closes nothing, so `/send` closes the issue. |
 | `/send` close | Closes the issue as not planned, with the reason as a comment. |
 | `/new-project` | Folder, code repo, board step. A new project is flat. A wiki comes from `/wiki`, on request. |
-| `/note`, `/add-context`, `/sentry-fix` | Use the lookup's `dir:` and `project:`; `/sentry-fix` reads `sentry:` from the settings file. |
+| `/sentry-fix` | Uses the lookup's `dir:` and `project:`, and reads `sentry:` from the settings file. |
 | Jira | `board: jira` and `key:` in the settings file; flow unchanged. |
 
 ## Setup (one time)
