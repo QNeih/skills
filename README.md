@@ -3,12 +3,12 @@
 My Claude Code skills. Per ticket I type two commands, `/work` and `/send`;
 everything in between runs on its own and stops only where I have to decide.
 
-    /dashboard    full-screen, keyboard-driven: next tickets, ticket workflow, session tree
+    /dashboard      full-screen, keyboard-driven: next tickets, ticket workflow, session tree
     /start-project  start the project's servers and containers, open it in the browser
-    /ticket TEXT  add an issue to the project's GitHub board
-    /work KEY     claim the ticket, pick a route (fix, grill, build, wayfinder), start it
-    /build        spec → tickets → test-first build in subagents → review
-    /send         commit, fix leftovers, rebase, lint, test, push, open the PR, move the board card
+    /ticket TEXT    add an issue to the project's GitHub board
+    /work KEY       claim the ticket, pick a route (fix, grill, build, wayfinder), start it
+    /build          spec → tickets → test-first build in subagents → review
+    /send           commit, fix leftovers, rebase, lint, test, push, open the PR, move the board card
 
 Built on Matt Pocock's skills (separate install): `/build` and `/work` hand off
 to his `to-spec`, `to-tickets`, `implement-spec`, `implement`, `wayfinder`,

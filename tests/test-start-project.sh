@@ -73,10 +73,10 @@ bash "$runnable" "$p" >/dev/null; rc=$?
 
 p="$FIX/r-bad"; mkdir -p "$p/.claude"; echo '{' > "$p/.claude/launch.json"
 out=$(bash "$runnable" "$p"); rc=$?
-[ $rc -eq 1 ] && grep -q '^error: .* is not valid JSON' <<<"$out" && pass "broken run file: error" || { fail "broken run file: error"; echo "$out"; }
+[ $rc -eq 2 ] && grep -q '^error: .* is unreadable or not valid JSON' <<<"$out" && pass "broken run file: error, exit 2" || { fail "broken run file: error, exit 2, got $rc"; echo "$out"; }
 
 out=$(bash "$runnable" "$FIX/missing"); rc=$?
-[ $rc -eq 1 ] && pass "missing folder: exit 1" || fail "missing folder: exit 1, got $rc"
+[ $rc -eq 2 ] && pass "missing folder: exit 2" || fail "missing folder: exit 2, got $rc"
 expect "missing folder: named" "$out" "error: folder $FIX/missing not found"
 
 # --- start.py ---
@@ -97,18 +97,21 @@ expect "up: url of the first entry with a port" "$out" "url: http://localhost:$a
 [ "$(port_cwd "$a")" = "$p" ] && pass "up: server listens from the project folder" || fail "up: server listens from the project folder"
 worker=$(sed -n 's/^started: worker pid \([0-9]*\),.*/\1/p' <<<"$out")
 [ -n "$worker" ] && kill -0 "$worker" 2>/dev/null && pass "up: entry without a port keeps running" || fail "up: entry without a port keeps running"
-kill "$worker" 2>/dev/null
 
 out=$(python3 -I "$start" up "$p"); rc=$?
 expect "again: running entry named" "$out" "running: web port $a"
-! grep -q '^started: \(web\|api\)' <<<"$out" && pass "again: running servers not started twice" || { fail "again: running servers not started twice"; echo "$out"; }
+expect "again: running entry without a port named" "$out" "running: worker pid $worker"
+! grep -q '^started: ' <<<"$out" && pass "again: nothing started twice" || { fail "again: nothing started twice"; echo "$out"; }
 expect "again: url" "$out" "url: http://localhost:$a"
+kill "$worker" 2>/dev/null
 
 # A port held from another folder, or from a ticket worktree inside the project, moves
 for case in other worktree; do
   p="$FIX/move-$case"; port=$(free_port)
   if [ $case = other ]; then holder="$FIX/elsewhere-$case"; else holder="$p/.claude/worktrees/ACM-1"; fi
-  mkdir -p "$holder"; run_file "$p" "$(server web "$port")"
+  # the same number in a field of its own and in another entry stays
+  mkdir -p "$holder"
+  run_file "$p" "$(server web "$port" | sed "s/ }\$/, \"timeout\": $port }/")" "$(server api "$(free_port)" | sed "s/ }\$/, \"timeout\": $port }/")"
   cp "$p/.claude/launch.json" "$FIX/before.json"
   serve "$holder" "$port"
   out=$(python3 -I "$start" up "$p"); rc=$?
@@ -117,8 +120,9 @@ for case in other worktree; do
   expect "$case: url on the new port" "$out" "url: http://localhost:$new"
   [ "$(port_cwd "$port")" = "$holder" ] && pass "$case: the other server keeps its port" || fail "$case: the other server keeps its port"
   [ "$(port_cwd "$new")" = "$p" ] && pass "$case: ours listens on the new port" || fail "$case: ours listens on the new port"
-  [ "$(sed "s/$port/$new/g" "$FIX/before.json")" = "$(cat "$p/.claude/launch.json")" ] \
-    && pass "$case: only the port number changed, in port and arguments" || { fail "$case: only the port number changed"; diff "$FIX/before.json" "$p/.claude/launch.json"; }
+  want=$(sed "/\"name\": \"web\"/ { s/\"$port\"/\"$new\"/; s/\"port\": $port/\"port\": $new/; }" "$FIX/before.json")
+  [ "$want" = "$(cat "$p/.claude/launch.json")" ] \
+    && pass "$case: only the entry's port and arguments changed" || { fail "$case: only the entry's port and arguments changed"; diff <(echo "$want") "$p/.claude/launch.json"; }
 done
 
 # A server that never listens: no answer, its log's tail, no url
@@ -134,7 +138,7 @@ p="$FIX/nocmd"; run_file "$p" '{ "name": "web", "runtimeExecutable": "no-such-co
 out=$(START_PROJECT_WAIT=0 python3 -I "$start" up "$p"); rc=$?
 [ $rc -eq 1 ] && grep -q "^error: web: cannot run 'no-such-command-xyz'" <<<"$out" && pass "missing command: error" || { fail "missing command: error"; echo "$out"; }
 
-# A container entry whose port another program holds is reported, not started or moved
+# A container entry whose port another program holds is reported, not started or moved (no docker here)
 p="$FIX/containers"; port=$(free_port); mkdir -p "$FIX/elsewhere-docker"
 run_file "$p" "{ \"name\": \"containers\", \"runtimeExecutable\": \"docker\", \"runtimeArgs\": [\"compose\", \"up\"], \"port\": $port }"
 serve "$FIX/elsewhere-docker" "$port"
@@ -143,12 +147,40 @@ grep -q "^taken: containers port $port: .*http.server" <<<"$out" && pass "contai
 ! grep -q '^\(started\|moved\|no answer\):' <<<"$out" && pass "container port taken: nothing started, moved or awaited" || { fail "container port taken: nothing started, moved or awaited"; echo "$out"; }
 grep -q "\"port\": $port" "$p/.claude/launch.json" && pass "container port taken: run file unchanged" || fail "container port taken: run file unchanged"
 
+# A stand-in docker: `compose ... ps --format json` prints $DOCKER_PS, every call is logged
+mkdir -p "$FIX/dockerbin"
+cat > "$FIX/dockerbin/docker" <<'SH'
+#!/usr/bin/env bash
+echo "$PWD: $*" >> "$FIX/docker.log"
+case " $* " in *" ps "*) cat "$DOCKER_PS" 2>/dev/null ;; esac
+SH
+chmod +x "$FIX/dockerbin/docker"
+export FIX DOCKER_PS="$FIX/docker-ps.json"
+p="$FIX/compose"; port=$(free_port); mkdir -p "$p/infra"
+run_file "$p" "{ \"name\": \"containers\", \"runtimeExecutable\": \"docker\", \"runtimeArgs\": [\"compose\", \"-f\", \"infra/c.yml\", \"up\", \"--build\"], \"port\": $port }"
+serve "$FIX/elsewhere-docker" "$port"
+echo "{\"Name\": \"web\", \"Publishers\": [{\"TargetPort\": 80, \"PublishedPort\": $port}]}" > "$DOCKER_PS"
+out=$(PATH="$FIX/dockerbin:$PATH" python3 -I "$start" up "$p"); rc=$?
+expect "compose publishes the port: running" "$out" "running: containers port $port"
+expect "compose publishes the port: url" "$out" "url: http://localhost:$port"
+grep -qxF "$p: compose -f infra/c.yml ps --format json" "$FIX/docker.log" && pass "compose asked with the entry's compose file, from its folder" || { fail "compose asked with the entry's compose file, from its folder"; cat "$FIX/docker.log"; }
+! grep -q " up" "$FIX/docker.log" && pass "compose publishes the port: not started" || fail "compose publishes the port: not started"
+echo '[{"Name": "db", "Publishers": [{"TargetPort": 5432, "PublishedPort": 5432}]}]' > "$DOCKER_PS"
+out=$(PATH="$FIX/dockerbin:$PATH" python3 -I "$start" up "$p"); rc=$?
+grep -q "^taken: containers port $port: " <<<"$out" && pass "another project's container port: taken" || { fail "another project's container port: taken"; echo "$out"; }
+! grep -q '^url:' <<<"$out" && pass "another project's container port: no url" || fail "another project's container port: no url"
+
 # wait alone: for a server started some other way (an App session's preview_start)
 p="$FIX/app"; port=$(free_port); run_file "$p" "$(server web "$port")"
 serve "$p" "$port"
 out=$(python3 -I "$start" wait "$p"); rc=$?
 [ $rc -eq 0 ] && pass "wait: exit 0" || fail "wait: exit 0, got $rc"
 expect "wait: url" "$out" "url: http://localhost:$port"
+
+py=$(python3 -I -c 'import sys; print(sys.executable)'); mkdir -p "$FIX/nolsof"
+out=$(PATH="$FIX/nolsof" "$py" -I "$start" ports "$FIX/app"); rc=$?
+[ $rc -eq 1 ] && pass "no lsof: exit 1" || fail "no lsof: exit 1, got $rc"
+expect "no lsof: named" "$out" "error: lsof not installed"
 
 out=$(python3 -I "$start" up "$FIX/r-npm"); rc=$?
 [ $rc -eq 1 ] && pass "no run file: exit 1" || fail "no run file: exit 1, got $rc"

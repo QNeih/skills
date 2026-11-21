@@ -21,7 +21,7 @@ _Avoid_: project note, wiki settings, config
 _Avoid_: launch config, start script
 
 **Dev server**:
-A process started from a run file entry that listens on the entry's port from inside the project's folder. It belongs to the session whose folder it runs in.
+A process started from a run file entry, running from the project's folder. It belongs to the session whose folder that is.
 _Avoid_: preview server, app server
 
 **Leftover**:

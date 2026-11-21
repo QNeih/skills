@@ -1,31 +1,23 @@
 #!/usr/bin/env python3
 """Starts the entries of a project's run file (.claude/launch.json) and waits for their ports.
 
-  start.py ports <dir>   check each entry's port; prints one line per entry:
-                           running: <name> port <p>         already listening from this folder
-                           moved: <name> port <old> -> <new>  taken from another folder; launch.json changed
-                           taken: <name> port <p>: <command>  a container port held by another program
-                           start: <name>                    to be started
-  start.py up <dir>      ports, then starts every `start:` entry detached, then wait
-                           started: <name> pid <pid>, log <log>
-  start.py wait <dir>    waits for every entry's port to listen from this folder, then prints
-                           up: <name> port <p>
-                           no answer: <name> port <p> after <s> s, then the log's last 20 lines
-                           url: http://localhost:<p>        the first entry with a port, when it is up
+  start.py ports <dir>   decide per entry: already running, port moved, port taken, or to start
+  start.py up <dir>      ports, then start the entries to start detached, then wait
+  start.py wait <dir>    wait up to START_PROJECT_WAIT seconds (default 60) for every port
 
-A listener counts as this folder's when its working directory is inside <dir> but not in a ticket
-worktree under it (<dir>/.claude/worktrees/). Docker publishes container ports from its own
-process, so for a docker entry any Docker listener counts.
-Logs: $TMPDIR/start-project/<project>-<entry>.log. Wait time: START_PROJECT_WAIT seconds (default 60).
-A port move changes only numbers in launch.json, so /send can tell it from a real edit.
-Exit 0 when every port is up, 1 on an error or a port without answer.
+The output lines are described in SKILL.md. Exit 0 when every port is up, 1 on an error or a
+port without answer.
 """
+import collections
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
+
+Listener = collections.namedtuple("Listener", "pid cwd cmd")
 
 
 def die(msg):
@@ -33,19 +25,58 @@ def die(msg):
     sys.exit(1)
 
 
-def lsof(*args):
-    r = subprocess.run(["lsof", "-nP", *args], capture_output=True, text=True)
-    return r.stdout
+def run(cmd, cwd=None):
+    try:
+        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True).stdout
+    except OSError:
+        return ""
+
+
+def cwd_of(pid):
+    out = run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"])
+    return next((l[1:] for l in out.splitlines() if l.startswith("n")), "")
 
 
 def listeners(port):
-    """(pid, cwd, command) of each process listening on the TCP port."""
-    out = []
-    for pid in sorted(set(lsof(f"-iTCP:{port}", "-sTCP:LISTEN", "-t").split())):
-        cwd = next((l[1:] for l in lsof("-a", "-p", pid, "-d", "cwd", "-Fn").splitlines() if l.startswith("n")), "")
-        cmd = subprocess.run(["ps", "-ww", "-o", "command=", "-p", pid], capture_output=True, text=True).stdout.strip()
-        out.append((pid, cwd, cmd))
-    return out
+    """Each process listening on the TCP port."""
+    pids = sorted(set(run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"]).split()))
+    return [Listener(pid, cwd_of(pid), run(["ps", "-ww", "-o", "command=", "-p", pid]).strip()) for pid in pids]
+
+
+def closing(text, i):
+    """Index of the bracket that closes the one at text[i], skipping JSON strings."""
+    depth, in_str, esc = 0, False, False
+    for j in range(i, len(text)):
+        c = text[j]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c in "[{":
+            depth += 1
+        elif c in "]}":
+            depth -= 1
+            if depth == 0:
+                return j
+    raise ValueError("unbalanced brackets")
+
+
+def entry_spans(text):
+    """(start, end) of each entry object in the configurations array."""
+    m = re.search(r'"configurations"\s*:\s*\[', text)
+    end, spans, i = closing(text, m.end() - 1), [], m.end()
+    while i < end:
+        if text[i] == "{":
+            j = closing(text, i)
+            spans.append((i, j + 1))
+            i = j
+        i += 1
+    return spans
 
 
 class Project:
@@ -64,6 +95,13 @@ class Project:
             die(f"{self.file} is not valid JSON: {e}")
         if not self.entries:
             die(f"no entries in {self.file}")
+        self.taken = None  # ports of container entries another program holds
+
+    def name(self, i):
+        return self.entries[i].get("name", f"entry {i + 1}")
+
+    def folder(self, entry):
+        return os.path.realpath(os.path.join(self.dir, entry.get("cwd", "")))
 
     def inside(self, cwd):
         wt = os.path.join(self.dir, ".claude", "worktrees") + "/"
@@ -73,24 +111,65 @@ class Project:
     def is_docker(entry):
         return os.path.basename(entry.get("runtimeExecutable", "")) in ("docker", "docker-compose")
 
-    def ours(self, entry, held):
-        docker = self.is_docker(entry)
-        return any(self.inside(cwd) or (docker and re.search(r"docker|vpnkit|orbstack", cmd, re.I))
-                   for _, cwd, cmd in held)
+    def published(self, entry):
+        """Host ports the entry's compose project publishes, by `docker compose ps`."""
+        args = list(entry.get("runtimeArgs") or [])
+        args = args[:args.index("up")] if "up" in args else args
+        out = run([entry["runtimeExecutable"], *args, "ps", "--format", "json"], cwd=self.folder(entry)).strip()
+        try:
+            rows = json.loads(out) if out.startswith("[") else [json.loads(l) for l in out.splitlines() if l.strip()]
+        except ValueError:
+            return set()
+        ports = set()
+        for r in rows:
+            ports |= {p.get("PublishedPort") for p in r.get("Publishers") or []}
+            ports |= {int(p) for p in re.findall(r":(\d+)->", r.get("Ports", ""))}
+        return ports
 
-    def log(self, entry):
+    def ours(self, entry, held):
+        # Docker publishes container ports from its own process, so ask compose instead of the cwd
+        if self.is_docker(entry):
+            return bool(held) and entry["port"] in self.published(entry)
+        return any(self.inside(l.cwd) for l in held)
+
+    def running_pid(self, entry):
+        """Pid of a process running the entry's command from the entry's folder, for an entry without a port."""
+        exe = os.path.basename(entry.get("runtimeExecutable", "")).lower()
+        tail = " ".join(entry.get("runtimeArgs") or [])
+        folder = self.folder(entry)
+        for line in run(["ps", "-axww", "-o", "pid=,command="]).splitlines():
+            pid, _, cmd = line.strip().partition(" ")
+            if tail and not cmd.endswith(" " + tail):
+                continue
+            head = cmd[: len(cmd) - len(tail)].split() if tail else cmd.split()[-1:]
+            # python3 shows as .../Python, npm as `node .../npm`
+            if not any(os.path.basename(t).lower().startswith(exe) or exe.startswith(os.path.basename(t).lower())
+                       for t in head):
+                continue
+            if int(pid) != os.getpid() and cwd_of(pid) == folder:
+                return pid
+        return None
+
+    def log(self, i):
         d = os.path.join(os.environ.get("TMPDIR", "/tmp"), "start-project")
         os.makedirs(d, exist_ok=True)
-        name = re.sub(r"[^\w.-]", "_", entry.get("name", "entry"))
-        return os.path.join(d, f"{os.path.basename(self.dir)}-{name}.log")
+        entry = re.sub(r"[^\w.-]", "_", self.name(i))
+        return os.path.join(d, f"{os.path.basename(self.dir)}-{entry}.log")
 
-    def move(self, entry, old):
+    def move(self, i, old):
         used = {e.get("port") for e in self.entries}
         new = old + 1
         while new in used or listeners(new):
             new += 1
-        # whole numbers only: the port and every argument that names it
-        self.text = re.sub(rf"(?<![\d.]){old}(?![\d.])", str(new), self.text)
+        # only this entry's port value and its arguments, and only the number, so /send can restore the edit
+        a, b = entry_spans(self.text)[i]
+        entry = self.text[a:b]
+        entry = re.sub(rf'("port"\s*:\s*){old}(?![\d.])', rf"\g<1>{new}", entry, count=1)
+        m = re.search(r'"runtimeArgs"\s*:\s*\[', entry)
+        if m:
+            s, e = m.end() - 1, closing(entry, m.end() - 1)
+            entry = entry[:s] + re.sub(rf"(?<![\d.]){old}(?![\d.])", str(new), entry[s:e]) + entry[e:]
+        self.text = self.text[:a] + entry + self.text[b:]
         with open(self.file, "w") as f:
             f.write(self.text)
         self.entries = json.loads(self.text)["configurations"]
@@ -98,33 +177,40 @@ class Project:
 
     def ports(self):
         """Prints each entry's state; returns the entries to start."""
-        todo = []
+        todo, self.taken = [], set()
         for i, entry in enumerate(self.entries):
-            name, port = entry.get("name", f"entry {i + 1}"), entry.get("port")
-            held = listeners(port) if port else []
+            name, port = self.name(i), entry.get("port")
+            if not port:
+                pid = self.running_pid(entry)
+                if pid:
+                    print(f"running: {name} pid {pid}")
+                else:
+                    print(f"start: {name}")
+                    todo.append(i)
+                continue
+            held = listeners(port)
             if not held:
                 print(f"start: {name}")
                 todo.append(i)
             elif self.ours(entry, held):
                 print(f"running: {name} port {port}")
             elif self.is_docker(entry):
-                print(f"taken: {name} port {port}: {held[0][2]}")
+                self.taken.add(port)
+                print(f"taken: {name} port {port}: {held[0].cmd}")
             else:
-                new = self.move(entry, port)
+                new = self.move(i, port)
                 print(f"moved: {name} port {port} -> {new}")
                 print(f"start: {name}")
                 todo.append(i)
         return todo
 
     def start(self, i):
-        entry = self.entries[i]
-        name, log = entry.get("name", f"entry {i + 1}"), self.log(entry)
-        cwd = os.path.join(self.dir, entry.get("cwd", ""))
+        entry, name, log = self.entries[i], self.name(i), self.log(i)
         cmd = [entry.get("runtimeExecutable", "")] + list(entry.get("runtimeArgs") or [])
         try:
             with open(log, "w") as out:
                 # a session of its own: the server outlives this script and the shell that ran it
-                p = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=out,
+                p = subprocess.Popen(cmd, cwd=self.folder(entry), stdin=subprocess.DEVNULL, stdout=out,
                                      stderr=subprocess.STDOUT, start_new_session=True)
         except OSError as e:
             print(f"error: {name}: cannot run {cmd[0]!r}: {e.strerror}")
@@ -133,12 +219,12 @@ class Project:
         return True
 
     def wait(self):
+        if self.taken is None:  # wait alone: `ports` ran in an earlier call
+            self.taken = {e["port"] for e in self.entries if e.get("port") and self.is_docker(e)
+                          and (held := listeners(e["port"])) and not self.ours(e, held)}
         limit = int(os.environ.get("START_PROJECT_WAIT", "60"))
         deadline = time.time() + limit
-        # a container port another program holds was reported as `taken:`; it never becomes ours
-        taken = {e["port"] for e in self.entries if e.get("port") and self.is_docker(e)
-                 and (held := listeners(e["port"])) and not self.ours(e, held)}
-        pending = [e for e in self.entries if e.get("port") and e["port"] not in taken]
+        pending = [e for e in self.entries if e.get("port") and e["port"] not in self.taken]
         up = set()
         while pending and time.time() < deadline:
             for e in list(pending):
@@ -149,15 +235,14 @@ class Project:
                 time.sleep(0.5)
         ok = True
         for i, e in enumerate(self.entries):
-            if not e.get("port") or e["port"] in taken:
+            if not e.get("port") or e["port"] in self.taken:
                 continue
-            name = e.get("name", f"entry {i + 1}")
             if e["port"] in up:
-                print(f"up: {name} port {e['port']}")
+                print(f"up: {self.name(i)} port {e['port']}")
                 continue
             ok = False
-            print(f"no answer: {name} port {e['port']} after {limit} s")
-            log = self.log(e)
+            print(f"no answer: {self.name(i)} port {e['port']} after {limit} s")
+            log = self.log(i)
             if os.path.isfile(log):
                 with open(log, errors="replace") as f:
                     tail = f.read().splitlines()[-20:]
@@ -173,6 +258,8 @@ class Project:
 def main():
     if len(sys.argv) != 3 or sys.argv[1] not in ("ports", "up", "wait"):
         die("usage: start.py ports|up|wait <dir>")
+    if not shutil.which("lsof"):
+        die("lsof not installed")
     cmd, project = sys.argv[1], Project(sys.argv[2])
     ok = True
     if cmd in ("ports", "up"):

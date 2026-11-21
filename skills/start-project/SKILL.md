@@ -6,9 +6,7 @@ disable-model-invocation: true
 
 # Start project
 
-`/start-project` starts every entry of the project's run file (`.claude/launch.json`) and opens `http://localhost:<port>` of the first entry with a port in the default browser. A project without a run file gets entries suggested from its compose file or package scripts, written once Quinn confirms. A project with nothing to run starts nothing. The dashboard's "e" key runs this skill in a session in the main checkout.
-
-The dev servers belong to this session's folder: `/send` stops a ticket worktree's servers, and the dashboard stops them when it archives the session.
+`/start-project` starts every entry of the project's run file (`.claude/launch.json`) and opens `http://localhost:<port>` of the first entry with a port in the default browser. A project without a run file gets entries suggested from its compose file or package scripts, written once Quinn confirms. A project with nothing to run starts nothing. The dashboard's "e" key runs this skill in a session in the main checkout; the dashboard stops that session's dev servers when it archives the session.
 
 ## 1. Folder
 
@@ -53,9 +51,10 @@ python3 ${CLAUDE_SKILL_DIR}/start.py up <dir>
 
 It starts each entry detached, logs to `$TMPDIR/start-project/<project>-<entry>.log`, and waits up to 60 s for every port to listen from `<dir>`. Its lines:
 
-- `running:` the entry already listens from `<dir>`; nothing started.
-- `moved:` another folder holds the port; the entry moved to a free port in `launch.json`.
-- `taken:` a container port another program holds; the entry was not started.
+- `running: <name> port <p>` or `running: <name> pid <pid>` (an entry without a port): the entry already runs from `<dir>`; nothing started.
+- `moved: <name> port <old> -> <new>`: another folder holds the port; only this entry's port and arguments changed in `launch.json`.
+- `taken: <name> port <p>: <command>`: a container entry whose port the entry's own compose project does not publish (another project's container, or another program); the entry was not started.
+- `start: <name>` (`ports` only): the entry to start.
 - `started:`, `up:` the entry started; its port listens.
 - `no answer:` the port did not listen in 60 s; the log's last 20 lines follow when there is a log (App session: read `preview_logs` instead).
 - `url:` the address to open.
@@ -72,6 +71,6 @@ A `url:` line → `open <url>`. None → open nothing.
 ## 5. Report
 
 - each entry: running, started, moved (old and new port), taken (by which command), no answer (with the log lines), or the error
-- the URL opened, or why none: no entry has a port, or the first one did not answer
+- the URL opened, or why none: no entry has a port, or the first entry with a port is `taken:` or gave `no answer:`
 - a run file written in step 2 or a port moved in step 3: `.claude/launch.json` is changed and left uncommitted
 - a `docker` entry started: its containers keep running until `docker compose down`
