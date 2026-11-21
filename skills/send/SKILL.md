@@ -6,7 +6,7 @@ argument-hint: "[draft] [notes for the commit and PR wording, or the close reaso
 
 # Send
 
-`/send` ships the current branch: commit, fix its leftovers, rebase onto the base branch, lint, test, push, open or reuse the PR, move the ticket on its board (GitHub: the PR body's `Closes` line closes it on a merge into the default branch; after a merge on send into another base, `/send` closes it), then stop the ticket's dev servers and delete the branch, the ticket worktree and the ticket's `.scratch/` and `.handoffs/` files. A ticket whose branch has nothing on it is **closed** instead: no commit, push or PR, the ticket closes with the reason, and the same cleanup runs. Typing `/send` is Quinn's go-ahead to commit, push and delete; there is no review step. Every step runs unless it says stop.
+`/send` ships the current branch: commit, fix its leftovers, rebase onto the base branch, lint, test, push, open or reuse the PR, move the ticket on its board (GitHub: the PR body's `Closes` line closes it on a merge into the default branch; after a merge on send into another base, `/send` closes it), then write the ticket's decision note into the brain, stop the ticket's dev servers and delete the branch, the ticket worktree and the ticket's `.scratch/` and `.handoffs/` files. A ticket whose branch has nothing on it is **closed** instead: no commit, push or PR, the ticket closes with the reason, and the same cleanup runs. Typing `/send` is Quinn's go-ahead to commit, push and delete; there is no review step. Every step runs unless it says stop.
 
 `$ARGUMENTS`: the word `draft` → open the PR as draft. Other text → context for the commit and PR wording, or the reason on a close; without git, it may name the ticket id.
 
@@ -29,7 +29,7 @@ PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
 
 Find the ticket. Its files are `<dir>/.scratch/<id>-<slug>/ticket.md` (title line `# <id>: …`, then `ref:`, `base:`, `board:`, and on Jira and other boards `branch:`) and `<dir>/.handoffs/HANDOFF-<id>.md`.
 
-- **Git**: a session started in the main checkout that works on its ticket in the ticket worktree `/work` made (`<dir>/.claude/worktrees/<id>`) → `cd` there first; steps 1–9 run in it. `<branch>` = `git branch --show-current`. The `ticket.md` with the line `branch: <branch>` is the ticket. On GitHub the ticket stores no branch: the id is the last path segment of `<branch>` (`feature/SKL-12` → `SKL-12`; on a board without a key `feature/12` → `12`), and its folder is `<dir>/.scratch/<id>-*`.
+- **Git**: a session started in the main checkout that works on its ticket in the ticket worktree `/work` made (`<dir>/.claude/worktrees/<id>`) → `cd` there first; steps 1–10 run in it. `<branch>` = `git branch --show-current`. The `ticket.md` with the line `branch: <branch>` is the ticket. On GitHub the ticket stores no branch: the id is the last path segment of `<branch>` (`feature/SKL-12` → `SKL-12`; on a board without a key `feature/12` → `12`), and its folder is `<dir>/.scratch/<id>-*`.
   - None → fallback for hand-cut branches: `<branch>` contains `[A-Z][A-Z0-9]+-[0-9]+` → that is the id and the ref, the board is the lookup's; `<branch>` ends in `/<digits>` on a GitHub board → that number is the id.
   - Still none → no ticket: the PR goes out without one, no board move, no ticket files deleted. Say so.
 - **No git**: the `ticket.md` files with `branch: none` or no `branch:` line. `$ARGUMENTS` names an id → that one. Else one file → it. Else the ones whose ticket is `In Progress` on their board (GitHub: `bash ${CLAUDE_SKILL_DIR}/tickets.sh show <n>` prints `status`); exactly one → it, otherwise list them and ask. None → stop and print this line as is: `Nothing to send: no ticket in <dir>/.scratch.`
@@ -46,7 +46,7 @@ Without git, go to step 8.
 2. `git fetch origin` (`cannot open '.git/FETCH_HEAD'` → rerun unsandboxed).
 3. `<base>`: `ticket.md`'s `base:`. Else a `hotfix/` branch → `main` or `master`, whichever is on `origin`; else `develop` if `origin/develop` exists, else `main` or `master`.
 4. `git diff --cached --quiet` fails → stop and ask: unstage (`git restore --staged .`) or say how to treat the staged hunks.
-5. **Port change**: `git diff -- .claude/launch.json` prints a diff, and every changed line differs from the line it replaces only in a number → `git restore .claude/launch.json`. That is a dev server's port moved for this session: it is never committed, and left in place it blocks the worktree's removal in step 9. The diff changes anything else → stop and ask which lines to commit.
+5. **Port change**: `git diff -- .claude/launch.json` prints a diff, and every changed line differs from the line it replaces only in a number → `git restore .claude/launch.json`. That is a dev server's port moved for this session: it is never committed, and left in place it blocks the worktree's removal in step 10. The diff changes anything else → stop and ask which lines to commit.
 6. **Change set**: `git status --porcelain --untracked-files=all`, minus every path under `.scratch/` or `.handoffs/`.
 7. **Branch commits**: `git rev-list origin/<base>..HEAD`, pushed or not. Commits already on `origin` still need their PR, board move and cleanup.
 8. Change set and branch commits both empty:
@@ -126,7 +126,7 @@ gh pr create --base <base> --assignee @me [--label <label>] --title "<title>" --
 
 **Merge on send**: a `CLAUDE.md` rule says to merge this repo's PRs on send, and the PR isn't a draft → `gh pr merge <url> --squash --delete-branch`. It fails → stop and show the output; the board move and cleanup don't run (GitHub: a merge into the default branch closes the ticket by itself).
 
-**Conflicting PRs**: `gh pr list --state open --limit 100 --json number,title,headRefName,mergeable`. Every PR whose `headRefName` is not `<branch>` and whose `mergeable` is `CONFLICTING` goes into the report with its number, title and branch. `UNKNOWN` (GitHub works it out only once asked, so this is usual right after a merge) → run the list again right before the report (step 10); still `UNKNOWN` → report that PR as not yet checked. Their branches stay as they are: each one is rebased by `/send` in its own ticket's session.
+**Conflicting PRs**: `gh pr list --state open --limit 100 --json number,title,headRefName,mergeable`. Every PR whose `headRefName` is not `<branch>` and whose `mergeable` is `CONFLICTING` goes into the report with its number, title and branch. `UNKNOWN` (GitHub works it out only once asked, so this is usual right after a merge) → run the list again right before the report (step 11); still `UNKNOWN` → report that PR as not yet checked. Their branches stay as they are: each one is rebased by `/send` in its own ticket's session.
 
 **Done when:** you hold the URL of an `OPEN` PR for `<branch>` (or, merged on send, a `MERGED` one), or the reason there is none; and every other open PR is noted as conflicting or `UNKNOWN`, or left out as mergeable.
 
@@ -147,7 +147,28 @@ Runs after a successful push, even if the PR step failed; on a close, right afte
 
 **Done when:** the ticket shows the new state, or the reason it doesn't is reported; on GitHub, a PR merged into a non-default base has its ticket closed, and any other PR caused no board write.
 
-## 9. Clean up
+## 9. Decision note
+
+A **decision note** is a source in the brain's `raw/<Name>/` folder: the ticket's decisions with their reasons, and the ADRs and glossary entries the branch added or changed. This step runs with a ticket, when:
+
+- **Git**: step 7 ended with an `OPEN` PR or one it merged; on a close, step 8 closed or moved the ticket (or Quinn answered `leave`).
+- **No git**: step 8 left the ticket closed (or the item done).
+
+Otherwise skip and say why. With git, run it where steps 2–8 ran, on `<branch>`, before step 10's `git fetch`: the ADR and glossary diff needs `origin/<base>` as it was before a merge on send.
+
+```bash
+VAULT=<vault> bash ${CLAUDE_SKILL_DIR}/decision-note.sh --ticket <ticket.md> --project <project> [--base <base>] [--close "<reason>"]
+```
+
+- `<vault>`: the `Vault:` path in `~/.claude/CLAUDE.md`. `<project>`: the lookup's `project:` line; `none` → the name of `<dir>`.
+- `--base <base>`: with git, so the note copies every ADR and glossary entry the branch added or changed. `--close`: on a close, with its reason.
+- `note: <path>` → written. The vault stays uncommitted: `brain-sync` commits it daily.
+- `note: none` → nothing to write; keep its `reason:` line for the report.
+- `error: <cause>` → could not fix, with that cause.
+
+**Done when:** the script printed a `note:` or `error:` line, or the skip is noted.
+
+## 10. Clean up
 
 - **Git**: runs when step 7 ended with an `OPEN` PR or one it merged, even if step 8 failed; on a close, only when step 8 closed or moved the ticket (or Quinn answered `leave`), since nothing else records the ticket. Otherwise skip and say why.
   1. `git rev-parse HEAD` differs from `git rev-parse @{u}` → stop: the remote doesn't hold every local commit. Merged on send → skip this check (`--delete-branch` removed the upstream); `git fetch origin` instead, so `origin/<base>` has the merge. Close → skip this check.
@@ -167,12 +188,13 @@ Last, with git and a ticket: the ticket worktree `<wt>` = `<dir>/.claude/worktre
 
 **Done when:** neither ticket path exists, `git branch --list <branch>` prints nothing (on a close, neither does `git ls-remote --heads origin <branch>`), the ticket worktree is gone or the report names the session it goes with, and otherwise `HEAD` is on `<base>` (in a linked worktree that stays: detached at `origin/<base>`).
 
-## 10. Report
+## 11. Report
 
 - commits, one subject each (leftover fixes and lint commit included)
 - rebase: "up to date", or the `origin/<base>` commit it moved onto and the files whose conflicts were resolved
 - tests: the script that ran, or that the project has none
 - PR URL, new or reused, and whether it was merged on send; on a close, "closed without code" and the reason
+- decision note: its path, or "no decision note" and the `reason:` or `error:` line
 - other open PRs that conflict (number, title, branch) or are not yet checked; none → "no other PR conflicts"
 - board state of the ticket: GitHub with a PR, "closes on merge" (or "closed" once merged); else its new state
 - stopped dev servers, one `stopped:` line each, or why none were stopped
