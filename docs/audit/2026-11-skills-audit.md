@@ -10,7 +10,7 @@ Audit of 2026-11-21, covering this repo's skills only; an overlap with an instal
 | `cv-update` | keep | Still the weekly CV check; no overlap. | none |
 | `dashboard` | keep | Still the one way to open the dashboard; no overlap. | none |
 | `dependabot-review` | keep | Still needed for Dependabot PRs; no overlap. | none |
-| `new-project` | change | No vault board is left to migrate, and every project's board is a GitHub Project. | Vault-board migration script, its script test and its spec section removed. Always creates a GitHub board, without the board question (SKL-79). |
+| `new-project` | change | No vault board is left to migrate, and every project's board is a GitHub Project. | Vault-board migration script, its script test and its spec section removed. Creates a GitHub board without the board question when the code is on GitHub; another host gets its tracker link (SKL-79). |
 | `send` | keep | Closes the ticket flow. Its ban on the `Co-Authored-By` trailer is deliberate: Quinn wants it on no commit. | none |
 | `sentry-fix` | keep | Still the Sentry fix flow; no overlap. | none |
 | `ticket` | keep | Still the way to add a ticket to a board. | none |

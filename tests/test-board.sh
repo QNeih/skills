@@ -169,4 +169,20 @@ bash "$SK/board.sh" set "$P7" board "https://boards.acme.test/org/eta" >/dev/nul
 expect "set: creates the settings file" "$(settings "$P7")" "board: https://boards.acme.test/org/eta"
 expect "set: front matter" "$(head -1 "$P7/.claude/project.md")" "---"
 expect "set: no gh call" "$([ -z "$(gh_calls)" ] && echo none)" "none"
+# suggest-key: first letter, then following consonants; never a key another board under the projects root uses
+export PROJECTS_ROOT="$FIX/keys"
+S="$PROJECTS_ROOT/skills"; fixture_repo "$S"
+expect "suggest-key: skills -> SKL" "$(bash "$SK/board.sh" suggest-key "$S")" "suggestion: SKL"
+C="$PROJECTS_ROOT/construct"; fixture_repo "$C"
+expect "suggest-key: construct -> CNS" "$(bash "$SK/board.sh" suggest-key "$C")" "suggestion: CNS"
+T="$PROJECTS_ROOT/Tür an Tür"; fixture_repo "$T"
+expect "suggest-key: accents and spaces dropped" "$(bash "$SK/board.sh" suggest-key "$T")" "suggestion: TRN"
+bash "$SK/board.sh" set "$C" key SKL >/dev/null
+fixture_repo "$PROJECTS_ROOT/nest/nest"; bash "$SK/board.sh" set "$PROJECTS_ROOT/nest/nest" key sks >/dev/null
+expect "suggest-key: skips keys of flat and nested boards, any case" "$(bash "$SK/board.sh" suggest-key "$S")" "suggestion: SLS"
+bash "$SK/board.sh" set "$S" key SLS >/dev/null
+expect "suggest-key: the project's own key is no conflict" "$(bash "$SK/board.sh" suggest-key "$S")" "suggestion: SLS"
+X="$PROJECTS_ROOT/x"; fixture_repo "$X"
+expect "suggest-key: one letter -> no suggestion" "$(bash "$SK/board.sh" suggest-key "$X" | wc -l | tr -d ' ')" "0"
+err=$(PROJECTS_ROOT= bash "$SK/board.sh" suggest-key "$S" 2>&1 >/dev/null) && fail "suggest-key: needs PROJECTS_ROOT" || pass "suggest-key: needs PROJECTS_ROOT"
 done_testing

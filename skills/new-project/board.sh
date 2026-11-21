@@ -17,6 +17,12 @@
 #   board.sh set PROJECT_DIR KEY VALUE
 #       set one line of the settings file (replaced, or added at the end of the front matter);
 #       creates the file when it is missing
+#   board.sh suggest-key PROJECT_DIR
+#       prints `suggestion: <KEY>`: 2-4 capitals from the checkout folder's name (accents and
+#       non-letters dropped), the first letter, then following consonants (skills -> SKL), then
+#       other letters. Skips every key the settings files of other projects under PROJECTS_ROOT
+#       (flat and nested) use, in any case. Prints nothing when no key fits (a one-letter name).
+#       Env: PROJECTS_ROOT.
 set -eu
 die() { echo "board.sh: $*" >&2; exit 1; }
 
@@ -56,7 +62,7 @@ set_line() {
     { print }' "$settings" > "$settings.tmp" && mv "$settings.tmp" "$settings"
 }
 
-usage="usage: board.sh create PROJECT_DIR [--owner OWNER] [--key KEY] | set PROJECT_DIR KEY VALUE"
+usage="usage: board.sh create PROJECT_DIR [--owner OWNER] [--key KEY] | set PROJECT_DIR KEY VALUE | suggest-key PROJECT_DIR"
 cmd=${1:-}
 case $cmd in
 create)
@@ -129,6 +135,31 @@ set)
   dir=$(main_dir "$dir"); settings="$dir/.claude/project.md"
   set_line "$key" "$value"
   echo "saved: $key in $settings"
+  ;;
+suggest-key)
+  dir=${2:?$usage}; dir=$(main_dir "$dir"); own="$dir/.claude/project.md"
+  [ -n "${PROJECTS_ROOT:-}" ] || die "suggest-key: PROJECTS_ROOT must be set"
+  used=()
+  for settings in "$PROJECTS_ROOT"/*/.claude/project.md "$PROJECTS_ROOT"/*/*/.claude/project.md; do
+    [ -f "$settings" ] && ! [ "$settings" -ef "$own" ] || continue
+    k=$(prop key); [ -z "$k" ] || used+=("$k")
+  done
+  perl -CSA -MUnicode::Normalize -e '
+    my ($name, @used) = @ARGV; my %used = map { uc($_) => 1 } @used;
+    (my $s = NFD($name)) =~ s/\pM//g; $s = uc $s; $s =~ s/[^A-Z]//g;
+    my ($first, @rest) = split //, $s;
+    exit unless @rest;
+    my @cons = grep { !/[AEIOU]/ } @rest;
+    my @cand;
+    for my $pool (\@cons, \@rest) {
+      for my $i (0 .. $#$pool) { for my $j ($i + 1 .. $#$pool) {
+        push @cand, "$first$pool->[$i]$pool->[$j]" if $pool->[$i] ne $pool->[$j] } }
+    }
+    for my $i (0 .. $#rest) { for my $j ($i + 1 .. $#rest) { for my $k ($j + 1 .. $#rest) {
+      push @cand, "$first$rest[$i]$rest[$j]$rest[$k]" } } }
+    push @cand, map { "$first$_" } @rest;
+    for (@cand) { next if $used{$_}; print "suggestion: $_\n"; exit }
+  ' "$(basename "$dir")" ${used[@]+"${used[@]}"}
   ;;
 *) echo "$usage" >&2; exit 2 ;;
 esac

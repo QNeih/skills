@@ -1,6 +1,6 @@
 ---
 name: new-project
-description: Set up a new or existing project — folder, code repo, GitHub board, sidebar group, optional brain wiki — creating only what's missing.
+description: Set up a new or existing project — folder, code repo, board (GitHub, or the code host's tracker), sidebar group, optional brain wiki — creating only what's missing.
 argument-hint: "[name | clone URL], or nothing for the current folder"
 disable-model-invocation: true
 ---
@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 `/new-project [name|clone URL]` makes a project ready in one go. Every step checks first and creates only what's missing, so a re-run on an existing project is safe.
 
-A project `x` is one private code repo. Its checkout is `<projects root>/x` (flat) or `<projects root>/x/x` (nested: a project folder of the same name around it); a new project is flat. Its board is a GitHub Project linked to that repo, and its settings file is `.claude/project.md` in the checkout. The projects root is set in `~/.claude/CLAUDE.md` (a project `CLAUDE.md` may replace it). The lookup prints the project's lines:
+A project `x` is one private code repo. Its checkout is `<projects root>/x` (flat) or `<projects root>/x/x` (nested: a project folder of the same name around it); a new project is flat. Its board is a GitHub Project linked to that repo (the tracker of the code's host when that is not GitHub), and its settings file is `.claude/project.md` in the checkout. The projects root is set in `~/.claude/CLAUDE.md` (a project `CLAUDE.md` may replace it). The lookup prints the project's lines:
 
 ```bash
 cd <folder> && PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh [--name <name>]
@@ -32,11 +32,14 @@ Then make what `<repo>` lacks:
 
 `<repo>` is its absolute path with symlinks resolved (`cd <repo> && pwd -P`) from here on.
 
-**Done when:** `<repo>` is a git checkout with an origin on GitHub.
+**Done when:** `<repo>` is a git checkout with an origin; one this step created is on GitHub.
 
 ## 2. Board
 
-Run the lookup from `<repo>` and follow `${CLAUDE_SKILL_DIR}/BOARD.md`. With no board yet it asks the board question, creates the board in the code repo and saves the settings file; a board that exists is left as it is.
+Run the lookup from `<repo>` and follow `${CLAUDE_SKILL_DIR}/BOARD.md`, with one change: in place of its board question, the code host picks the answer. A board the lookup already names (GitHub with a `number:`, Jira, a link or text) stays as it is.
+
+- Origin on `github.com` → the answer is `github`: `board.sh create` makes the board, then the key question.
+- Origin on another host (e.g. Azure DevOps) → ask once: "Where are the tasks for <project> managed? Paste the link of its tracker." The link is the answer.
 
 **Done when:** the lookup prints `project: <name>` with a `board:` other than `none`, and for `github` also `number:` and `repo:`.
 

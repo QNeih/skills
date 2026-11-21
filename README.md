@@ -5,7 +5,7 @@ everything in between runs on its own and stops only where I have to decide.
 
     /dashboard          full-screen, keyboard-driven: next tickets, ticket workflow, session tree
     /start-project      start the project's servers and containers, open it in the browser
-    /new-project [NAME] set up a project: folder, code repo, board, sidebar group, optional wiki
+    /new-project [NAME] set up a project: folder, code repo, board (GitHub or the code host's), sidebar group, optional wiki
     /wiki PROJECT       give a project a wiki in the brain, fed once a day
     /ticket TEXT        add a ticket to the project's board (GitHub or Jira)
     /work KEY           claim the ticket, pick a route (fix, grill, build, wayfinder), start it
@@ -37,7 +37,10 @@ flowchart TD
     runfile -- "none: drafted from the<br/>compose file or package scripts" --> confirmrun{"Run file OK?"}:::gate --> startall
     runfile -- "yes" --> startall["Start every entry detached;<br/>open the first entry with a port"]
 
-    newproject(["/new-project"]):::cmd --> setup["Folder and git, code repo,<br/>GitHub board, sidebar group"]
+    newproject(["/new-project"]):::cmd --> repo["Folder and git, code repo"] --> host{"Board?"}
+    host -- "board exists: kept" --> setup["Sidebar group"]
+    host -- "code on GitHub" --> ghboard["GitHub board"] --> boardkey{"Key: suggested,<br/>another or none?"}:::gate --> setup
+    host -- "code on another host" --> trackerlink{"Tracker link?"}:::gate --> setup
     setup --> plan{"Empty project:<br/>plan it?"}:::gate
     plan -. "offer: small → I type /to-spec" .-> tospec["to-spec"]:::pocock
     plan -. "offer: big → I type /wayfinder" .-> wayfinder
@@ -102,7 +105,7 @@ flowchart TD
 | | `send` | Ships the branch: commit, fix its own leftovers, rebase onto the base branch, lint, test, push, PR with the tracker link, board card moved, the ticket's decisions written into the brain as a decision note, the ticket's dev servers stopped, branch and worktree cleaned up. Names the other open PRs that now conflict. A ticket branch with nothing on it is closed instead: the ticket closes with the reason, same cleanup. | GitHub, board, repo, vault |
 | **Maintenance** | `sentry-fix` | Fixes Sentry errors in their own worktrees and opens draft PRs; finds the Sentry projects from the DSNs in the code. Without short ids it lists the top three errors and waits for my pick. | Sentry, GitHub |
 | | `dependabot-review` | Checks every open Dependabot PR in parallel: does it break the build, could it change behaviour. | GitHub |
-| **Setup and misc** | `new-project` | Sets up a project: folder and git, code repo, GitHub board, sidebar group. Creates only what's missing. Offers `to-spec` or `wayfinder` for an empty project, and `/wiki` when the brain is a git repo. | GitHub, repo, vault |
+| **Setup and misc** | `new-project` | Sets up a project: folder and git, code repo, board, sidebar group. Creates only what's missing. The board follows the code host: a GitHub Project when the code is on GitHub, with a suggested key to confirm; for another host it asks for that tracker's link. An existing board stays. Offers `to-spec` or `wayfinder` for an empty project, and `/wiki` when the brain is a git repo. | GitHub, repo, vault |
 | | `wiki` | Gives a project a wiki: a private repo of shared pages inside the brain, fed once a day from the project's notes. Schedules the wiki task and the daily brain sync. Creates only what's missing. | vault, GitHub |
 | | `cv-update` | Weekly: checks my GitHub PRs and `/teach` lessons against my CV and asks before editing it. | GitHub |
 
