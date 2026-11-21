@@ -160,6 +160,7 @@ guard_check() {
 # CLAUDE_MODEL picks the model, ALLOWED_TOOLS (comma-separated) scopes the tools.
 run_claude() {
   local dir=$1 prompt=$2; shift 2
+  command -v claude >/dev/null || { echo "claude is not on PATH: every live check would fail on empty output" >&2; exit 2; }
   guard_start
   CLAUDE_OUT=$(cd "$dir" && claude -p "$prompt" --permission-mode acceptEdits --add-dir "$FIX" \
     --allowedTools "${ALLOWED_TOOLS:-Skill,Read,Glob,Grep,Edit,Write,Bash(git *)}" \
