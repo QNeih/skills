@@ -17,6 +17,12 @@
 #   board.sh set PROJECT_DIR KEY VALUE
 #       set one line of the settings file (replaced, or added at the end of the front matter);
 #       creates the file when it is missing
+#   board.sh suggest-key PROJECT_DIR
+#       prints `suggestion: <KEY>`: 2-4 capitals from the checkout folder's name (accents and
+#       non-letters dropped), the first letter, then following consonants (skills -> SKL), then
+#       other letters. Skips every key the settings files of other projects under PROJECTS_ROOT
+#       (flat and nested) use, in any case. Prints nothing when no key fits (a one-letter name).
+#       Env: PROJECTS_ROOT.
 set -eu
 die() { echo "board.sh: $*" >&2; exit 1; }
 
@@ -37,10 +43,10 @@ origin_repo() {
   awk -F'[/:]' 'NF >= 2 { print $(NF-1) "/" $NF }' <<<"$u"
 }
 
-# prop KEY: front matter property of the settings file, quotes stripped
+# prop FILE KEY: front matter property of a settings file, quotes stripped
 prop() {
-  awk -v k="$1" 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit }
-    index($0, k ":") == 1 { v = substr($0, length(k) + 2); gsub(/^[ \t"\x27]+|[ \t"\x27]+$/, "", v); print v; exit }' "$settings" 2>/dev/null || true
+  awk -v k="$2" 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit }
+    index($0, k ":") == 1 { v = substr($0, length(k) + 2); gsub(/^[ \t"\x27]+|[ \t"\x27]+$/, "", v); print v; exit }' "$1" 2>/dev/null || true
 }
 
 # set_line KEY VALUE: one front matter line of the settings file; creates file and front matter when missing
@@ -56,7 +62,7 @@ set_line() {
     { print }' "$settings" > "$settings.tmp" && mv "$settings.tmp" "$settings"
 }
 
-usage="usage: board.sh create PROJECT_DIR [--owner OWNER] [--key KEY] | set PROJECT_DIR KEY VALUE"
+usage="usage: board.sh create PROJECT_DIR [--owner OWNER] [--key KEY] | set PROJECT_DIR KEY VALUE | suggest-key PROJECT_DIR"
 cmd=${1:-}
 case $cmd in
 create)
@@ -72,14 +78,14 @@ create)
   dir=$(main_dir "$dir"); settings="$dir/.claude/project.md"
   # NFC, so a folder name with decomposed umlauts finds the Project titled with composed ones
   name=$(perl -CSA -MUnicode::Normalize -le 'print NFC shift' "$(basename "$dir")")
-  repo=$(prop repo); [ -n "$repo" ] || repo=$(origin_repo "$dir")
+  repo=$(prop "$settings" repo); [ -n "$repo" ] || repo=$(origin_repo "$dir")
   [ -n "$repo" ] || die "$dir has no origin: the board needs the code repo on GitHub"
-  [ -n "$owner" ] || owner=$(prop owner)
+  [ -n "$owner" ] || owner=$(prop "$settings" owner)
   [ -n "$owner" ] || owner=${repo%%/*}
-  [ -n "$key" ] || key=$(prop key)
+  [ -n "$key" ] || key=$(prop "$settings" key)
 
   # titled: whether the Project's title carries the key (yes, no, or unknown when found by number)
-  number=$(prop project); titled=unknown
+  number=$(prop "$settings" project); titled=unknown
   if [ -z "$number" ]; then
     # The owner's Projects titled <name> or <name> (<some key>), one per line: number TAB key
     found=$(gh project list --owner "$owner" -L 200 --format json | jq -r --arg n "$name" '
@@ -103,7 +109,7 @@ create)
   fi
   [ -n "$number" ] || die "no Project number from gh"
   # A key the title lacks, or a new key for a Project found by its number: the title gets it
-  if [ -n "$key" ] && { [ $titled = no ] || { [ $titled = unknown ] && [ "$key" != "$(prop key)" ]; }; }; then
+  if [ -n "$key" ] && { [ $titled = no ] || { [ $titled = unknown ] && [ "$key" != "$(prop "$settings" key)" ]; }; }; then
     gh project edit "$number" --owner "$owner" --title "$name ($key)" >/dev/null
   fi
 
@@ -129,6 +135,31 @@ set)
   dir=$(main_dir "$dir"); settings="$dir/.claude/project.md"
   set_line "$key" "$value"
   echo "saved: $key in $settings"
+  ;;
+suggest-key)
+  dir=${2:?$usage}; dir=$(main_dir "$dir"); own="$dir/.claude/project.md"
+  [ -n "${PROJECTS_ROOT:-}" ] || die "suggest-key: PROJECTS_ROOT must be set"
+  used=()
+  for other in "$PROJECTS_ROOT"/*/.claude/project.md "$PROJECTS_ROOT"/*/*/.claude/project.md; do
+    [ -f "$other" ] && ! [ "$other" -ef "$own" ] || continue
+    k=$(prop "$other" key); [ -z "$k" ] || used+=("$k")
+  done
+  perl -CSA -MUnicode::Normalize -e '
+    my ($name, @used) = @ARGV; my %used = map { uc($_) => 1 } @used;
+    (my $s = NFD($name)) =~ s/\pM//g; $s = uc $s; $s =~ s/[^A-Z]//g;
+    my ($first, @rest) = split //, $s;
+    exit unless @rest;
+    my @cons = grep { !/[AEIOU]/ } @rest;
+    my @cand;
+    for my $pool (\@cons, \@rest) {
+      for my $i (0 .. $#$pool) { for my $j ($i + 1 .. $#$pool) {
+        push @cand, "$first$pool->[$i]$pool->[$j]" if $pool->[$i] ne $pool->[$j] } }
+    }
+    for my $i (0 .. $#rest) { for my $j ($i + 1 .. $#rest) { for my $k ($j + 1 .. $#rest) {
+      push @cand, "$first$rest[$i]$rest[$j]$rest[$k]" } } }
+    push @cand, map { "$first$_" } @rest;
+    for (@cand) { next if $used{$_}; print "suggestion: $_\n"; exit }
+  ' "$(basename "$dir")" ${used[@]+"${used[@]}"}
   ;;
 *) echo "$usage" >&2; exit 2 ;;
 esac
