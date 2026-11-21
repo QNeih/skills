@@ -12,9 +12,10 @@ everything in between runs on its own and stops only where I have to decide.
     /build              spec → tickets → test-first build in subagents → review
     /send               commit, fix leftovers, rebase, lint, test, push, open the PR, move the board card
 
-Built on Matt Pocock's skills (separate install): `/work`, `/build`, `/send` and `/new-project`
+Built on Matt Pocock's skills (separate install): `/work`, `/build` and `/send`
 hand off to his `to-spec`, `to-tickets`, `implement-spec`, `implement`, `wayfinder`,
-`grill-with-docs`, `diagnosing-bugs`, `code-review` and `resolving-merge-conflicts`.
+`grill-with-docs`, `diagnosing-bugs`, `code-review` and `resolving-merge-conflicts`;
+`/new-project` offers his `to-spec` and `wayfinder` for an empty project.
 
 ## Workflow
 
@@ -24,7 +25,7 @@ Grey: Matt Pocock's skills. Everything else runs on its own.
 ```mermaid
 flowchart TD
     dashboard(["/dashboard"]):::cmd --> dash["Per project: tickets in progress, next ticket,<br/>conflicting PRs, Sentry issues, Dependabot PRs, sessions"]
-    dash --> key{"Key?"}:::gate
+    dash --> key{"Dashboard key?"}:::gate
     key -- "s" --> sentryfix["sentry-fix<br/>lists the top errors"] --> pickerrors{"Which errors?"}:::gate
     pickerrors --> sentryfixes["One worktree and subagent per error"] --> draftpr["Draft PRs"]
     key -- "d" --> depreview["dependabot-review<br/>checks every open PR in parallel"] --> verdict["Verdict per PR:<br/>build, behaviour"]
@@ -34,14 +35,14 @@ flowchart TD
 
     startproject(["/start-project"]):::cmd --> runfile{"Run file?"}
     runfile -- "none: drafted from the<br/>compose file or package scripts" --> confirmrun{"Run file OK?"}:::gate --> startall
-    runfile -- "yes" --> startall["Start every entry detached;<br/>open the first entry's port"]
+    runfile -- "yes" --> startall["Start every entry detached;<br/>open the first entry with a port"]
 
     newproject(["/new-project"]):::cmd --> setup["Folder and git, code repo,<br/>GitHub board, sidebar group"]
     setup --> plan{"Empty project:<br/>plan it?"}:::gate
-    plan -- "small" --> tospec["to-spec"]:::pocock
-    plan -- "big" --> wayfinder
+    plan -. "offer: small → I type /to-spec" .-> tospec["to-spec"]:::pocock
+    plan -. "offer: big → I type /wayfinder" .-> wayfinder
     setup --> addwiki{"Brain wiki?"}:::gate
-    addwiki -- "yes" --> wiki
+    addwiki -- "yes: runs /wiki" --> wiki
 
     wiki(["/wiki PROJECT"]):::cmd --> wikirepo["Wiki repo in the brain:<br/>wiki/projects/Name"] --> pushwiki{"Create the private<br/>GitHub repo and push?"}:::gate
     pushwiki --> wikitasks["Schedule the daily wiki task<br/>and the daily brain sync"]
