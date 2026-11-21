@@ -27,12 +27,12 @@ PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
 
 `<dir>` is its `dir:` line: the main checkout, or the project folder without git. **Git** means `git -C <dir> rev-parse` succeeds. Its `board:` line is the board: `github`, `jira`, or another tracker's link or text; `repo:` is the GitHub board's repo (`owner/name`, the code repo). `board: none` or `project: none` → no board from the lookup; go on.
 
-Find the ticket. Its files are `<dir>/.scratch/<id>-<slug>/ticket.md` (title line `# <id>: …`, then `ref:`, `base:`, `board:`, and on Jira and other boards `branch:`) and `<dir>/.handoffs/HANDOFF-<id>.md`.
+Find the ticket. Its **ticket files** are `.scratch/<id>-<slug>/ticket.md` (title line `# <id>: …`, then `ref:`, `base:`, `board:`, and on Jira and other boards `branch:`) and `.handoffs/HANDOFF-<id>.md`. Note where they were found: step 10 deletes them there.
 
-- **Git**: a session started in the main checkout that works on its ticket in the ticket worktree `/work` made (`<dir>/.claude/worktrees/<id>`) → `cd` there first; steps 1–10 run in it. `<branch>` = `git branch --show-current`. The `ticket.md` with the line `branch: <branch>` is the ticket. On GitHub the ticket stores no branch: the id is the last path segment of `<branch>` (`feature/SKL-12` → `SKL-12`; on a board without a key `feature/12` → `12`), and its folder is `<dir>/.scratch/<id>-*`.
+- **Git**: a session started in the main checkout that works on its ticket in the ticket worktree `/work` made (`<dir>/.claude/worktrees/<id>`) → `cd` there first; steps 1–10 run in it. Look for the ticket files in the worktree this session now works in, then in `<dir>` (tickets started before `/work` wrote them into the worktree keep them there). `<branch>` = `git branch --show-current`. The `ticket.md` with the line `branch: <branch>` is the ticket. On GitHub the ticket stores no branch: the id is the last path segment of `<branch>` (`feature/SKL-12` → `SKL-12`; on a board without a key `feature/12` → `12`), and its folder is `.scratch/<id>-*` in the worktree, else in `<dir>`.
   - None → fallback for hand-cut branches: `<branch>` contains `[A-Z][A-Z0-9]+-[0-9]+` → that is the id and the ref, the board is the lookup's; `<branch>` ends in `/<digits>` on a GitHub board → that number is the id.
   - Still none → no ticket: the PR goes out without one, no board move, no ticket files deleted. Say so.
-- **No git**: the `ticket.md` files with `branch: none` or no `branch:` line. `$ARGUMENTS` names an id → that one. Else one file → it. Else the ones whose ticket is `In Progress` on their board (GitHub: `bash ${CLAUDE_SKILL_DIR}/tickets.sh show <n>` prints `status`); exactly one → it, otherwise list them and ask. None → stop and print this line as is: `Nothing to send: no ticket in <dir>/.scratch.`
+- **No git**: the ticket files are in `<dir>`. The `ticket.md` files with `branch: none` or no `branch:` line. `$ARGUMENTS` names an id → that one. Else one file → it. Else the ones whose ticket is `In Progress` on their board (GitHub: `bash ${CLAUDE_SKILL_DIR}/tickets.sh show <n>` prints `status`); exactly one → it, otherwise list them and ask. None → stop and print this line as is: `Nothing to send: no ticket in <dir>/.scratch.`
 
 The board is the lookup's `board:`; `ticket.md`'s `board:` link names the Jira site and project. A GitHub board is described in `${CLAUDE_SKILL_DIR}/GITHUB-SEND.md`.
 
@@ -179,7 +179,7 @@ VAULT=<vault> bash ${CLAUDE_SKILL_DIR}/decision-note.sh --ticket <ticket.md> --p
   6. Dev servers, with a ticket: the ticket worktree `<dir>/.claude/worktrees/<id>` exists → `bash ${CLAUDE_SKILL_DIR}/stop-servers.sh <dir>/.claude/worktrees/<id>`. It stops every process that listens on a TCP port from inside that folder and the compose projects its run file starts, and prints one `stopped:` line each. A `skipped:` line → put it in the report. An `error:` line → show it and stop. No ticket worktree (the ticket was worked in the main checkout) → stop nothing and say so: a server listening there may be one Quinn runs.
 - **No git**: runs when step 8 left the ticket closed (or the item done). Otherwise keep the files and say why.
 
-Then, with a ticket, delete its files (untracked, so `rm -rf`): its `<dir>/.scratch/<id>-<slug>/` folder and `<dir>/.handoffs/HANDOFF-<id>.md`. A `.scratch/` or `.handoffs/` folder left empty → remove it. Other tickets' files stay.
+Then, with a ticket, delete its ticket files where step 1 found them (untracked, so `rm -rf`): its `.scratch/<id>-<slug>/` folder and `.handoffs/HANDOFF-<id>.md`. A `.scratch/` or `.handoffs/` folder left empty → remove it. Other tickets' files stay.
 
 Last, with git and a ticket: the ticket worktree `<wt>` = `<dir>/.claude/worktrees/<id>`. It doesn't exist → skip. Else run `claude agents --json --all --cwd <dir>`:
 

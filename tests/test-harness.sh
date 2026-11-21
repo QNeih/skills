@@ -18,15 +18,19 @@ grep -qF "$VAULT" "$PROJECTS_ROOT/acme/CLAUDE.md" && grep -qF "$PROJECTS_ROOT" "
 
 # Guard: stand-in real dirs, so nothing real is touched
 fake=$(cd "$src" && pwd -P)
-mkdir -p "$fake/vault" "$fake/home/.claude/skills" "$fake/projects/skills/.scratch" "$fake/projects/other/.scratch"
+mkdir -p "$fake/vault" "$fake/home/.claude/skills" "$fake/projects/skills/.scratch" "$fake/projects/other/.scratch" \
+  "$fake/projects/other/other/.claude/worktrees/OT-1/.handoffs" "$fake/projects/flat/.claude/worktrees/FL-1/.scratch"
 export REAL_VAULT="$fake/vault" REAL_HOME="$fake/home" REAL_PROJECTS_ROOT="$fake/projects"
 guard_start
 touch "$fake/projects/skills/.scratch/ok.md"
 out=$(guard_check) && pass "guard: quiet run passes" || fail "guard: quiet run passes: $out"
 guard_start
-touch "$fake/vault/note.md" "$fake/projects/other/.scratch/x.md"
+touch "$fake/vault/note.md" "$fake/projects/other/.scratch/x.md" "$fake/projects/other/other/.claude/worktrees/OT-1/.handoffs/HANDOFF-OT-1.md" \
+  "$fake/projects/flat/.claude/worktrees/FL-1/.scratch/t.md"
 out=$(guard_check) && fail "guard: catches writes" || pass "guard: catches writes"
 grep -qF "$fake/vault/note.md" <<<"$out" && grep -qF "$fake/projects/other/.scratch/x.md" <<<"$out" \
+  && grep -qF "$fake/projects/other/other/.claude/worktrees/OT-1/.handoffs/HANDOFF-OT-1.md" <<<"$out" \
+  && grep -qF "$fake/projects/flat/.claude/worktrees/FL-1/.scratch/t.md" <<<"$out" \
   && pass "guard: names the files" || fail "guard: names the files: $out"
 
 done_testing

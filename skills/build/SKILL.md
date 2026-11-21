@@ -12,8 +12,11 @@ The only gates are the ones inside those skills: to-spec's seam check and to-tic
 
 ## Terms
 
-- **Main checkout**: `dir` = parent of `git rev-parse --path-format=absolute --git-common-dir`. `.scratch/` lives there, also when you run from a worktree. Pass subagents absolute paths into it.
-- **Feature folder**: `<dir>/.scratch/<feature>/`. `/work` already made `.scratch/<id>-<slug>/` with `ticket.md` for the current branch → that folder. Else a short kebab-case slug from the input.
+- **Main checkout**: `dir` = parent of `git rev-parse --path-format=absolute --git-common-dir`.
+- **Feature folder**: where the **ticket files** are, first match. Pass subagents absolute paths into it.
+  - `/work`'s `.scratch/<id>-<slug>/` with `ticket.md` for the current branch, in the worktree `/build` runs in (`git rev-parse --show-toplevel`).
+  - The same folder in `<dir>/.scratch/` (tickets started before `/work` wrote into the worktree).
+  - Else `.scratch/<feature>/` in the worktree `/build` runs in, `<feature>` a short kebab-case slug from the input.
 - **Tracker**: local markdown in the feature folder, whatever the project's docs name as tracker. Spec at `spec.md`, tickets at `issues/<NN>-<slug>.md` with `**Blocked by:**` and `**Status:**` lines, labels as Pocock writes them (`ready-for-agent`, …). The project's board (a GitHub Project or Jira) only holds the parent ticket; leave it alone.
 - **Integration branch**: the branch checked out when `/build` starts (`/work`'s `feature/<KEY>`). On `main`, `develop` or a detached HEAD → create `feature/<feature>` from HEAD and say so.
 - **Done ticket**: its `**Status:**` line reads `done`.
@@ -47,11 +50,11 @@ Load `implement-spec` with `spec.md` and `issues/`, with these changes:
 
 - **Step 3**: use the integration branch; create nothing, open no PR.
 - **Step 4**: start only frontier tickets. A ticket that already has a worktree or branch from an earlier run → its implementer continues there.
-- **Step 5**: right after a ticket merges into the integration branch, set its `**Status:**` to `done` in the main checkout. That line is what a re-run reads.
+- **Step 5**: right after a ticket merges into the integration branch, set its `**Status:**` to `done` in the feature folder. That line is what a re-run reads.
 - **Step 7**: Skill tool `code-review`, fixed point `origin/<base>` (`develop`, else `main`), spec `spec.md`. Every ticket was already done on a re-run → still run it.
 - **Step 8**: tickets are resolved by their `done` status; report the integration branch.
 
-**Done when:** every ticket is done, the review findings are fixed on the integration branch, the ticket worktrees are removed, and the main checkout has the integration branch checked out.
+**Done when:** every ticket is done, the review findings are fixed on the integration branch, the ticket worktrees are removed, and the worktree `/build` runs in has the integration branch checked out.
 
 ## 5. Report
 
