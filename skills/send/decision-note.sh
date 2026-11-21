@@ -2,25 +2,30 @@
 # Writes a ticket's decision note into the brain: <vault>/raw/<Name>/<YYYY-MM-DD> <id> <title>.md.
 #   decision-note.sh --ticket <ticket.md> --project <name> [--base <base>] [--close <reason>]
 # <Name> is the page <vault>/wiki/projects/<Name>.md whose name matches <name>, ignoring case,
-# spaces and hyphens. The note holds the ticket's `## Decisions` lines (a section of only "none"
-# counts as empty), the close reason as one more decision line, and, with --base and git in the
-# current folder, the full text of every ADR (docs/adr/*.md) and every glossary entry (in a
-# GLOSSARY.md) the branch added or changed against the merge base with origin/<base>.
+# spaces and hyphens. The note holds the ticket's `## Decisions` lines (`none` and template
+# placeholder lines starting with `<` left out), the close reason as one more decision line,
+# and, with --base and git in the current folder, the full text of every ADR (docs/adr/*.md)
+# and every glossary entry (in a GLOSSARY.md) the branch added or changed against the merge
+# base with origin/<base>.
+# A note of the same ticket already in that folder (` <id> ` in its name) is overwritten.
 # Prints `note: <path>`; `note: none` plus `reason:` when there is nothing to write (exit 0);
-# `error: <cause>` when the vault or the project page is missing (exit 1).
+# `error: <cause>` when an argument is wrong, the title line is not `# <id>: <title>`, or the
+# vault or the project page is missing (exit 1).
 # Env: VAULT (the brain's folder).
 set -u
 
+err() { echo "error: $1"; exit 1; }
+
 ticket= project= base= close=
 while [ $# -gt 0 ]; do
+  case $1 in --ticket|--project|--base|--close) [ $# -ge 2 ] || err "$1 needs a value" ;; esac
   case $1 in
     --ticket) ticket=$2 ;; --project) project=$2 ;; --base) base=$2 ;; --close) close=$2 ;;
-    *) echo "error: unknown argument $1"; exit 1 ;;
+    *) err "unknown argument $1" ;;
   esac
   shift 2
 done
 
-err() { echo "error: $1"; exit 1; }
 # NFC, lowercase, spaces and hyphens removed
 norm() { perl -CSA -MUnicode::Normalize -le '$_ = lc NFC shift; s/[ -]//g; print' "$1"; }
 
@@ -37,12 +42,12 @@ done
 
 # Title line `# <id>: <title>`
 head=$(sed -n '1s/^# //p' "$ticket")
+[[ $head == ?*": "?* ]] || err "the first line of $ticket is not '# <id>: <title>'"
 id=${head%%: *} title=${head#*: }
 ref=$(sed -n 's/^ref: //p' "$ticket" | head -1)
 
-# The `## Decisions` section, blank lines dropped
-decisions=$(awk '/^## / { on = ($0 == "## Decisions"); next } on && NF' "$ticket")
-[ "$(tr '[:upper:]' '[:lower:]' <<<"$decisions")" = none ] && decisions=
+# The `## Decisions` section, without blank lines, `none` and template placeholders (`<...`)
+decisions=$(awk '/^## / { on = ($0 == "## Decisions"); next } on && NF && tolower($0) != "none" && !/^</' "$ticket")
 [ -z "$close" ] || decisions=$(printf '%s\n%s' "$decisions" "- Closed without code: $close" | sed '/^$/d')
 
 adrs= glossary=
@@ -90,6 +95,9 @@ today=$(date +%F)
 file_title=$(printf '%s' "$title" | tr -d '\\/:*?"<>|#^[]' | tr -s ' ')
 dir="$VAULT/raw/$name"
 file="$dir/$today $id $file_title.md"
+# A rerun overwrites the ticket's earlier note, whatever its date
+old=$(find "$dir" -maxdepth 1 -type f -name "* $id *.md" 2>/dev/null | head -1)
+[ -z "$old" ] || file=$old
 mkdir -p "$dir" || err "cannot create $dir"
 {
   printf '# %s\n\n' "$head"

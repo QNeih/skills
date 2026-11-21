@@ -47,6 +47,15 @@ grep -qF 'Old decision' <<<"$body" && fail "an unchanged ADR stays out" || pass 
 grep -qF 'Order' <<<"$body" && fail "an unchanged entry stays out" || pass "an unchanged entry stays out"
 grep -qF 'Refund' <<<"$body" && fail "a deleted entry stays out" || pass "a deleted entry stays out"
 
+# A rerun on a later day overwrites the ticket's earlier note, but not another ticket's
+older="$VAULT/raw/Acme Shop/2026-01-02 ACM-7 Pay by invoice later.md"
+mv "$file" "$older"
+echo other > "$VAULT/raw/Acme Shop/2026-01-02 ACM-70 Other.md"
+run --ticket "$t" --project acme-shop --base main
+expect "rerun: prints the earlier note's path" "$out" "note: $older"
+[ "$(ls "$VAULT/raw/Acme Shop" | wc -l | tr -d ' ')" -eq 2 ] && grep -qF 'We keep invoices' "$older" &&
+  pass "rerun: the earlier note is overwritten, no second note" || { fail "rerun: one note per ticket"; ls "$VAULT/raw/Acme Shop"; }
+
 # A close: the branch has nothing on it; the reason is a decision line
 git -C "$repo" switch -q main
 rm -rf "$VAULT/raw"
@@ -63,6 +72,11 @@ run --ticket "$t" --project acme-shop --base main
 expect "nothing to write: no note" "$out" "note: none"
 [ $rc -eq 0 ] && [ ! -e "$VAULT/raw" ] && pass "nothing to write: no file, exit 0" || fail "nothing to write: no file, exit 0 (rc $rc)"
 
+# The template placeholder counts as no decisions
+ticket "$t" '<one line per decision: what, why, and the rejected option; "none" until then>'
+run --ticket "$t" --project acme-shop --base main
+expect "placeholder: no note" "$out" "note: none"
+
 # No git: only the decisions
 ticket "$t" '- Keep paper invoices. Rejected: PDF only.'
 repo="$FIX/nogit"; mkdir -p "$repo"
@@ -77,5 +91,16 @@ grep -q '^error: no project page' <<<"$out" && [ $rc -eq 1 ] && [ ! -e "$VAULT/r
 # No vault
 out=$(cd "$repo" && VAULT= bash "$note" --ticket "$t" --project acme-shop); rc=$?
 grep -q '^error: ' <<<"$out" && [ $rc -eq 1 ] && pass "no vault: error, exit 1" || { fail "no vault"; echo "$out"; }
+
+# A title line without `<id>: `
+printf '# Pay later\n\n## Decisions\n\n- a\n' > "$t"
+out=$(cd "$repo" && VAULT=$VAULT bash "$note" --ticket "$t" --project acme-shop); rc=$?
+grep -q "^error: the first line of .* is not '# <id>: <title>'" <<<"$out" && [ $rc -eq 1 ] && [ ! -e "$VAULT/raw" ] &&
+  pass "title line without id: error, exit 1, no file" || { fail "title line without id"; echo "$out"; }
+
+# An option without its value
+out=$(cd "$repo" && VAULT=$VAULT bash "$note" --project acme-shop --ticket 2>&1); rc=$?
+expect "option without value: error line" "$out" "error: --ticket needs a value"
+[ $rc -eq 1 ] && pass "option without value: exit 1" || fail "option without value: exit 1 (rc $rc)"
 
 done_testing
