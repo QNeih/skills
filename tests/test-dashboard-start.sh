@@ -16,12 +16,12 @@ out=$(bash "$start" 2>&1); rc=$?
 expect "missing dashboard: names both places" "$out" "error: dashboard repo not found: no start.sh in $PROJECTS_ROOT/dashboard/dashboard or $PROJECTS_ROOT/dashboard"
 
 fake_start "$PROJECTS_ROOT/dashboard"
-out=$(bash "$start" --stop 2>&1); rc=$?
+out=$(bash "$start" --some-arg 2>&1); rc=$?
 [ $rc -eq 0 ] && pass "flat dashboard: exit 0" || fail "flat dashboard: exit 0, got $rc"
-expect "flat dashboard: runs its start.sh with the arguments" "$out" "ran $PROJECTS_ROOT/dashboard/start.sh --stop"
+expect "flat dashboard: runs its start.sh with the arguments" "$out" "ran $PROJECTS_ROOT/dashboard/start.sh --some-arg"
 
 fake_start "$PROJECTS_ROOT/dashboard/dashboard"
-out=$(bash "$start" --stop 2>&1); rc=$?
+out=$(bash "$start" --some-arg 2>&1); rc=$?
 [ $rc -eq 0 ] && pass "nested dashboard: exit 0" || fail "nested dashboard: exit 0, got $rc"
-expect "nested dashboard: wins over the flat one" "$out" "ran $PROJECTS_ROOT/dashboard/dashboard/start.sh --stop"
+expect "nested dashboard: wins over the flat one" "$out" "ran $PROJECTS_ROOT/dashboard/dashboard/start.sh --some-arg"
 done_testing

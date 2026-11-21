@@ -43,6 +43,7 @@ expect "numbers keep counting after a skip" "$out" "saved   $out_dir/03-screen.p
 ! grep -q secret-token <<<"$out" && pass "token is never printed" || fail "token is never printed"
 
 out=$(python3 -I "$fetch" --site "file://$site/" --cloud-id c1 --max-mb 40 ACM-1 "$FIX/out2" 2>&1); rc=$?
+[ $rc -eq 0 ] && pass "--max-mb 40: exit 0" || { fail "--max-mb 40: exit 0, got $rc"; echo "$out"; }
 expect "--max-mb 40 saves the big one too" "$out" "saved   $FIX/out2/02-huge.mov  video/quicktime  30720 KB"
 
 touch "$FIX/no-keychain"
