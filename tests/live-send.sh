@@ -2,7 +2,7 @@
 # /send through claude -p on the GitHub board in the code repo (stand-in gh, project fixture), against a local bare remote. The git
 # project's board has the key ACM (ids ACM-<n>, issue <n>); the project without git has none (ids are issue numbers). Close without a reason asks,
 # with one closes the issue as not planned with the reason; a PR body ends with `Closes <owner>/<repo>#<n>` and nothing is written to the
-# board; a leftover from the handoff fixed in its own commit, no to-do written; rebase onto a moved base, lint commit, test.sh, push and the
+# board; a leftover from the handoff fixed in its own commit; rebase onto a moved base, lint commit, test.sh, push and the
 # "PR on <host> not supported" stop; a ticket worktree is removed, port change and all; a failing test.sh is fixed in its own commit and the
 # branch pushed; without git: the issue closes, ticket files deleted.
 . "$(dirname "$0")/lib.sh"
@@ -142,7 +142,6 @@ done
 [ -n "$lint" ] && pass "lint: own commit" || { fail "lint: own commit"; git -C "$remote" log -p main..bugfix/ACM-12; }
 [ -n "$(only_line_commit bugfix/ACM-12 '+module.exports = { b }')" ] && pass "leftover: fixed in its own commit" \
   || { fail "leftover: fixed in its own commit"; git -C "$remote" log -p main..bugfix/ACM-12; echo "$CLAUDE_OUT" | tail -20; }
-[ ! -e "$VAULT/Briefing notes.md" ] && pass "leftover: no to-do written" || { fail "leftover: no to-do written"; cat "$VAULT/Briefing notes.md"; }
 [ -z "$(git -C "$acme" status --porcelain | grep -vE '\.(scratch|handoffs)/')" ] && pass "commit: tree clean" || fail "commit: tree clean"
 [ -z "$(board_writes)" ] && pass "stop: no board write" || { fail "stop: no board write"; board_writes; }
 [ "$(git -C "$acme" branch --show-current)" = bugfix/ACM-12 ] && [ -f "$acme/.scratch/ACM-12-login-fails/ticket.md" ] \

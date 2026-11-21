@@ -16,10 +16,10 @@ remote_count() { git -C "$REMOTE" rev-list --count main; }
 remote_files() { git -C "$REMOTE" ls-tree -r --name-only main; }
 
 new_brain
-echo "hello" > "$BRAIN/Briefing notes.md"
+echo "hello" > "$BRAIN/Inbox.md"
 out=$(bash "$SYNC" "$BRAIN" 2>&1); rc=$?
 [ "$rc" -eq 0 ] && pass "changed brain: exits 0" || fail "changed brain: exits 0 ($out)"
-expect "changed brain: file is on the remote" "$(remote_files)" "Briefing notes.md"
+expect "changed brain: file is on the remote" "$(remote_files)" "Inbox.md"
 expect "changed brain: commit message is the date" "$(git -C "$REMOTE" log -1 --format=%s main)" "$(date +%F)"
 
 before=$(remote_count)
