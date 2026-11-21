@@ -142,16 +142,17 @@ real_vault() {
 guard_start() { GUARD_MARK=$(mktemp /tmp/skills-guard.XXXXXX); }
 # guard_check: lists real files changed since guard_start; fails if any
 guard_check() {
-  local home=${REAL_HOME:-$HOME} root=${REAL_PROJECTS_ROOT:-$HOME/Projects} vault changed
+  local home=${REAL_HOME:-$HOME} root=${REAL_PROJECTS_ROOT:-$HOME/Projects} vault changed c d watched=()
   vault=$(real_vault)
   [ -d "$vault" ] || { echo "guard: real vault not found; set REAL_VAULT"; return 1; }
+  # flat and nested checkouts, and their ticket worktrees
+  for c in "$root"/* "$root"/*/*; do
+    for d in .scratch .handoffs; do watched+=("$c/$d" "$c"/.claude/worktrees/*/"$d"); done
+  done
   changed=$( { find "$vault" -newer "$GUARD_MARK"
                # skills/synced/ is Claude Code's own skill-sync cache, rewritten on every start
                find -L "$home/.claude/skills" -newer "$GUARD_MARK" | grep -v "^$home/.claude/skills/synced/"
-               # flat and nested checkouts, and their ticket worktrees
-               find "$root"/*/.scratch "$root"/*/.handoffs "$root"/*/*/.scratch "$root"/*/*/.handoffs \
-                 "$root"/*/.claude/worktrees/*/.scratch "$root"/*/.claude/worktrees/*/.handoffs \
-                 "$root"/*/*/.claude/worktrees/*/.scratch "$root"/*/*/.claude/worktrees/*/.handoffs -newer "$GUARD_MARK" | grep -v "^$root/skills/"
+               find "${watched[@]}" -newer "$GUARD_MARK" | grep -v "^$root/skills/"
              } 2>/dev/null)
   rm -f "$GUARD_MARK"
   [ -z "$changed" ] || { echo "guard: real files changed during the run:"; echo "$changed"; return 1; }

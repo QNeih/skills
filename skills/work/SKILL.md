@@ -56,7 +56,7 @@ Each ticket works in its own **ticket worktree** `<wt>` = `<dir>/.claude/worktre
    - `<wt>` → stay.
    - Another ticket's worktree (`<dir>/.claude/worktrees/<other id>`) → stop: ask Quinn to start this ticket in its own session.
    - Any other linked worktree (`git rev-parse --git-dir` differs from `--git-common-dir`) → stay: it is this session's own.
-   - The main checkout → `<wt>` missing: `git -C <dir> worktree add <wt> -b <branch> <start point>` (branch exists → `git -C <dir> worktree add <wt> <branch>`, and say so). Then `cd <wt>`. From here on the ticket's code work happens in `<wt>`: commands as `cd <wt> && …` or `git -C <wt> …`, file edits by absolute path under `<wt>`. `<dir>` stays the main checkout; the **ticket files** go in `<wt>` (steps 5 and 7). No EnterWorktree: it would make the main checkout read-only for this session.
+   - The main checkout → `<wt>` missing: `git -C <dir> worktree add <wt> -b <branch> <start point>` (branch exists → `git -C <dir> worktree add <wt> <branch>`, and say so). Then `cd <wt>`. From here on the ticket's code work happens in `<wt>`: commands as `cd <wt> && …` or `git -C <wt> …`, file edits by absolute path under `<wt>`. `<dir>` stays the main checkout; the **ticket files** go in `<wt>` too (step 5). No EnterWorktree: it would make the main checkout read-only for this session.
 3. `git status --porcelain --untracked-files=no` prints anything → stop and ask: stash, commit, or discard.
 4. `git branch --show-current` is not `<branch>` (a worktree the dashboard made is on `worktree-<id>`) → `git checkout -b <branch> <start point>`; branch exists → `git checkout <branch>` and say so. The branch it left is `worktree-<id>` → delete it: `git rev-list -1 worktree-<id> --not <branch> --remotes` prints nothing (no commit of its own) → `git branch -D worktree-<id>`; prints a commit → keep it and report it as could not fix, with its cause.
 5. With an origin → `git push -u origin HEAD`.
@@ -66,9 +66,9 @@ Each ticket works in its own **ticket worktree** `<wt>` = `<dir>/.claude/worktre
 
 ## 5. Import
 
-The ticket files live in `<root>`: with git the worktree this session works in after step 4, `git rev-parse --show-toplevel` (`<wt>`, or the linked worktree it started in), so any session can write them there; without git `<dir>`.
+`<ticket files dir>` holds the **ticket files**: with git, the worktree step 4 ends in (`<wt>`, or the linked worktree this session started in); without git, `<dir>`.
 
-Folder: `<root>/.scratch/<id>-<slug>/`, `<slug>` a 2–4 word kebab-case English gist of the title. A folder starting with `<id>-` exists → reuse it.
+Folder: `<ticket files dir>/.scratch/<id>-<slug>/`, `<slug>` a 2–4 word kebab-case English gist of the title. A folder starting with `<id>-` exists → reuse it.
 
 Write `ticket.md` there from `${CLAUDE_SKILL_DIR}/TICKET-TEMPLATE.md`, filled as the board file's **Import** says. `<dir>/CONTEXT-MAP.md` exists → name the contexts the ticket touches and write the agent sections in their glossary terms. Leave `Status:` and `Next:` for step 6.
 
@@ -93,7 +93,7 @@ No row fits → `needs-triage`, `/grill-with-docs`.
 
 ## 7. Handoff
 
-Write `<root>/.handoffs/HANDOFF-<id>.md`. Pointers only, every path absolute:
+Write `<ticket files dir>/.handoffs/HANDOFF-<id>.md`. Pointers only, every path absolute:
 
 - id, title, board (file path or link)
 - branch, base and ticket worktree path, or "no git"

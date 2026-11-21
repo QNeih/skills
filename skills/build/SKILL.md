@@ -13,7 +13,10 @@ The only gates are the ones inside those skills: to-spec's seam check and to-tic
 ## Terms
 
 - **Main checkout**: `dir` = parent of `git rev-parse --path-format=absolute --git-common-dir`.
-- **Feature folder**: the ticket's folder in the worktree `/build` runs in (`git rev-parse --show-toplevel`), where `/work` writes the **ticket files**: `/work` already made `.scratch/<id>-<slug>/` with `ticket.md` for the current branch there → that folder; else in `<dir>/.scratch/` (tickets started before that). Neither → `.scratch/<feature>/` in the worktree `/build` runs in, a short kebab-case slug from the input. Pass subagents absolute paths into it.
+- **Feature folder**: where the **ticket files** are, first match. Pass subagents absolute paths into it.
+  - `/work`'s `.scratch/<id>-<slug>/` with `ticket.md` for the current branch, in the worktree `/build` runs in (`git rev-parse --show-toplevel`).
+  - The same folder in `<dir>/.scratch/` (tickets started before `/work` wrote into the worktree).
+  - Else `.scratch/<feature>/` in the worktree `/build` runs in, `<feature>` a short kebab-case slug from the input.
 - **Tracker**: local markdown in the feature folder, whatever the project's docs name as tracker. Spec at `spec.md`, tickets at `issues/<NN>-<slug>.md` with `**Blocked by:**` and `**Status:**` lines, labels as Pocock writes them (`ready-for-agent`, …). The project's board (a GitHub Project or Jira) only holds the parent ticket; leave it alone.
 - **Integration branch**: the branch checked out when `/build` starts (`/work`'s `feature/<KEY>`). On `main`, `develop` or a detached HEAD → create `feature/<feature>` from HEAD and say so.
 - **Done ticket**: its `**Status:**` line reads `done`.
