@@ -88,6 +88,19 @@ expect "block: prints the result" "$out" "12: blocked by 3"
 grep -q '^api graphql -F issueId=ID12 -F blockingIssueId=ID3 -f query=' <<<"$(gh_calls)" \
   && pass "block: adds the blocked-by link" || fail "block: adds the blocked-by link"
 
+# edit: title, body or both on the issue; no flag fails before any gh call
+: > "$GH_LOG"
+expect "edit: title only prints the result" "$(t edit 5 --title "New title")" "5: edited"
+expect "edit: title only" "$(gh_calls | tail -1)" "issue edit 5 --repo QuinnNei/acme --title New title"
+expect "edit: body only" "$(t edit 5 --body "New body" >/dev/null; gh_calls | tail -1)" "issue edit 5 --repo QuinnNei/acme --body New body"
+expect "edit: title and body" "$(t edit '#5' --title T --body B >/dev/null; gh_calls | tail -1)" "issue edit 5 --repo QuinnNei/acme --title T --body B"
+expect "edit: an empty body clears it" "$(t edit 5 --body "" >/dev/null; gh_calls | tail -1)" "issue edit 5 --repo QuinnNei/acme --body "
+: > "$GH_LOG"
+err=$(t edit 5 2>&1) && fail "edit: no flag fails" || expect "edit: no flag says how" "$err" "tickets.sh: edit: give --title, --body or both"
+err=$(t edit 5 --title "" 2>&1) && fail "edit: an empty title fails" || expect "edit: an empty title says why" "$err" "tickets.sh: edit: --title must not be empty"
+t edit 5 --label x >/dev/null 2>&1 && fail "edit: unknown flag fails" || pass "edit: unknown flag fails"
+expect "edit: a refused call reaches no gh call" "$([ -z "$(gh_calls)" ] && echo none)" "none"
+
 # a full item list (200) without the ticket: fails loudly, never "not on the Project"
 fixture_project_flat big 'board: github' 'project: 8' 'repo: QuinnNei/big'
 gh_can 'project item-list 8 --owner QuinnNei -L 200 --format json' "$(jq -nc '{items: [range(1; 201) | {id: "X\(.)", status: "Todo", labels: [], content: {type: "Issue", number: ., title: "t"}}]}')"
@@ -118,7 +131,11 @@ grep -q '^api graphql -F issueId=ID12 -F blockingIssueId=ID3 -f query=' <<<"$(gh
 out=$(t create --title "Keyed" --body "b" --blocked-by "ACM-3")
 expect "key: create prints the number" "$out" "12"
 : > "$GH_LOG"
+expect "key: edit takes <KEY>-<n>, prints the number" "$(t edit ACM-5 --title T)" "5: edited"
+expect "key: edit reaches the issue number" "$(gh_calls | tail -1)" "issue edit 5 --repo QuinnNei/acme --title T"
+: > "$GH_LOG"
 err=$(t close OTH-6 --comment x 2>&1) && fail "key: another board's id fails" || expect "key: another board's id says why" "$err" "tickets.sh: OTH-6 is no ticket of this board (key ACM)"
+err=$(t edit OTH-5 --title T 2>&1) && fail "key: edit refuses another board's id" || expect "key: edit says why it refuses another board's id" "$err" "tickets.sh: OTH-5 is no ticket of this board (key ACM)"
 err=$(t show ACM-x 2>&1) && fail "key: an id without a number fails" || pass "key: an id without a number fails"
 expect "key: a refused id reaches no gh call" "$([ -z "$(gh_calls)" ] && echo none)" "none"
 
