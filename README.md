@@ -90,6 +90,7 @@ flowchart TD
     npx skills add QNeih/skills
 
 These are written for my setup and meant to be read and adapted. They expect:
-a GitHub Project per project, linked to its code repo, with the settings in the repo's `.claude/project.md` (Jira for projects that use it), an Obsidian vault (the brain, for `/wiki`), `gh`, the Jira MCP server and `acli` where a project uses Jira,
+a GitHub Project per project, linked to its code repo, with the settings in the repo's `.claude/project.md` (Jira for projects that use it), an Obsidian vault (the brain, for `/wiki`),
+`gh`, the Jira MCP server and `acli` where a project uses Jira,
 and the `sentry` CLI where it uses Sentry.
 Put your projects root and vault path in `~/.claude/CLAUDE.md`.
