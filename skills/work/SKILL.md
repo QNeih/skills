@@ -66,7 +66,7 @@ Each ticket works in its own **ticket worktree** `<wt>` = `<dir>/.claude/worktre
 
 ## 5. Import
 
-The ticket files live in `<root>`: with git the worktree this session works in from step 4 (`<wt>`, or the linked worktree it started in), so any session can write them there; without git `<dir>`.
+The ticket files live in `<root>`: with git the worktree this session works in after step 4, `git rev-parse --show-toplevel` (`<wt>`, or the linked worktree it started in), so any session can write them there; without git `<dir>`.
 
 Folder: `<root>/.scratch/<id>-<slug>/`, `<slug>` a 2–4 word kebab-case English gist of the title. A folder starting with `<id>-` exists → reuse it.
 

@@ -60,7 +60,7 @@ grep -q 'item-edit --id I[13] ' <<<"$(gh_calls)" && fail "claim: only ticket 2 c
 git -C "$acme" merge-base --is-ancestor develop bugfix/2 2>/dev/null \
   && pass "branch: bugfix/2 from develop" || fail "branch: bugfix/2 from develop"
 t=$(ls "$wt"/.scratch/2-*/ticket.md 2>/dev/null | head -1)
-[ -n "$t" ] && pass "ticket.md in the session's worktree, folder 2-<slug>" || fail "ticket.md in the session's worktree, folder 2-<slug>"
+[ -n "$t" ] && pass "ticket.md in the session's worktree, folder 2-<slug>" || { fail "ticket.md in the session's worktree, folder 2-<slug>"; find "$FIX" \( -name ticket.md -o -name 'HANDOFF-*' \) -not -path '*/.claude/skills/*'; }
 expect "ticket.md: branch" "$(cat "$t" 2>/dev/null)" "branch: bugfix/2"
 expect "ticket.md: ref" "$(cat "$t" 2>/dev/null)" "ref: QuinnNei/acme#2"
 grep -q 'The login button does nothing on Safari 18' "$t" 2>/dev/null && pass "ticket.md: body" || fail "ticket.md: body"
