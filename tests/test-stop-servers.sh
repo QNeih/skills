@@ -50,4 +50,56 @@ alive "$other" && pass "no argument: the current folder's listener stays" || fai
 out=$(bash "$stop" "$FIX/missing"); rc=$?
 [ $rc -eq 1 ] && pass "missing folder: exit 1" || fail "missing folder: exit 1, got $rc"
 expect "missing folder: named" "$out" "error: worktree $FIX/missing not found"
+
+# --- Compose projects. A stand-in docker logs each call as `<cwd>: <args>`;
+# `ps` prints $DOCKER_PS, `ls` prints $DOCKER_LS, a call naming a subcommand in $DOCKER_FAIL exits 1.
+mkdir -p "$FIX/dockerbin" "$wt/docker" "$checkout/docker" "$wt/.claude"
+cat > "$FIX/dockerbin/docker" <<'SH'
+#!/usr/bin/env bash
+echo "$PWD: $*" >> "$DOCKER_LOG"
+for a in "$@"; do case " ${DOCKER_FAIL:-} " in *" $a "*) echo "cannot $a" >&2; exit 1 ;; esac; done
+for a in "$@"; do
+  case $a in ps) cat "$DOCKER_PS"; exit 0 ;; ls) cat "$DOCKER_LS"; exit 0 ;; esac
+done
+SH
+chmod +x "$FIX/dockerbin/docker"
+export DOCKER_LOG="$FIX/docker.log" DOCKER_PS="$FIX/docker-ps.json" DOCKER_LS="$FIX/docker-ls.json"
+cat > "$wt/.claude/launch.json" <<'JSON'
+{ "version": "0.0.1", "configurations": [
+  { "name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 },
+  { "name": "db", "runtimeExecutable": "docker", "runtimeArgs": ["compose", "-f", "c.yml", "up", "--build"], "cwd": "docker", "port": 5432 }
+] }
+JSON
+running() { echo '{"Project":"docker","Service":"db"}' > "$DOCKER_PS"; echo "[{\"Name\":\"docker\",\"Status\":\"running(1)\",\"ConfigFiles\":\"$1/docker/c.yml\"}]" > "$DOCKER_LS"; }
+dstop() { : > "$DOCKER_LOG"; PATH="$FIX/dockerbin:$PATH" bash "$stop" "$wt"; }
+
+running "$wt"
+out=$(dstop); rc=$?
+[ $rc -eq 0 ] && pass "compose: exit 0" || fail "compose: exit 0, got $rc"
+grep -qxF "$wt/docker: compose -f c.yml down" "$DOCKER_LOG" && pass "compose: down with the entry's args before up, in its folder" || { fail "compose: down with the entry's args before up, in its folder"; cat "$DOCKER_LOG"; }
+expect "compose: one stopped line" "$out" "stopped: compose $wt/docker: docker compose -f c.yml down"
+
+running "$checkout"
+out=$(dstop); rc=$?
+[ $rc -eq 0 ] && pass "main checkout's project: exit 0" || fail "main checkout's project: exit 0, got $rc"
+! grep -q " down$" "$DOCKER_LOG" && pass "main checkout's project of the same name: no down" || { fail "main checkout's project of the same name: no down"; cat "$DOCKER_LOG"; }
+! grep -q "^stopped: " <<<"$out" && pass "main checkout's project: nothing reported stopped" || { fail "main checkout's project: nothing reported stopped"; echo "$out"; }
+
+running "$wt"; : > "$DOCKER_PS"
+out=$(dstop); rc=$?
+[ $rc -eq 0 ] && [ -z "$out" ] && ! grep -q " down$" "$DOCKER_LOG" && pass "no containers: no down, no output" || { fail "no containers: no down, no output"; echo "$out"; cat "$DOCKER_LOG"; }
+
+running "$wt"
+out=$(DOCKER_FAIL=ps dstop); rc=$?
+[ $rc -eq 0 ] && [ -z "$out" ] && ! grep -q " down$" "$DOCKER_LOG" && pass "daemon not running: skipped, exit 0" || { fail "daemon not running: skipped, exit 0 (rc $rc)"; echo "$out"; }
+
+out=$(DOCKER_FAIL=down dstop); rc=$?
+[ $rc -eq 1 ] && pass "down fails: exit 1" || fail "down fails: exit 1, got $rc"
+grep -q "^error: compose $wt/docker: docker compose -f c.yml down failed" <<<"$out" && pass "down fails: error line" || { fail "down fails: error line"; echo "$out"; }
+
+# Docker not installed: PATH holds only the tools the script needs, so no docker can be found
+mkdir -p "$FIX/minbin"
+for t in lsof ps sort sed paste tr cut sleep python3; do ln -s "$(command -v $t)" "$FIX/minbin/$t"; done
+out=$(PATH="$FIX/minbin" "$BASH" "$stop" "$wt"); rc=$?
+[ $rc -eq 0 ] && [ -z "$out" ] && pass "docker not installed: skipped, exit 0" || { fail "docker not installed: skipped, exit 0 (rc $rc)"; echo "$out"; }
 done_testing
