@@ -76,7 +76,7 @@ Read `$W/context/INDEX.md` in full. Its maintenance section (`Pflege`) is the **
 3. **Open questions.** New questions → the open-questions file, in its sections and order (urgent first where it has that). A question this source answers → answer into the topic file, delete it from the list.
 4. **Index.** Add the source to the files table and the sources table; set the as-of date line (`Stand:` or similar) of every file you touched to today.
 
-Collect, on the side, **to-dos for Quinn**: things Quinn has to do (send, book, ask someone), not open questions and not facts.
+Collect, on the side, **to-dos for Quinn**: things Quinn has to do (send, book, ask someone), not open questions and not facts. Look for them actively in the source: promised follow-ups, people to invite or ask, feedback rounds, things to send.
 
 **Done when:** every rule in the index's maintenance section is met, every section of the source file maps to a topic-file edit or to "nothing new" in your notes, and `git -C "$W" diff --stat` shows the source file, the index, the open-questions file and each topic file the synthesis reached.
 
@@ -113,20 +113,14 @@ Needs the desktop tools `list_groups`, `list_sessions` and `send_message` (load 
 
 **Done when:** every chosen session got its message, or the skip or `none` is said.
 
-## 9. To-dos
-
-Quinn wants these offered: look for them actively in the source (promised follow-ups, people to invite or ask, feedback rounds, things to send). A skipped to-do drops only that one, never the habit. The to-dos from step 5, if any: list them and ask which to save. Save each chosen one with the `note` skill. Context and open questions stay in the repo; the vault gets only to-dos.
-
-**Done when:** each chosen to-do is saved, or there were none.
-
-## 10. Report
+## 9. Report
 
 - source and where it came from
 - source file and topic files changed, open questions added and answered
 - PR URL and merge state
 - trashed download
 - sessions notified
-- to-dos saved
+- to-dos for Quinn from step 5, one line each, or `none`
 - every skipped step and why
 
 **Done when:** the report has a line for each item above.
