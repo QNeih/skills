@@ -162,7 +162,14 @@ run_claude() {
   local dir=$1 prompt=$2; shift 2
   command -v claude >/dev/null || { echo "claude is not on PATH: every live check would fail on empty output" >&2; exit 2; }
   guard_start
-  CLAUDE_OUT=$(cd "$dir" && claude -p "$prompt" --permission-mode acceptEdits --add-dir "$FIX" \
+  # Claude Code's Bash tool loads the login profile, which puts e.g. Homebrew's real gh ahead of the
+  # stand-ins; CLAUDE_ENV_FILE is sourced after it, so it puts the test's PATH in front of the profile's.
+  # The profile skips ~/.zshrc, so an nvm-installed npm is missing there too: add nvm's newest node.
+  local path=$PATH node_bin
+  command -v npm >/dev/null || node_bin=$(ls -d "${NVM_DIR:-$HOME/.nvm}"/versions/node/*/bin 2>/dev/null | sort -V | tail -1)
+  [ -n "${node_bin:-}" ] && path=$path:$node_bin
+  printf 'export PATH=%q:"$PATH"\n' "$path" > "$FIX/claude-env.sh"
+  CLAUDE_OUT=$(cd "$dir" && CLAUDE_ENV_FILE="$FIX/claude-env.sh" claude -p "$prompt" --permission-mode acceptEdits --add-dir "$FIX" \
     --allowedTools "${ALLOWED_TOOLS:-Skill,Read,Glob,Grep,Edit,Write,Bash(git *)}" \
     ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} --max-budget-usd "${CLAUDE_BUDGET:-1}" \
     --no-session-persistence "$@" </dev/null 2>&1)
