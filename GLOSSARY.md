@@ -16,6 +16,14 @@ _Avoid_: prefix, project code
 `.claude/project.md` in a project's main checkout. Its front matter names the board, the Project's number and owner, the key, and per-project choices such as the Sentry projects.
 _Avoid_: project note, wiki settings, config
 
+**Run file**:
+`.claude/launch.json` in a project: the one list of what to start so the project shows its current state, each entry a command and, for a server, its port.
+_Avoid_: launch config, start script
+
+**Dev server**:
+A process started from a run file entry, running from the project's folder. It belongs to the session whose folder that is.
+_Avoid_: preview server, app server
+
 **Leftover**:
 Something still wrong or unfinished on a ticket's branch before its PR opens. The session fixes it when the ticket's change caused it, or when a build, a test or data breaks.
 _Avoid_: loose end, open point
