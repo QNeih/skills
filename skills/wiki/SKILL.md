@@ -71,7 +71,6 @@ The wiki carries its own setup steps. Follow `<wiki>/setup-prompt.md` with these
 
 - brain folder: `<vault>`
 - project-notes folder: `<vault>/raw/<name>`, created when missing
-- step 2 (Place): leave the wiki where it is, without asking
 
 It records the folders and schedules the daily wiki task, or says why it could not.
 
