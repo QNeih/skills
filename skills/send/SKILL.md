@@ -149,7 +149,12 @@ Runs after a successful push, even if the PR step failed; on a close, right afte
 
 ## 9. Decision note
 
-A **decision note** is a source in the brain's `raw/<Name>/` folder: the ticket's decisions with their reasons, and the ADRs and glossary entries the branch added or changed. This step runs with a ticket, when step 10's conditions let it run, before anything in step 10; otherwise skip and say why. With git, run it where steps 2–8 ran, on `<branch>`:
+A **decision note** is a source in the brain's `raw/<Name>/` folder: the ticket's decisions with their reasons, and the ADRs and glossary entries the branch added or changed. This step runs with a ticket, when:
+
+- **Git**: step 7 ended with an `OPEN` PR or one it merged; on a close, step 8 closed or moved the ticket (or Quinn answered `leave`).
+- **No git**: step 8 left the ticket closed (or the item done).
+
+Otherwise skip and say why. With git, run it where steps 2–8 ran, on `<branch>`, before step 10's `git fetch`: the ADR and glossary diff needs `origin/<base>` as it was before a merge on send.
 
 ```bash
 VAULT=<vault> bash ${CLAUDE_SKILL_DIR}/decision-note.sh --ticket <ticket.md> --project <project> [--base <base>] [--close "<reason>"]
