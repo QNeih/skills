@@ -8,7 +8,7 @@
 . "$(dirname "$0")/lib.sh"
 fixture_new; fixture_gh
 export CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
-export ALLOWED_TOOLS="Skill,Read,Glob,Grep,Edit,Write,Bash(git *),Bash(bash *),Bash(PROJECTS_ROOT=*),Bash(gh *),Bash(npm *),Bash(rm *),Bash(rmdir *),Bash(ls *),Bash(find *),Bash(cd *),Bash(claude agents *)"
+export ALLOWED_TOOLS="Skill,Read,Glob,Grep,Edit,Write,Bash(git *),Bash(bash *),Bash(PROJECTS_ROOT=*),Bash(VAULT=*),Bash(gh *),Bash(npm *),Bash(rm *),Bash(rmdir *),Bash(ls *),Bash(find *),Bash(cd *),Bash(claude agents *)"
 export CLAUDE_BUDGET=${CLAUDE_BUDGET:-2}
 
 setup() { fixture_claude_md "$1"; install_skill "$REPO_DIR/skills/send" send "$1"; }
@@ -87,7 +87,7 @@ w=$(board_writes)
 [ -z "$(git -C "$acme" branch --list feature/ACM-11)" ] && ! git -C "$remote" rev-parse -q --verify feature/ACM-11 >/dev/null \
   && pass "close: branch deleted locally and on origin" || fail "close: branch deleted locally and on origin"
 [ ! -e "$acme/.scratch/ACM-11-old-work" ] && [ ! -e "$acme/.handoffs/HANDOFF-ACM-11.md" ] \
-  && pass "close: ticket files deleted" || fail "close: ticket files deleted"
+  && pass "close: ticket files deleted" || { fail "close: ticket files deleted"; echo "$CLAUDE_OUT" | tail -20; }
 [ "$(git -C "$acme" rev-parse HEAD)" = "$(git -C "$acme" rev-parse origin/main)" ] \
   && pass "close: no commit, back on main" || fail "close: no commit, back on main"
 
@@ -191,7 +191,7 @@ run_send "$beta"
   && pass "no git: the In Progress issue is closed" || { fail "no git: the In Progress issue is closed"; board_writes; echo "$CLAUDE_OUT" | tail -20; }
 ! board_writes | grep -q -- '--reason not planned' && pass "no git: closed as completed" || fail "no git: closed as completed"
 [ ! -e "$beta/.scratch/21-write-intro" ] && [ ! -e "$beta/.handoffs/HANDOFF-21.md" ] \
-  && pass "no git: ticket files deleted" || fail "no git: ticket files deleted"
+  && pass "no git: ticket files deleted" || { fail "no git: ticket files deleted"; echo "$CLAUDE_OUT" | tail -20; }
 [ -f "$beta/.scratch/22-later/ticket.md" ] && [ -f "$beta/.handoffs/HANDOFF-22.md" ] \
   && pass "no git: other ticket's files stay" || fail "no git: other ticket's files stay"
 [ ! -e "$beta/.git" ] && pass "no git: no repo created" || fail "no git: no repo created"
