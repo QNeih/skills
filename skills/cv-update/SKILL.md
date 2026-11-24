@@ -39,7 +39,7 @@ Routine bug fixes, small tickets, refactors and a single beginner lesson are **n
 Never edit on your own.
 
 - **No update** → one sentence: "No CV update needed: <why>." Then stop.
-- **Updates suggested** → for each: one sentence "<the change> because <why>", the PRs or records it rests on, and the proposed line as a one-line diff. Then ask with AskUserQuestion, one question per change: apply / skip.
+- **Updates suggested** → for each: one sentence "<the change> because <why>", the PRs or records it rests on, and the proposed line as a one-line diff. Then end with the questions in plain text, numbered like the changes, each answerable with apply or skip. A scheduled run has no question dialog; Quinn answers in the run's session, and step 5 runs on that reply.
 
 **Done when:** Quinn has the verdict, and for suggestions, has answered each one. All skipped → stop.
 
