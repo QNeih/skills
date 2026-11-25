@@ -206,7 +206,7 @@ run_send "$acme"
 git -C "$acme" checkout -q main && git -C "$acme" checkout -q -b feature/ACM-16
 echo 'let e = 5' > "$acme/src/e.js"
 git -C "$acme" add src/e.js && git -C "$acme" commit -qm "Add e" && git -C "$acme" push -q -u origin HEAD 2>/dev/null
-ticket "$acme" ACM-16 resent-work main
+ticket "$acme" ACM-16 resent-work main none
 echo 'Seen while working, outside this ticket and breaking nothing: README.md still names the old install command `make setup`.' >> "$acme/.handoffs/HANDOFF-ACM-16.md"
 touch "$FIX/github-origin"
 pr8='{"url":"https://github.com/QuinnNei/acme/pull/8","state":"OPEN","body":"## Summary\n\n- Add e\n\nFollow-up: QuinnNei/acme#31 README.md still names the old install command `make setup`\nCloses QuinnNei/acme#16"}'
