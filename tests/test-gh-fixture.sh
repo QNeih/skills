@@ -26,8 +26,7 @@ printf 'Closes QuinnNei/acme#13\n\nSummary\n' > "$FIX/body-wrong.md"
 : > "$GH_LOG"; gh pr create --title T --body "$(cat "$FIX/body.md")" --base main
 text_log=$(gh_calls)
 : > "$GH_LOG"; gh pr create --title T --body-file "$FIX/body.md" --base main
-expect "gh: --body-file logs the same as --body" "$(gh_calls)" "$(tail -1 <<<"$text_log")"
-[ "$(gh_calls | sed 's/--body-file/--body/')" = "$text_log" ] && pass "gh: --body-file logs the whole body in place of the path" || fail "gh: --body-file logs the whole body in place of the path"
+[ "$(gh_calls | sed 's/--body-file/--body/')" = "$text_log" ] && pass "gh: --body-file logs the same lines as --body, the body in place of the path" || fail "gh: --body-file logs the same lines as --body, the body in place of the path"
 for form in "--body-file $FIX/body.md" "--body-file=$FIX/body.md" "-F $FIX/body.md"; do
   : > "$GH_LOG"; gh pr edit 7 $form
   name="gh: ${form%%[ =]*} on pr edit logs the body's last line"; [ "${form#*=}" = "$form" ] || name="$name (= form)"
