@@ -3,14 +3,17 @@
 #   decision-note.sh --ticket <ticket.md> --project <name> [--base <base>] [--close <reason>]
 # <Name> is the page <vault>/wiki/projects/<Name>.md whose name matches <name>, ignoring case,
 # spaces and hyphens. The note holds the ticket's `## Decisions` lines (`none` and template
-# placeholder lines starting with `<` left out), the close reason as one more decision line,
-# and, with --base and git in the current folder, the full text of every ADR (docs/adr/*.md)
+# placeholder lines starting with `<` left out), on a close one more decision line
+# `- Closed without code. Why: <reason>. Rejected: none.`, and, with --base and git in the current folder, the full text of every ADR (docs/adr/*.md)
 # and every glossary entry (in a GLOSSARY.md) the branch added or changed against the merge
 # base with origin/<base>.
+# Every decision line carries the labels `Why:` and `Rejected:` (`Rejected: none` when the
+# decision had no alternative).
 # A note of the same ticket already in that folder (` <id> ` in its name) is overwritten.
 # Prints `note: <path>`; `note: none` plus `reason:` when there is nothing to write (exit 0);
-# `error: <cause>` when an argument is wrong, the title line is not `# <id>: <title>`, or the
-# vault or the project page is missing (exit 1).
+# `error: <cause>` when an argument is wrong, the title line is not `# <id>: <title>`, the
+# vault or the project page is missing, or a decision line lacks a label: the error names the
+# first such line, and no note is written (exit 1).
 # Env: VAULT (the brain's folder).
 set -u
 
@@ -48,7 +51,14 @@ ref=$(sed -n 's/^ref: //p' "$ticket" | head -1)
 
 # The `## Decisions` section, without blank lines, `none` and template placeholders (`<...`)
 decisions=$(awk '/^## / { on = ($0 == "## Decisions"); next } on && NF && tolower($0) != "none" && !/^</' "$ticket")
-[ -z "$close" ] || decisions=$(printf '%s\n%s' "$decisions" "- Closed without code: $close" | sed '/^$/d')
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  missing=
+  [[ $line == *"Why:"* ]] || missing="Why:"
+  [[ $line == *"Rejected:"* ]] || missing="${missing:+$missing and }Rejected:"
+  [ -z "$missing" ] || err "decision line without $missing in $ticket: $line"
+done <<<"$decisions"
+[ -z "$close" ] || decisions=$(printf '%s\n%s' "$decisions" "- Closed without code. Why: ${close%.}. Rejected: none." | sed '/^$/d')
 
 adrs= glossary=
 if [ -n "$base" ] && top=$(git rev-parse --show-toplevel 2>/dev/null); then

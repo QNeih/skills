@@ -36,7 +36,16 @@ Find the ticket. Its **ticket files** are `.scratch/<id>-<slug>/ticket.md` (titl
 
 The board is the lookup's `board:`; `ticket.md`'s `board:` link names the Jira site and project. A GitHub board is described in `${CLAUDE_SKILL_DIR}/GITHUB-SEND.md`.
 
-**Done when:** `<dir>`, git or not, and the ticket (id, ref, board) or "no ticket" are known.
+**Decisions**, with a `ticket.md`: step 9 copies its `## Decisions` section into the brain and step 10 deletes the file, so the section is filled now, before anything is committed. A **decision line** is `- <what>. Why: <reason>. Rejected: <option and its reason>.`; `Rejected: none` when no other option was considered. The section is **empty** when it is missing, or holds only blank lines or the template placeholder (a line starting with `<`); only `/grill-with-docs` fills it, so a ticket routed straight to `/implement` arrives empty. Empty →
+
+1. List the **choices** the work made: each point where another option was open (an approach, a format, a default, a dependency, a scope cut). Sources: this session (the conversation and its sub-agents' reports), the handoff, and with git `git diff origin/<base>` plus the untracked files, `<base>` being `ticket.md`'s `base:`.
+2. No choice (a mechanical change, or nothing on the branch) → write `none` into the section (a missing one goes after `## Summary`) and go on.
+3. The session or the handoff gives the reason of every choice → write one decision line per choice into the section and go on. `Rejected:` holds an option the sources name, else `none`.
+4. A choice whose reason no source gives (a session started fresh for the send sees only the diff) → stop and ask Quinn in plain text: list those choices, and ask for the reason and the rejected option of each. Write the lines from the answer, then go on.
+
+Keep the lines written, or that it was `none`, for the report.
+
+**Done when:** `<dir>`, git or not, and the ticket (id, ref, board) or "no ticket" are known, and a `ticket.md`'s `## Decisions` section holds decision lines or `none`.
 
 Without git, go to step 8.
 
@@ -149,7 +158,7 @@ Runs after a successful push on a host that takes a PR, even if the PR step fail
 
 ## 9. Decision note
 
-A **decision note** is a source in the brain's `raw/<Name>/` folder: the ticket's decisions with their reasons, and the ADRs and glossary entries the branch added or changed. This step runs with a ticket, when:
+A **decision note** is a source in the brain's `raw/<Name>/` folder: the ticket's decision lines (step 1), and the ADRs and glossary entries the branch added or changed. This step runs with a ticket, when:
 
 - **Git**: step 7 ended with an `OPEN` PR or one it merged; on a close, step 8 closed or moved the ticket (or Quinn answered `leave`).
 - **No git**: step 8 left the ticket closed (or the item done).
@@ -161,12 +170,13 @@ VAULT=<vault> bash ${CLAUDE_SKILL_DIR}/decision-note.sh --ticket <ticket.md> --p
 ```
 
 - `<vault>`: the `Vault:` path in `~/.claude/CLAUDE.md`. `<project>`: the lookup's `project:` line; `none` → the name of `<dir>`.
-- `--base <base>`: with git, so the note copies every ADR and glossary entry the branch added or changed. `--close`: on a close, with its reason.
+- `--base <base>`: with git, so the note copies every ADR and glossary entry the branch added or changed. `--close`: on a close, with its reason; the script adds it as the line `- Closed without code. Why: <reason>. Rejected: none.`
 - `note: <path>` → written. The vault stays uncommitted: `brain-sync` commits it daily.
 - `note: none` → nothing to write; keep its `reason:` line for the report.
-- `error: <cause>` → could not fix, with that cause.
+- `error: decision line without <label> in <ticket.md>: <line>` → the script wrote no note. Rewrite that line in `ticket.md` as a decision line, from the sources of step 1, and rerun the script, once per refused line. A label whose content no source gives → ask Quinn for it in plain text.
+- Another `error: <cause>` → could not fix, with that cause.
 
-**Done when:** the script printed a `note:` or `error:` line, or the skip is noted.
+**Done when:** the script printed a `note:` line or an `error:` no rewrite can clear, or the skip is noted.
 
 ## 10. Clean up
 
@@ -194,6 +204,7 @@ Last, with git and a ticket: the ticket worktree `<wt>` = `<dir>/.claude/worktre
 - rebase: "up to date", or the `origin/<base>` commit it moved onto and the files whose conflicts were resolved
 - tests: the script that ran, or that the project has none
 - PR URL, new or reused, and whether it was merged on send; on a close, "closed without code" and the reason
+- decisions: "from the ticket", or the decision lines step 1 drafted, one each, or that it wrote `none` because the work held no choice; and each line step 9 rewrote
 - decision note: its path, or "no decision note" and the `reason:` or `error:` line
 - other open PRs that conflict (number, title, branch) or are not yet checked; none → "no other PR conflicts"
 - board state of the ticket: GitHub with a PR, "closes on merge" (or "closed" once merged); else its new state
