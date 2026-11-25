@@ -20,5 +20,5 @@ A change that adds or removes a skill, or changes a skill's flow (its routes, it
 ## Tests
 
 - A new script a skill runs gets a script test in `tests/test-*.sh`. `bash tests/run.sh` passes before a commit.
-- A change to the steps of a skill that has a live test (`tests/live-<skill>*.sh`) runs that file with `bash`. It costs tokens, so run only that file.
+- A change to the steps of a skill that has a live test (`tests/live-<skill>*.sh`) runs that file with `bash` before the commit, whatever the token cost. Run only that file, and report its result.
 - A new skill is tested through `skill-creator`'s eval loop; write a live test for it only when Quinn asks.
