@@ -129,7 +129,7 @@ Then start the route in this session, with the `ticket.md` path as its input. Wi
   - Still ask before writing tickets for "Not yet specified" items and before starting `/to-spec`.
   - Each brief tells the child to read `~/.claude/skills/wayfinder/SKILL.md` by path; it may not be in the child's skill list.
 - `/implement` and `/diagnosing-bugs` end, once the code is committed, with the Skill tool `code-review` in this session: fixed point `origin/<base>`, spec the `ticket.md` path. No code reaches `/send` unreviewed.
-- `/grill-with-docs` ends, once Quinn confirms the shared understanding and the ticket needs code, by writing the decisions into `ticket.md`'s `## Decisions` section (one line each, `- <what>. Why: <reason>. Rejected: <option and its reason>.`, with `Rejected: none` when the decision had no alternative; `/send` copies them into the brain and refuses a line without both labels), setting `Status: ready-for-agent` and `Next: /implement`, then starting `/implement` as above: the sub-agent knows only `ticket.md`, so every decision is in it first.
+- `/grill-with-docs` ends, once Quinn confirms the shared understanding and the ticket needs code, by writing the decisions into `ticket.md`'s `## Decisions` section (one line each, in the format the section's placeholder in `${CLAUDE_SKILL_DIR}/TICKET-TEMPLATE.md` names; `/send` copies them into the brain and refuses a line without both labels), setting `Status: ready-for-agent` and `Next: /implement`, then starting `/implement` as above: the sub-agent knows only `ticket.md`, so every decision is in it first.
 - `/build` → the Skill tool `build`.
 - `needs-info` → print the questions for the reporter and stop.
 

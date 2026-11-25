@@ -24,12 +24,13 @@ only_line_commit() {
     [ "$(git -C "$remote" show --format= -U0 "$c" | grep -E '^[-+][^-+]')" = "$2" ] && echo "$c"
   done
 }
-# ticket <dir> <id> <slug> [base]: .scratch ticket.md and handoff in <dir>, as /work writes them for a GitHub ticket (no branch line);
-# the ref is the issue in the project's code repo
+# ticket <dir> <id> <slug> [base] [decisions]: .scratch ticket.md and handoff in <dir>, as /work writes them for a GitHub ticket (no branch line);
+# the ref is the issue in the project's code repo. Without [decisions] the file has no `## Decisions` section.
 ticket() {
   mkdir -p "$1/.scratch/$2-$3" "$1/.handoffs"
   { echo "# $2: Issue ${2##*-}"; echo; echo "ref: QuinnNei/$(basename "$1")#${2##*-}"; [ -z "${4:-}" ] || echo "base: $4"
-    echo "board: github"; echo "Status: ready-for-agent"; } > "$1/.scratch/$2-$3/ticket.md"
+    echo "board: github"; echo "Status: ready-for-agent"
+    [ -z "${5:-}" ] || printf '\n## Decisions\n\n%s\n' "$5"; } > "$1/.scratch/$2-$3/ticket.md"
   echo "handoff $2" > "$1/.handoffs/HANDOFF-$2.md"
 }
 # board_writes: logged gh calls that change a ticket on the board
@@ -38,6 +39,7 @@ board_writes() { gh_calls | grep -E '^(issue close|issue edit|project item-edit)
 # --- git project with a local bare remote ---
 # The origin is a local bare remote, so the settings name the code repo
 fixture_project acme 'board: github' 'project: 4' 'repo: QuinnNei/acme' 'key: ACM'
+fixture_note acme
 acme="$PROJECTS_ROOT/acme/acme" remote="$FIX/acme.git"
 git init -q --bare -b main "$remote"
 git -C "$acme" remote add origin "$remote"
@@ -95,7 +97,7 @@ w=$(board_writes)
 git -C "$acme" checkout -q main && git -C "$acme" checkout -q -b feature/ACM-13
 echo 'let d = 4' > "$acme/src/d.js"
 git -C "$acme" add src/d.js && git -C "$acme" commit -qm "Add d" && git -C "$acme" push -q -u origin HEAD 2>/dev/null
-ticket "$acme" ACM-13 pushed-work main
+ticket "$acme" ACM-13 pushed-work main '- Keep d in its own file. Why: a.js is loaded on every page. Rejected: a line in a.js, it would grow the first load.'
 touch "$FIX/github-origin"
 gh_can 'pr create' 'https://github.com/QuinnNei/acme/pull/7'
 : > "$GH_LOG"
@@ -108,10 +110,12 @@ gh_calls | grep -qE '^Closes QuinnNei/acme#13( --[a-z].*)?$' && pass "PR body: e
 [ -z "$(board_writes)" ] && pass "PR: no board write" || { fail "PR: no board write"; board_writes; }
 [ -z "$(git -C "$acme" branch --list feature/ACM-13)" ] && [ ! -e "$acme/.scratch/ACM-13-pushed-work" ] \
   && pass "PR: branch and ticket files cleaned up" || fail "PR: branch and ticket files cleaned up"
+grep -qxF -- '- Keep d in its own file. Why: a.js is loaded on every page. Rejected: a line in a.js, it would grow the first load.' "$VAULT"/raw/acme/*" ACM-13 "*.md 2>/dev/null \
+  && pass "PR: the ticket's decision line is in its decision note" || { fail "PR: the ticket's decision line is in its decision note"; ls -R "$VAULT/raw" 2>&1; echo "$CLAUDE_OUT" | tail -20; }
 
 # Committed-but-unpushed work plus an uncommitted file; lint must cover both
 git -C "$acme" checkout -q main && git -C "$acme" checkout -q -b bugfix/ACM-12 && git -C "$acme" push -q -u origin HEAD 2>/dev/null
-ticket "$acme" ACM-12 login-fails main
+ticket "$acme" ACM-12 login-fails main none
 echo 'var b = 2' > "$acme/src/b.js"
 git -C "$acme" add src/b.js && git -C "$acme" commit -qm "Add b"
 echo 'var c = 3' > "$acme/src/c.js"
@@ -164,10 +168,13 @@ run_send "$wt" "superseded by the rewrite"
   && pass "worktree: branch deleted locally and on origin" || fail "worktree: branch deleted locally and on origin"
 gh_calls | grep -qF 'issue close 14 --repo QuinnNei/acme --comment Closed without code: superseded by the rewrite --reason not planned' && [ ! -e "$wt/.scratch/ACM-14-worktree-ticket" ] \
   && pass "worktree: issue closed as not planned, ticket files deleted" || { fail "worktree: issue closed as not planned, ticket files deleted"; gh_calls; }
+# The ticket had no Decisions section and nothing on its branch: no stop, and the note holds only the close line
+[ "$(grep -c '^- ' "$VAULT"/raw/acme/*" ACM-14 "*.md 2>/dev/null)" = 1 ] && grep -qxF -- '- Closed without code. Why: superseded by the rewrite. Rejected: none.' "$VAULT"/raw/acme/*" ACM-14 "*.md \
+  && pass "close without a Decisions section: the note holds the close line alone" || { fail "close without a Decisions section: the note holds the close line alone"; ls -R "$VAULT/raw" 2>&1; echo "$CLAUDE_OUT" | tail -20; }
 
 # A failing test.sh nobody reported: fixed in its own commit, then the branch is pushed with the tests green
 git -C "$acme" checkout -q main && git -C "$acme" checkout -q -b feature/ACM-15
-ticket "$acme" ACM-15 bad-change main
+ticket "$acme" ACM-15 bad-change main none
 echo 'let bad = 1' > "$acme/src/bad.js"
 run_send "$acme"
 [ -n "$(only_line_commit feature/ACM-15 '+module.exports = { bad }')" ] && pass "failing tests: fixed in its own commit" \
@@ -186,8 +193,8 @@ gh_can 'issue view 21 --repo QuinnNei/beta' '{"number":21,"title":"Write the int
 gh_can 'issue view 22 --repo QuinnNei/beta' '{"number":22,"title":"Later","body":"","state":"OPEN","labels":[],"comments":[]}'
 gh_can 'api graphql -F owner=QuinnNei -F name=beta' '{"data":{"repository":{"issue":{"blockedBy":{"nodes":[]}}}}}'
 setup "$beta"
-ticket "$beta" 21 write-intro
-ticket "$beta" 22 later
+ticket "$beta" 21 write-intro "" none
+ticket "$beta" 22 later "" none
 : > "$GH_LOG"
 run_send "$beta"
 

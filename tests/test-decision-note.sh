@@ -101,6 +101,25 @@ expect "line without both labels: the error names both, on a close too" "$out" "
 [ $rc -eq 1 ] && [ ! -e "$VAULT/raw" ] && pass "line without both labels: exit 1, no note" || fail "line without both labels: exit 1, no note (rc $rc)"
 ticket "$t" '- Keep paper invoices. Why: the tax office asks for them. Rejected: none.'
 
+# Check only: reads the section without a vault or project and writes nothing
+check() { out=$(cd "$repo" && VAULT= bash "$note" --check --ticket "$t"); rc=$?; }
+check
+expect "check: labelled lines are ok" "$out" "decisions: ok"
+[ $rc -eq 0 ] && [ ! -e "$VAULT/raw" ] && pass "check: exit 0, no note, no vault needed" || fail "check: exit 0, no note (rc $rc)"
+ticket "$t" 'none'; check
+expect "check: none" "$out" "decisions: none"
+ticket "$t" '<one decision per line>'; check
+expect "check: only the placeholder is empty" "$out" "decisions: empty"
+ticket "$t" ''; check
+expect "check: a blank section is empty" "$out" "decisions: empty"
+printf '# ACM-7: Pay later\n\n## Summary\n\nnone\n' > "$t"; check
+expect "check: a missing section is empty" "$out" "decisions: empty"
+[ $rc -eq 0 ] && pass "check: empty exits 0" || fail "check: empty exits 0 (rc $rc)"
+ticket "$t" "$(printf '%s\n' '- Send them by post. Why: customers ask for paper. Rejected: e-mail,' '  it lands in spam.')"; check
+expect "check: a wrapped line is refused" "$out" "error: decision line without Why: and Rejected: in $t:   it lands in spam."
+[ $rc -eq 1 ] && pass "check: a refused line exits 1" || fail "check: a refused line exits 1 (rc $rc)"
+ticket "$t" '- Keep paper invoices. Why: the tax office asks for them. Rejected: none.'
+
 # No project page: an error, no file
 rm -rf "$VAULT/raw"
 run --ticket "$t" --project billing

@@ -80,7 +80,7 @@ flowchart TD
     fixreview --> send
     review --> send
 
-    send(["/send"]):::cmd --> decisions["Fill an empty Decisions<br/>section in ticket.md"] --> commit["Commit by concern"] --> leftovers["Fix leftovers"] --> rebase["Rebase onto the base"] --> lint["npm run lint-fix"] --> test["test.sh or tests/run.sh"] --> push["Push"]
+    send(["/send"]):::cmd --> decisions["Check Decisions in ticket.md:<br/>fill when empty, repair lines"] --> commit["Commit by concern"] --> leftovers["Fix leftovers"] --> rebase["Rebase onto the base"] --> lint["npm run lint-fix"] --> test["test.sh or tests/run.sh"] --> push["Push"]
     rebase -- "conflict" --> conflicts["resolving-merge-conflicts"]:::pocock --> lint
     push --> pr["Open or reuse PR;<br/>merge it where CLAUDE.md says so"] --> board["Move card:<br/>Jira → Code Review,<br/>GitHub → Done on merge"]
     decisions -- "a choice whose reason<br/>the session doesn't give" --> askwhy{"Why? Rejected?"}:::gate --> commit
