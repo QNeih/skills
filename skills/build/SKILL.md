@@ -49,8 +49,8 @@ Load `to-tickets` with `spec.md`. Publish as local files.
 Load `implement-spec` with `spec.md` and `issues/`, with these changes:
 
 - **Step 3**: use the integration branch; create nothing, open no PR.
+- **Steps 4, 5 and 7**: every implementer and merger brief adds: commit messages, merge commits included, describe the change only: no `Co-Authored-By` trailer, no "Generated with" footer, no tool, IDE or assistant names.
 - **Step 4**: start only frontier tickets. A ticket that already has a worktree or branch from an earlier run → its implementer continues there.
-- **Steps 4, 5 and 7**: every implementer and merger brief adds: commit messages, merge commits included, describe the change only: no `Co-Authored-By` trailer, no "Generated with" footer, no tool or assistant name.
 - **Step 5**: right after a ticket merges into the integration branch, set its `**Status:**` to `done` in the feature folder. That line is what a re-run reads.
 - **Step 7**: Skill tool `code-review`, fixed point `origin/<base>` (`develop`, else `main`), spec `spec.md`. Every ticket was already done on a re-run → still run it.
 - **Step 8**: tickets are resolved by their `done` status; report the integration branch.

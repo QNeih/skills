@@ -78,13 +78,13 @@ Work only in the worktree, with absolute paths and `git -C <worktree>`; run othe
    A check your change broke and you can't fix → return `needs you: <shortId> — <check> failed: <reason>`.
 5. Test steps: from the event (URL, breadcrumbs, user actions) and your fix, write `[ ]` steps for a manual test on
    <env or "the app">: the concrete screen or input that hits the code path, and what Quinn sees now instead of the error.
-6. Commit the staged edits. `git -C <worktree> push -u origin sentry-fix/<id>`. Then:
+6. The commit message and the PR describe the change only: no `Co-Authored-By` trailer, no "Generated with" footer,
+   no tool, IDE or assistant names.
+   Commit the staged edits. `git -C <worktree> push -u origin sentry-fix/<id>`. Then:
    cd <worktree> && gh pr create --draft --base <base> --assignee @me [--label sentry]
      --title "fix: <imperative summary of the fix, ≤ 60 chars>"
      --body "Sentry \`<shortId>\` (<env>): <permalink>\n\nRoot cause: <one paragraph>\n\nChanged:\n- <files>\n\n## Test\n<steps>"
    The short id goes in the body only; the title says what the fix does.
-   The commit message and the PR describe the change only: no `Co-Authored-By` trailer, no "Generated with" footer,
-   no tool or assistant name.
 7. <resolve: "Run `sentry issue resolve <org>/<shortId> --in @next`." | "Leave the issue unresolved.">
 8. Return: `PR: <url>` and the test steps, or the `needs you:` line.
 ```
