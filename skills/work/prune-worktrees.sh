@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
 # Removes the project's finished worktrees and their local branches; lists every other one.
 # Run from inside the project (main checkout, a worktree or a subfolder).
-#   prune-worktrees.sh [--dry-run]    --dry-run only prints: no fetch, nothing removed
-# A linked worktree is finished when it has no modified tracked file and no untracked file
-# (ignored files such as .scratch/ and .handoffs/ don't count and go with it), and one of:
-#   a) every commit of its HEAD is on an origin ref
-#   b) its branch has a merged PR (gh pr list --head <branch> --state merged); squash merges
-#      leave the branch's own commits off origin
-#   c) its branch is a ticket branch (hotfix|bugfix|feature/<id>) of a GitHub board and
-#      tickets.sh, next to this script, shows the ticket as closed
-# A detached worktree is judged by (a) only.
+#   prune-worktrees.sh [--dry-run]    --dry-run fetches and prints the same lines, and removes nothing
+# Which worktree is a **finished worktree** is defined in the skills repo's GLOSSARY.md; `verdict`
+# below applies that rule. Criteria (b) and (c) cost a lookup: gh for the merged PR, and
+# tickets.sh, next to this script, for the ticket of a ticket branch (hotfix|bugfix|feature/<id>).
 # Always kept: the main checkout (never listed), the worktree this script runs in, a locked
 # worktree, and the worktree of a session (`claude agents --json --all`, a session's cwd in it).
 # One line per linked worktree:
@@ -17,6 +12,8 @@
 #   kept: <path> — <reason>
 #   claude rm <id> — <path>      finished, but session <id> works in it: that command removes both
 # When `claude agents` can't be read, finished worktrees are kept, since any could hold a session.
+# A lookup that fails is the keep reason: `fetch failed: <msg>` (only where the worktree would be
+# finished by its commits on origin alone), `PR lookup failed: <msg>`, `ticket lookup failed: <msg>`.
 # Exit: 0; 1 when the folder is no git checkout or a removal failed.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -33,8 +30,10 @@ common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
 dir=$(cd "$(dirname "$common")" && pwd -P)
 current=$(cd "$(git rev-parse --show-toplevel)" && pwd -P)
 
-# Fresh origin refs, so (a) reads what origin holds now; without an origin (a) is never true
-[ "$dry" -eq 1 ] || git -C "$dir" fetch -q --prune origin 2>/dev/null
+# Fresh origin refs, so "on origin" reads what origin holds now. Without an origin nothing is on it.
+fetch_err=
+err=$(git -C "$dir" fetch -q --prune origin 2>&1) || fetch_err=$(head -1 <<<"${err:-no message}")
+errf=$(mktemp); trap 'rm -f "$errf"' EXIT
 
 # Sessions as `<id> TAB <cwd>` lines; sessions_ok=0 when they can't be read
 claude=$(command -v claude || echo "$HOME/.local/bin/claude")
@@ -66,28 +65,49 @@ ticket_of() {
   echo "$id"
 }
 
-# finished <path> <branch or empty>: true by (a), (b) or (c)
-finished() {
-  local path=$1 branch=$2 id
-  [ -z "$(git -C "$path" rev-list -1 HEAD --not --remotes=origin 2>/dev/null)" ] &&
-    git -C "$path" rev-parse -q --verify HEAD >/dev/null 2>&1 && return 0
-  [ -n "$branch" ] || return 1
-  [ "$( (cd "$dir" && gh pr list --head "$branch" --state merged --json number 2>/dev/null) | jq 'length' 2>/dev/null)" -gt 0 ] 2>/dev/null && return 0
-  [ "$board" = github ] || return 1
-  id=$(ticket_of "$branch"); [ -n "$id" ] || return 1
-  [ "$( (cd "$dir" && bash "$here/tickets.sh" show "$id" 2>/dev/null) | jq -r '.state' 2>/dev/null)" = CLOSED ]
+# verdict <path> <branch or empty>: sets `why` to the reason the worktree is not finished,
+# empty when it is finished
+verdict() {
+  local path=$1 branch=$2 tip prs id ticket pushed=0
+  tip=$(git -C "$path" rev-parse -q --verify HEAD 2>/dev/null) || { why="not finished"; return; }
+  [ -n "$(git -C "$path" rev-list -1 HEAD --not --remotes=origin 2>/dev/null)" ] || pushed=1
+  why=
+  # (a) every commit on an origin ref, read from refs the fetch just refreshed
+  [ "$pushed" -eq 0 ] || [ -n "$fetch_err" ] || return 0
+  if [ -n "$branch" ]; then
+    # (b) the branch tip is the head commit of a merged PR
+    if prs=$(cd "$dir" && gh pr list --head "$branch" --state merged --json headRefOid 2>"$errf") &&
+       jq -e 'type == "array"' <<<"$prs" >/dev/null 2>&1; then
+      [ "$(jq --arg tip "$tip" 'any(.[]; .headRefOid == $tip)' <<<"$prs")" != true ] || return 0
+      [ "$(jq 'length' <<<"$prs")" -eq 0 ] || why="commits after the merged PR"
+    else
+      why="PR lookup failed: $(head -1 "$errf" | grep . || echo "unreadable answer")"
+    fi
+  fi
+  [ -z "$fetch_err" ] || [ "$pushed" -eq 0 ] || why="fetch failed: $fetch_err"
+  [ -z "$why" ] || return 0
+  # (c) the ticket is closed and every commit is on an origin ref; here some commit is not
+  why="not finished"
+  [ -n "$branch" ] && [ "$board" = github ] || return 0
+  id=$(ticket_of "$branch"); [ -n "$id" ] || return 0
+  if ticket=$(cd "$dir" && bash "$here/tickets.sh" show "$id" 2>"$errf"); then
+    [ "$(jq -r '.state' <<<"$ticket" 2>/dev/null)" != CLOSED ] || why="unpushed commits"
+  else
+    why="ticket lookup failed: $(head -1 "$errf" | grep . || echo "no message")"
+  fi
 }
 
 rc=0
 # judge <path> <branch or empty> <locked 0|1>: prints the worktree's line, removes it when due
 judge() {
-  local path=$1 branch=$2 locked=$3 ids id err
+  local path=$1 branch=$2 locked=$3 ids id err why
   [ "$path" != "$dir" ] || return 0
   [ "$locked" -eq 0 ] || { echo "kept: $path — locked"; return 0; }
   [ "$path" != "$current" ] || { echo "kept: $path — current worktree"; return 0; }
   [ -d "$path" ] || { echo "kept: $path — folder missing"; return 0; }
   [ -z "$(git -C "$path" status --porcelain 2>/dev/null)" ] || { echo "kept: $path — uncommitted changes"; return 0; }
-  finished "$path" "$branch" || { echo "kept: $path — not finished"; return 0; }
+  verdict "$path" "$branch"
+  [ -z "$why" ] || { echo "kept: $path — $why"; return 0; }
   [ "$sessions_ok" -eq 1 ] || { echo "kept: $path — sessions unknown"; return 0; }
   ids=$(session_ids "$path")
   if [ -n "$ids" ]; then

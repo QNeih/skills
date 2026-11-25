@@ -13,8 +13,11 @@ export TICKETS_DIR="$FIX/tickets" TICKETS_LOG="$FIX/tickets.log"; : > "$TICKETS_
 cat > "$FIX/sk/tickets.sh" <<'SH'
 #!/usr/bin/env bash
 echo "$*" >> "$TICKETS_LOG"
+[ -z "${TICKETS_FAIL:-}" ] || { echo "tickets.sh: board unreachable" >&2; exit 1; }
 [ "$1" = show ] && [ -f "$TICKETS_DIR/$2" ] && printf '{"state":"%s"}\n' "$(cat "$TICKETS_DIR/$2")"
 SH
+# A gh that fails, for PATH="$FIX/failbin:$PATH"
+mkdir -p "$FIX/failbin"; printf '#!/usr/bin/env bash\necho "gh: not logged in" >&2; exit 1\n' > "$FIX/failbin/gh"; chmod +x "$FIX/failbin/gh"
 # Stand-in claude: `agents` prints $CLAUDE_AGENTS, or fails when $CLAUDE_FAIL is set; logs each call
 export CLAUDE_AGENTS="$FIX/agents.json" CLAUDE_LOG="$FIX/claude.log"; echo '[]' > "$CLAUDE_AGENTS"; : > "$CLAUDE_LOG"
 cat > "$FIX/bin/claude" <<'SH'
@@ -52,9 +55,11 @@ new_checkout acme 'board: github' 'project: 4' 'key: ACM' 'repo: QuinnNei/acme'
 c="$PROJECTS_ROOT/acme"; w="$c/.claude/worktrees"
 wt "$c" ACM-1 feature/ACM-1; commit "$w/ACM-1"; push "$w/ACM-1"          # (a) on origin
 wt "$c" ACM-2 feature/ACM-2; commit "$w/ACM-2"                            # (b) merged PR
-gh_can 'pr list --head feature/ACM-2 --state merged' '[{"number":7}]'
+gh_can 'pr list --head feature/ACM-2 --state merged' "[{\"headRefOid\":\"$(git -C "$w/ACM-2" rev-parse HEAD)\"}]"
+wt "$c" ACM-12 feature/ACM-12; commit "$w/ACM-12"                          # merged PR of an older tip
+gh_can 'pr list --head feature/ACM-12 --state merged' '[{"headRefOid":"0000000000000000000000000000000000000000"}]'
 gh_can 'pr list --head' '[]'
-wt "$c" ACM-3 bugfix/ACM-3; commit "$w/ACM-3"; echo CLOSED > "$TICKETS_DIR/ACM-3"   # (c) ticket closed
+wt "$c" ACM-3 bugfix/ACM-3; commit "$w/ACM-3"; echo CLOSED > "$TICKETS_DIR/ACM-3"   # ticket closed, commit not on origin
 wt "$c" ACM-4 feature/ACM-4; commit "$w/ACM-4"; echo OPEN > "$TICKETS_DIR/ACM-4"    # none of them
 wt "$c" ACM-5 feature/ACM-5; push "$w/ACM-5"; echo changed >> "$w/ACM-5/.gitignore" # modified tracked file
 wt "$c" ACM-6 feature/ACM-6; push "$w/ACM-6"; echo new > "$w/ACM-6/notes.txt"       # untracked file
@@ -73,7 +78,8 @@ cd "$c" || exit 1
 
 want="removed: $w/ACM-1
 removed: $w/ACM-2
-removed: $w/ACM-3
+kept: $w/ACM-3 — unpushed commits
+kept: $w/ACM-12 — commits after the merged PR
 kept: $w/ACM-4 — not finished
 kept: $w/ACM-5 — uncommitted changes
 kept: $w/ACM-6 — uncommitted changes
@@ -99,28 +105,43 @@ same_lines "$out" "$want" && pass "dry run: one line per linked worktree" || { f
 out=$(prune); rc=$?
 [ $rc -eq 0 ] && pass "exit 0" || fail "exit 0, got $rc"
 same_lines "$out" "$want" && pass "one line per linked worktree, none for the main checkout" || { fail "one line per linked worktree, none for the main checkout"; echo "$out"; }
-for n in ACM-1 ACM-2 ACM-3 ACM-7 ACM-90 agent-a1 det-1; do
+for n in ACM-1 ACM-2 ACM-7 ACM-90 agent-a1 det-1; do
   [ ! -e "$w/$n" ] && pass "$n: worktree removed" || fail "$n: worktree removed"
 done
-for b in feature/ACM-1 feature/ACM-2 bugfix/ACM-3 feature/ACM-7 feature/ACM-90 worktree-agent-a1; do
+for b in feature/ACM-1 feature/ACM-2 feature/ACM-7 feature/ACM-90 worktree-agent-a1; do
   ! has_branch "$b" && pass "$b: local branch deleted" || fail "$b: local branch deleted"
 done
-for n in ACM-4 ACM-5 ACM-6 ACM-8 ACM-9 agent-a2 ACM-11 other; do
+for n in ACM-3 ACM-12 ACM-4 ACM-5 ACM-6 ACM-8 ACM-9 agent-a2 ACM-11 other; do
   [ -d "$w/$n" ] && pass "$n: worktree kept" || fail "$n: worktree kept"
 done
-for b in feature/ACM-4 feature/ACM-5 feature/ACM-6 feature/ACM-8 feature/ACM-9 worktree-agent-a2 feature/other main; do
+for b in bugfix/ACM-3 feature/ACM-12 feature/ACM-4 feature/ACM-5 feature/ACM-6 feature/ACM-8 feature/ACM-9 worktree-agent-a2 feature/other main; do
   has_branch "$b" && pass "$b: local branch kept" || fail "$b: local branch kept"
 done
 [ -f "$w/ACM-6/notes.txt" ] && grep -q changed "$w/ACM-5/.gitignore" && pass "uncommitted work untouched" || fail "uncommitted work untouched"
 expect "sessions read for the main checkout" "$(cat "$CLAUDE_LOG")" "agents --json --all --cwd $c"
-expect "merged PR looked up by branch" "$(gh_calls)" "pr list --head feature/ACM-2 --state merged --json number"
+expect "merged PR looked up by branch" "$(gh_calls)" "pr list --head feature/ACM-2 --state merged --json headRefOid"
 expect "ticket state read through tickets.sh" "$(cat "$TICKETS_LOG")" "show ACM-4"
 ! grep -q 'ACM-11\|other' "$TICKETS_LOG" && pass "no ticket lookup for a detached worktree or a non-ticket branch" || fail "no ticket lookup for a detached worktree or a non-ticket branch"
 ! grep -q 'ACM-1 ' "$GH_LOG" && ! grep -qx 'show ACM-1' "$TICKETS_LOG" && pass "work on origin: no PR or ticket lookup" || fail "work on origin: no PR or ticket lookup"
 
 # Second run: nothing left to remove, the kept worktrees are listed again
 out=$(prune)
-! grep -q '^removed: ' <<<"$out" && [ "$(wc -l <<<"$out" | tr -d ' ')" -eq 8 ] && pass "second run: only the kept worktrees, listed again" || { fail "second run: only the kept worktrees, listed again"; echo "$out"; }
+! grep -q '^removed: ' <<<"$out" && [ "$(wc -l <<<"$out" | tr -d ' ')" -eq 10 ] && pass "second run: only the kept worktrees, listed again" || { fail "second run: only the kept worktrees, listed again"; echo "$out"; }
+
+# A lookup that fails is named as the reason
+expect "gh fails: named" "$(PATH="$FIX/failbin:$PATH" prune --dry-run)" "kept: $w/ACM-4 — PR lookup failed: gh: not logged in"
+expect "tickets.sh fails: named" "$(TICKETS_FAIL=1 prune --dry-run)" "kept: $w/ACM-4 — ticket lookup failed: tickets.sh: board unreachable"
+
+# A closed ticket finishes the worktree once its commits are on origin
+push "$w/ACM-3"
+expect "closed ticket, commits pushed: removed" "$(prune)" "removed: $w/ACM-3"
+
+# --dry-run fetches first: a branch origin holds, unknown to the local origin refs, counts as pushed
+wt "$c" ACM-21 feature/ACM-21; commit "$w/ACM-21"; push "$w/ACM-21"
+git update-ref -d refs/remotes/origin/feature/ACM-21
+expect "dry run: verdict from fetched refs" "$(prune --dry-run)" "removed: $w/ACM-21"
+[ -d "$w/ACM-21" ] && pass "dry run after fetch: still there" || fail "dry run after fetch: still there"
+expect "real run agrees with the dry run" "$(prune)" "removed: $w/ACM-21"
 
 # The worktree the script runs in stays, even when finished
 wt "$c" ACM-20 feature/ACM-20
@@ -159,7 +180,21 @@ expect "other board: work on origin does" "$out" "removed: $w/JRA-2"
 new_checkout plain 'board: github' 'project: 5' 'repo: QuinnNei/plain'
 c="$PROJECTS_ROOT/plain"; w="$c/.claude/worktrees"
 wt "$c" 12 feature/12; commit "$w/12"; echo CLOSED > "$TICKETS_DIR/12"
-expect "no key: closed ticket by number" "$(cd "$c" && prune)" "removed: $w/12"
+expect "no key: closed ticket found by number" "$(cd "$c" && prune)" "kept: $w/12 — unpushed commits"
+
+# Origin unreachable: commits on the stale origin refs don't finish a worktree; a merged PR does
+new_checkout gone 'board: github' 'project: 6' 'key: GON' 'repo: QuinnNei/gone'
+c="$PROJECTS_ROOT/gone"; w="$c/.claude/worktrees"
+wt "$c" GON-1 feature/GON-1; commit "$w/GON-1"; push "$w/GON-1"
+wt "$c" GON-2 feature/GON-2; commit "$w/GON-2"; push "$w/GON-2"
+wt "$c" GON-3 --detach
+gh_can 'pr list --head feature/GON-2 --state merged' "[{\"headRefOid\":\"$(git -C "$w/GON-2" rev-parse HEAD)\"}]"
+git -C "$c" remote set-url origin "$FIX/missing.git"
+out=$(cd "$c" && prune); rc=$?
+[ $rc -eq 0 ] && pass "fetch fails: exit 0" || fail "fetch fails: exit 0, got $rc"
+grep -q "^kept: $w/GON-1 — fetch failed: .*missing.git" <<<"$out" && pass "fetch fails: pushed branch kept, git's message named" || { fail "fetch fails: pushed branch kept, git's message named"; echo "$out"; }
+grep -q "^kept: $w/GON-3 — fetch failed: " <<<"$out" && pass "fetch fails: detached worktree kept" || { fail "fetch fails: detached worktree kept"; echo "$out"; }
+expect "fetch fails: merged PR at the branch tip still finishes" "$out" "removed: $w/GON-2"
 
 # No origin: nothing counts as pushed
 fixture_project_flat local 'board: none'
