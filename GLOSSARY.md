@@ -32,6 +32,10 @@ _Avoid_: loose end, open point
 A ticket's own git worktree, `.claude/worktrees/<id>` in the project's main checkout, where all of the ticket's work happens so tickets can run in parallel.
 _Avoid_: ticket checkout, session worktree
 
+**Finished worktree**:
+A worktree that has no session, holds no uncommitted work, and whose work is on `origin`, merged, or belongs to a closed ticket. Pruning removes it, with its local branch.
+_Avoid_: stale worktree, dead worktree
+
 **Ticket files**:
 A ticket's local working state: its `.scratch/<id>-<slug>/` folder with `ticket.md`, and its handoff. They live in its ticket worktree, or in the project folder when there is no git, and go away when the ticket ships or closes.
 _Avoid_: scratch state, ticket notes
