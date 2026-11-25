@@ -20,7 +20,7 @@ Next: `/<skill>` — <one-line reason>
 
 ## Decisions
 
-<one line per decision: what, why, and the rejected option; `/grill-with-docs` writes them; "none" until then>
+<one decision per line, never wrapped: `- <what>. Why: <reason>. Rejected: <option and its reason, or none>.`; left empty at import: `/grill-with-docs` writes them, else `/send`, which writes "none" when the work held no choice>
 
 ## Acceptance criteria
 

@@ -1,23 +1,30 @@
 #!/usr/bin/env bash
 # Writes a ticket's decision note into the brain: <vault>/raw/<Name>/<YYYY-MM-DD> <id> <title>.md.
 #   decision-note.sh --ticket <ticket.md> --project <name> [--base <base>] [--close <reason>]
+#   decision-note.sh --check --ticket <ticket.md>
 # <Name> is the page <vault>/wiki/projects/<Name>.md whose name matches <name>, ignoring case,
 # spaces and hyphens. The note holds the ticket's `## Decisions` lines (`none` and template
-# placeholder lines starting with `<` left out), the close reason as one more decision line,
+# placeholder lines starting with `<` left out), on a close one more line with the reason,
 # and, with --base and git in the current folder, the full text of every ADR (docs/adr/*.md)
 # and every glossary entry (in a GLOSSARY.md) the branch added or changed against the merge
 # base with origin/<base>.
+# Every line of the section must hold the labels `Why:` and `Rejected:`.
 # A note of the same ticket already in that folder (` <id> ` in its name) is overwritten.
 # Prints `note: <path>`; `note: none` plus `reason:` when there is nothing to write (exit 0);
-# `error: <cause>` when an argument is wrong, the title line is not `# <id>: <title>`, or the
-# vault or the project page is missing (exit 1).
+# `error: <cause>` when an argument is wrong, the title line is not `# <id>: <title>`, the
+# vault or the project page is missing, or a line of the section lacks a label: the error
+# names the first such line, and no note is written (exit 1).
+# --check only reads the section, without a vault or project, and writes nothing. It prints
+# `decisions: empty` (no section, or only blank and placeholder lines), `decisions: none`,
+# or `decisions: ok` (exit 0), or the same `error:` for a line without a label (exit 1).
 # Env: VAULT (the brain's folder).
 set -u
 
 err() { echo "error: $1"; exit 1; }
 
-ticket= project= base= close=
+ticket= project= base= close= check=
 while [ $# -gt 0 ]; do
+  [ "$1" != --check ] || { check=1; shift; continue; }
   case $1 in --ticket|--project|--base|--close) [ $# -ge 2 ] || err "$1 needs a value" ;; esac
   case $1 in
     --ticket) ticket=$2 ;; --project) project=$2 ;; --base) base=$2 ;; --close) close=$2 ;;
@@ -30,6 +37,23 @@ done
 norm() { perl -CSA -MUnicode::Normalize -le '$_ = lc NFC shift; s/[ -]//g; print' "$1"; }
 
 [ -f "$ticket" ] || err "ticket file $ticket not found"
+
+# The `## Decisions` section, without blank lines, `none` and template placeholders (`<...`)
+decisions=$(awk '/^## / { on = ($0 == "## Decisions"); next } on && NF && tolower($0) != "none" && !/^</' "$ticket")
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  missing=
+  [[ $line == *"Why:"* ]] || missing="Why:"
+  [[ $line == *"Rejected:"* ]] || missing="${missing:+$missing and }Rejected:"
+  [ -z "$missing" ] || err "decision line without $missing in $ticket: $line"
+done <<<"$decisions"
+if [ -n "$check" ]; then
+  if [ -n "$decisions" ]; then echo "decisions: ok"
+  elif awk '/^## / { on = ($0 == "## Decisions"); next } on && tolower($0) == "none" { found = 1 } END { exit !found }' "$ticket"; then echo "decisions: none"
+  else echo "decisions: empty"; fi
+  exit 0
+fi
+
 [ -n "${VAULT:-}" ] && [ -d "$VAULT/wiki/projects" ] || err "no vault with wiki/projects at '${VAULT:-}'"
 name=
 want=$(norm "$project")
@@ -46,9 +70,7 @@ head=$(sed -n '1s/^# //p' "$ticket")
 id=${head%%: *} title=${head#*: }
 ref=$(sed -n 's/^ref: //p' "$ticket" | head -1)
 
-# The `## Decisions` section, without blank lines, `none` and template placeholders (`<...`)
-decisions=$(awk '/^## / { on = ($0 == "## Decisions"); next } on && NF && tolower($0) != "none" && !/^</' "$ticket")
-[ -z "$close" ] || decisions=$(printf '%s\n%s' "$decisions" "- Closed without code: $close" | sed '/^$/d')
+[ -z "$close" ] || decisions=$(printf '%s\n%s' "$decisions" "- Closed without code. Why: ${close%.}. Rejected: none." | sed '/^$/d')
 
 adrs= glossary=
 if [ -n "$base" ] && top=$(git rev-parse --show-toplevel 2>/dev/null); then

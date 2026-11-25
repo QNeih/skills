@@ -36,7 +36,16 @@ Find the ticket. Its **ticket files** are `.scratch/<id>-<slug>/ticket.md` (titl
 
 The board is the lookup's `board:`; `ticket.md`'s `board:` link names the Jira site and project. A GitHub board is described in `${CLAUDE_SKILL_DIR}/GITHUB-SEND.md`.
 
-**Done when:** `<dir>`, git or not, and the ticket (id, ref, board) or "no ticket" are known.
+**Decisions**, with a `ticket.md`: step 9 copies its `## Decisions` section into the brain and step 10 deletes the file, so the section is settled now, before anything is committed.
+
+```bash
+bash ${CLAUDE_SKILL_DIR}/decision-note.sh --check --ticket <ticket.md>
+```
+
+- `decisions: ok` or `decisions: none` → go on.
+- `decisions: empty`, or `error: decision line …` → follow `${CLAUDE_SKILL_DIR}/DECISIONS.md` (it fills an empty section and repairs a refused line, and stops for Quinn when a reason is unknown), then run the check again.
+
+**Done when:** `<dir>`, git or not, and the ticket (id, ref, board) or "no ticket" are known, and with a `ticket.md` the check printed `decisions: ok` or `decisions: none`.
 
 Without git, go to step 8.
 
@@ -149,7 +158,7 @@ Runs after a successful push on a host that takes a PR, even if the PR step fail
 
 ## 9. Decision note
 
-A **decision note** is a source in the brain's `raw/<Name>/` folder: the ticket's decisions with their reasons, and the ADRs and glossary entries the branch added or changed. This step runs with a ticket, when:
+A **decision note** is a source in the brain's `raw/<Name>/` folder: the ticket's decision lines, and the ADRs and glossary entries the branch added or changed. This step runs with a ticket, when:
 
 - **Git**: step 7 ended with an `OPEN` PR or one it merged; on a close, step 8 closed or moved the ticket (or Quinn answered `leave`).
 - **No git**: step 8 left the ticket closed (or the item done).
@@ -161,12 +170,13 @@ VAULT=<vault> bash ${CLAUDE_SKILL_DIR}/decision-note.sh --ticket <ticket.md> --p
 ```
 
 - `<vault>`: the `Vault:` path in `~/.claude/CLAUDE.md`. `<project>`: the lookup's `project:` line; `none` → the name of `<dir>`.
-- `--base <base>`: with git, so the note copies every ADR and glossary entry the branch added or changed. `--close`: on a close, with its reason.
+- `--base <base>`: with git, so the note copies every ADR and glossary entry the branch added or changed. `--close`: on a close, with its reason, which the script adds as one more decision line.
 - `note: <path>` → written. The vault stays uncommitted: `brain-sync` commits it daily.
 - `note: none` → nothing to write; keep its `reason:` line for the report.
-- `error: <cause>` → could not fix, with that cause.
+- `error: decision line without <label> in <ticket.md>: <line>` → the script wrote no note (a line changed since step 1's check). Repair it as `${CLAUDE_SKILL_DIR}/DECISIONS.md` says and rerun the script.
+- Another `error: <cause>` → could not fix, with that cause.
 
-**Done when:** the script printed a `note:` or `error:` line, or the skip is noted.
+**Done when:** the script printed a `note:` line or an `error:` no rewrite can clear, or the skip is noted.
 
 ## 10. Clean up
 
@@ -194,6 +204,7 @@ Last, with git and a ticket: the ticket worktree `<wt>` = `<dir>/.claude/worktre
 - rebase: "up to date", or the `origin/<base>` commit it moved onto and the files whose conflicts were resolved
 - tests: the script that ran, or that the project has none
 - PR URL, new or reused, and whether it was merged on send; on a close, "closed without code" and the reason
+- decisions: "from the ticket", or the decision lines step 1 wrote, one each, or that it wrote `none` because the work held no choice; and each line it rewrote
 - decision note: its path, or "no decision note" and the `reason:` or `error:` line
 - other open PRs that conflict (number, title, branch) or are not yet checked; none → "no other PR conflicts"
 - board state of the ticket: GitHub with a PR, "closes on merge" (or "closed" once merged); else its new state

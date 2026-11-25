@@ -68,8 +68,12 @@ _Avoid_: docs, knowledge base, GitHub wiki
 The file in a wiki that lists every source worked into its pages, one line each. A source is a note or file a person dropped into the project's folder in their brain.
 _Avoid_: ingest log, history
 
+**Decision line**:
+One decision of a ticket, on one line of its ticket file: what was decided, why, and the option that was rejected with its reason, or that there was none.
+_Avoid_: decision entry, decision record
+
 **Decision note**:
-A source in the brain that holds one ticket's decisions with their reasons and rejected options, plus the ADRs and glossary entries the ticket added or changed. Written when the ticket ships or closes, so the brain and the project's wiki learn why, not what.
+A source in the brain that holds one ticket's decision lines, plus the ADRs and glossary entries the ticket added or changed. Written when the ticket ships or closes, so the brain and the project's wiki learn why, not what.
 _Avoid_: decision log, raw note
 
 **Wiki template**:
