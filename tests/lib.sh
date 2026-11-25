@@ -35,12 +35,24 @@ fixture_repo() {
 # fixture_gh: a fake gh first on PATH. It appends each call's arguments (space-joined) as one
 # line to $GH_LOG and prints the canned answer whose key is the longest prefix of the call;
 # no match prints nothing and succeeds. Needs fixture_new first. Sets GH_DIR, GH_LOG.
+# A body passed as a file (--body-file <path>, --body-file=<path>, -F <path>, or - for stdin) is
+# logged as its text in place of the path, so the log reads the same as for --body <text>.
 fixture_gh() {
   export GH_DIR="$FIX/gh-canned" GH_LOG="$FIX/gh.log"
   mkdir -p "$FIX/bin" "$GH_DIR"; : > "$GH_LOG"
   cat > "$FIX/bin/gh" <<'GH'
 #!/usr/bin/env bash
-call="$*"
+# body_text <value of a body-file flag>: the file's text (stdin for -); any other value unchanged,
+# so gh api's -F key=value fields stay as they are
+body_text() { if [ "$1" = - ]; then cat; elif [ -f "$1" ]; then cat "$1"; else printf '%s' "$1"; fi; }
+args=() prev=""
+for a in "$@"; do
+  case $prev in --body-file|-F) args+=("$(body_text "$a")") ;;
+  *) case $a in --body-file=*) args+=("--body-file=$(body_text "${a#*=}")") ;; *) args+=("$a") ;; esac ;;
+  esac
+  prev=$a
+done
+call="${args[*]}"
 printf '%s\n' "$call" >> "$GH_LOG"
 best=""
 for k in "$GH_DIR"/*.key; do

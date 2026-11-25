@@ -19,6 +19,29 @@ expect "gh: logs every call in order" "$(sed -n 3p <<<"$log")" "pr merge 9 --squ
 gh_can 'api graphql' '{"data":1}'
 expect "gh: arguments with spaces stay one logged line" "$(gh issue create --title 'a b' >/dev/null; gh_calls | tail -1)" "issue create --title a b"
 
+# a body passed as a file is logged as its text, like a body passed as text
+closes='^Closes QuinnNei/acme#13( --[a-z].*)?$'   # the body's last line, then at most further flags
+printf 'Summary\n\nCloses QuinnNei/acme#13\n' > "$FIX/body.md"
+printf 'Closes QuinnNei/acme#13\n\nSummary\n' > "$FIX/body-wrong.md"
+: > "$GH_LOG"; gh pr create --title T --body "$(cat "$FIX/body.md")" --base main
+text_log=$(gh_calls)
+: > "$GH_LOG"; gh pr create --title T --body-file "$FIX/body.md" --base main
+expect "gh: --body-file logs the same as --body" "$(gh_calls)" "$(tail -1 <<<"$text_log")"
+[ "$(gh_calls | sed 's/--body-file/--body/')" = "$text_log" ] && pass "gh: --body-file logs the whole body in place of the path" || fail "gh: --body-file logs the whole body in place of the path"
+for form in "--body-file $FIX/body.md" "--body-file=$FIX/body.md" "-F $FIX/body.md"; do
+  : > "$GH_LOG"; gh pr edit 7 $form
+  name="gh: ${form%%[ =]*} on pr edit logs the body's last line"; [ "${form#*=}" = "$form" ] || name="$name (= form)"
+  gh_calls | grep -qE "$closes" && pass "$name" || { fail "$name"; gh_calls; }
+done
+: > "$GH_LOG"; gh pr create --title T --body-file - < "$FIX/body.md"
+gh_calls | grep -qE "$closes" && pass "gh: a body on stdin is logged" || { fail "gh: a body on stdin is logged"; gh_calls; }
+: > "$GH_LOG"; gh pr create --title T --body-file "$FIX/body-wrong.md"
+gh_calls | tail -1 | grep -qE "$closes" && fail "gh: a body file ending in another line does not end the log with the Closes line" || pass "gh: a body file ending in another line does not end the log with the Closes line"
+gh_can 'pr create' 'https://github.com/QuinnNei/acme/pull/7'
+expect "gh: a call with a body file still gets its canned answer" "$(gh pr create --body-file "$FIX/body.md")" "https://github.com/QuinnNei/acme/pull/7"
+: > "$GH_LOG"; gh api graphql -F owner=QuinnNei -F name=acme >/dev/null
+expect "gh: api fields after -F are logged unchanged" "$(gh_calls)" "api graphql -F owner=QuinnNei -F name=acme"
+
 # gh_seq: matching calls get the answers one after the other, the last repeats
 gh_seq 'issue create' 'url/1' 'url/2'
 expect "gh_seq: first call" "$(gh issue create --title a)" "url/1"
