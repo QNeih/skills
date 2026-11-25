@@ -26,7 +26,11 @@ bash ${CLAUDE_SKILL_DIR}/project.sh
 
 - Follow `${CLAUDE_SKILL_DIR}/BOARD.md` to get the board (no board yet → it asks the board question), then read the board's file.
 - `<dir>` is the `dir:` line: the main checkout, or the project folder without git. **Git** means `git -C <dir> rev-parse` succeeds; without git, skip every git step and write no branch anywhere.
-- With git, prune the project's **finished worktrees** from the same folder: `bash ${CLAUDE_SKILL_DIR}/prune-worktrees.sh`. It removes each one with its local branch and prints one line per worktree. Pass every `claude rm <id> — <path>` line on to Quinn: that worktree is finished, and the command removes it with its session. A non-zero exit → report it as could not fix, with its output, and go on.
+- With git, prune the project's **finished worktrees**:
+  - Run `bash ${CLAUDE_SKILL_DIR}/prune-worktrees.sh` from the same folder.
+  - Print its output to Quinn: one line per worktree, removed or kept with the reason.
+  - Pass every `claude rm <id> — <path>` line on to Quinn as a command to run: that worktree is finished, and the command removes it with its session.
+  - A non-zero exit → report it as could not fix, with the output, and go on.
 
 **Done when:** project, `<dir>`, board and git-or-not are known, the board file is read, and with git the prune has run or is reported as could not fix.
 
