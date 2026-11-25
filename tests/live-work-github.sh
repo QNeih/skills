@@ -51,8 +51,9 @@ git -C "$acme" worktree add -q -b wt "$wt" main
 setup "$wt"
 run_ticket "$wt" "/t-work"
 
-# the first ranked line, not the first number anywhere ("#3 is blocked by #1" may come before the list)
-[ "$(grep -E '^[[:space:]]*([0-9]+[.)]|[-*]) .*#[123]' <<<"$CLAUDE_OUT" | grep -oE '#[123]' | head -1)" = '#2' ] && grep -q '#1' <<<"$CLAUDE_OUT" \
+# the first ranked line, not the first number anywhere ("#3 is blocked by #1" may come before the list);
+# a ranked line is a list item, or the bare `#<n> · <title>` the board file asks for
+[ "$(grep -E '^[[:space:]]*(([0-9]+[.)]|[-*]) .*#[123]|#[123] ·)' <<<"$CLAUDE_OUT" | grep -oE '#[123]' | head -1)" = '#2' ] && grep -q '#1' <<<"$CLAUDE_OUT" \
   && pass "pick: list printed, urgent unblocked ticket first" || { fail "pick: list printed, urgent unblocked ticket first"; echo "$CLAUDE_OUT"; }
 grep -qE '^Route: /' <<<"$CLAUDE_OUT" && pass "route line printed" || { fail "route line printed"; echo "$CLAUDE_OUT" | tail -20; }
 expect "claim: Status In Progress on ticket 2" "$(gh_calls)" "project item-edit --id I2 --project-id PVT_1 --field-id F1 --single-select-option-id O2"
