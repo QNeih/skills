@@ -73,7 +73,7 @@ A **leftover** is something still wrong or unfinished on the branch. Collect the
 - **Breaking**: a build, a lint run, a test or data fails or is lost now, inside or outside the ticket.
 - **Observation**: it breaks nothing and lies outside what the ticket's change touched. In doubt → own.
 
-Fix every own and breaking leftover now, each in its own commit on `<branch>`, so Quinn can revert one alone. A sizable fix (several files, or the cause is still unknown) → hand it to a subagent with the Agent tool: the leftover, the worktree path, and "commit the fix as one commit on `<branch>`".
+Fix every own and breaking leftover now, each in its own commit on `<branch>`, so Quinn can revert one alone. A sizable fix (several files, or the cause is still unknown) → hand it to a subagent with the Agent tool: the leftover, the worktree path, "commit the fix as one commit on `<branch>`", and "the commit message describes the change only: no `Co-Authored-By` trailer, no "Generated with" footer, no tool or assistant name".
 
 A fix that fails → discard its uncommitted changes and note the leftover as **could not fix**, with its cause, for the report.
 

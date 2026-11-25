@@ -114,7 +114,7 @@ Route: /<skill> — <one-line reason>
 Then start the route in this session, with the `ticket.md` path as its input. With git, all of the route's code work happens in the worktree from step 4, by path as step 4 says:
 
 - `/implement` → right away, hand the coding to one sub-agent: Agent tool, with model and effort from the `## Model routing` section of the shared rules, task type "routine edits". The call fails → that section's rules say which model to rerun it on.
-  - Its brief, every path absolute: read `~/.claude/skills/implement/SKILL.md` and do its implementing, testing and commit, since the review runs in this session afterwards; input the `ticket.md` path; work in the worktree from step 4; report what changed, the test results and what it could not fix, and why.
+  - Its brief, every path absolute: read `~/.claude/skills/implement/SKILL.md` and do its implementing, testing and commit, since the review runs in this session afterwards; input the `ticket.md` path; work in the worktree from step 4; commit messages describe the change only: no `Co-Authored-By` trailer, no "Generated with" footer, no tool or assistant name; report what changed, the test results and what it could not fix, and why.
   - When it reports, send the review's findings worth fixing to that sub-agent with SendMessage.
 - `/diagnosing-bugs`, `/grill-with-docs`, `/wayfinder` → read `~/.claude/skills/<name>/SKILL.md` and follow it, opening with a question to Quinn.
 - `/wayfinder` adds, while this session orchestrates its map:
