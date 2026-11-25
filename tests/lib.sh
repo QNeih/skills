@@ -149,7 +149,8 @@ guard_check() {
   for c in "$root"/* "$root"/*/*; do
     for d in .scratch .handoffs; do watched+=("$c/$d" "$c"/.claude/worktrees/*/"$d"); done
   done
-  changed=$( { find "$vault" -newer "$GUARD_MARK"
+  changed=$( { # the vault's .git is left out: any session's vault sync rewrites it; a write to the vault still shows as its file
+               find "$vault" -newer "$GUARD_MARK" | grep -v -e "^$vault/\.git$" -e "^$vault/\.git/"
                # skills/synced/ is Claude Code's own skill-sync cache, rewritten on every start
                find -L "$home/.claude/skills" -newer "$GUARD_MARK" | grep -v "^$home/.claude/skills/synced/"
                find "${watched[@]}" -newer "$GUARD_MARK" | grep -v "^$root/skills/"
@@ -172,7 +173,10 @@ run_claude() {
   command -v npm >/dev/null || node_bin=$(ls -d "${NVM_DIR:-$HOME/.nvm}"/versions/node/*/bin 2>/dev/null | sort -V | tail -1)
   [ -n "${node_bin:-}" ] && path=$path:$node_bin
   printf 'export PATH=%q:"$PATH"\n' "$path" > "$FIX/claude-env.sh"
+  # Hooks are off: the machine's own hooks act on real locations (a Stop hook that syncs the real vault
+  # touches its .git on every run), which the guard then reports.
   CLAUDE_OUT=$(cd "$dir" && CLAUDE_ENV_FILE="$FIX/claude-env.sh" claude -p "$prompt" --permission-mode acceptEdits --add-dir "$FIX" \
+    --settings '{"disableAllHooks":true}' \
     --allowedTools "${ALLOWED_TOOLS:-Skill,Read,Glob,Grep,Edit,Write,Bash(git *)}" \
     ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} --max-budget-usd "${CLAUDE_BUDGET:-1}" \
     --no-session-persistence "$@" </dev/null 2>&1)
