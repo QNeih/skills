@@ -21,6 +21,19 @@ It prints `closed: <n>`. A failure → report its output.
 
 A PR left open → write nothing to the board.
 
+## Follow-up tickets
+
+One ticket per follow-up, so it is on the board without Quinn asking:
+
+```bash
+bash ${CLAUDE_SKILL_DIR}/tickets.sh create --title "<title>" --body "<body>"
+```
+
+- Title: what is to be done, in the language and style of the sent ticket's title.
+- Body: what is wrong and where; for a could not fix, its cause; last line `Found while sending <PR url>.`, on a close `Found while closing <repo>#<n>.`
+
+It prints the new issue number `<m>`; the ticket's id is `<KEY>-<m>`, else `#<m>`, and it sits in `Todo`. A failure → report the follow-up as not filed, with the output, and give its PR line no ref.
+
 ## Close without code
 
 ```bash

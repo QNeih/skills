@@ -60,7 +60,7 @@ Without git, go to step 8.
 7. **Branch commits**: `git rev-list origin/<base>..HEAD`, pushed or not. Commits already on `origin` still need their PR, board move and cleanup.
 8. Change set and branch commits both empty:
    - No ticket → stop and print this line as is: `Nothing to send: <branch> has no changes against <base>.`
-   - A ticket → this is a **close**. Reason: `$ARGUMENTS` without the word `draft`; empty → ask Quinn for one line and wait, changing nothing before the answer. Skip steps 3–7 and go to step 8 (Board); of step 4, only collect the observations, for the report.
+   - A ticket → this is a **close**. Reason: `$ARGUMENTS` without the word `draft`; empty → ask Quinn for one line and wait, changing nothing before the answer. Skip steps 3–7 and go to step 8 (Board); of step 4, only collect the observations: they are the close's follow-ups, handled in step 8.
 
 **Done when:** the `Host:` line is printed, no hunks are staged, `<base>` is known, and the change set and branch commits are listed, or a close has its reason.
 
@@ -86,9 +86,11 @@ Fix every own and breaking leftover now, each in its own commit on `<branch>`, s
 
 A fix that fails → discard its uncommitted changes and note the leftover as **could not fix**, with its cause, for the report.
 
+A **follow-up** is a leftover that stays unfixed: an observation, or a could not fix. Step 7 files each one as a ticket or lists it for Quinn (on a close, step 8 does). A stop before step 7 leaves them unfiled: the report lists them, and the next `/send` handles them.
+
 None collected → say "no leftovers" and go on.
 
-**Done when:** every collected leftover is fixed in its own commit, noted as could not fix with its cause, or sorted as an observation, and the tree is clean as after step 3.
+**Done when:** every collected leftover is fixed in its own commit or is a follow-up (a could not fix has its cause), and the tree is clean as after step 3.
 
 ## 5. Rebase, lint and test
 
@@ -122,7 +124,7 @@ Paths: `git diff --name-only origin/<base>...HEAD` that still exist. This covers
 
 ## 7. PR
 
-`gh pr view --json url,state,body`: `state` is `OPEN` → reuse it; `gh pr edit --body` adds each `Observed:` line (below) its body lacks, before the link line; a GitHub board's body that lacks the `Closes` line gets it as the last line. Otherwise (no PR, or only merged or closed ones):
+`gh pr view --json url,state,body`: `state` is `OPEN` → reuse it; a GitHub board's body that lacks the `Closes` line gets it as the last line, through `gh pr edit --body`. Otherwise (no PR, or only merged or closed ones):
 
 ```bash
 gh pr create --base <base> --assignee @me [--label <label>] --title "<title>" --body "<body>" [--draft]
@@ -131,13 +133,20 @@ gh pr create --base <base> --assignee @me [--label <label>] --title "<title>" --
 - `--draft`: only when `$ARGUMENTS` has the word `draft`.
 - Label from `<branch>`'s prefix, case-insensitive: `hotfix/` → `hotfix`; `bugfix/` → `bugfix`; `feature/` → `feature`, else `enhancement`. Take the first of these that `gh label list` shows. None exists, or another prefix → open without a label and say so.
 - Title: `<ref>: <gist of the change>`; on GitHub `<id>: <gist of the change>` (`SKL-12: …`); no ticket → the gist alone.
-- Body: `## Summary` bullets from `ticket.md` and the commit subjects, then each observation from step 4 as one line `Observed: <what, where>`, then one link line in the tracker's syntax, last: GitHub → `Closes <repo>#<n>` (`<repo>` the lookup's `repo:`; merging into the default branch closes the ticket); Jira → `Jira: <link>` (the `board:` link; without `ticket.md`, `https://<site>/browse/<ref>`, site from `getAccessibleAtlassianResources`); Azure Boards → the ref alone (`AB#1234`), which links it; another tracker → the item's link; no ticket → no link line.
+- Body: `## Summary` bullets from `ticket.md` and the commit subjects, then one link line in the tracker's syntax, last: GitHub → `Closes <repo>#<n>` (`<repo>` the lookup's `repo:`; merging into the default branch closes the ticket); Jira → `Jira: <link>` (the `board:` link; without `ticket.md`, `https://<site>/browse/<ref>`, site from `getAccessibleAtlassianResources`); Azure Boards → the ref alone (`AB#1234`), which links it; another tracker → the item's link; no ticket → no link line.
+
+**Follow-ups**, once the PR exists. A follow-up that a `Follow-up:` line of the PR body already describes was handled by an earlier `/send`: skip it; the `<m>` of that line's ref is its ticket, for the report. For each other one, by the lookup's lines:
+
+- `board: github` with a `number:` line → file its ticket as `${CLAUDE_SKILL_DIR}/GITHUB-SEND.md` says under "Follow-up tickets". Its line: `Follow-up: <repo>#<m> <what, where>`.
+- Anything else (Jira, another tracker, no board) → its line: `Follow-up: <what, where>`. Step 11 asks Quinn about it.
+
+Then `gh pr edit <url> --body` puts the new lines before the link line, one per follow-up. The ref follows `Follow-up:` directly, with no `Closes`, `Fixes` or `Resolves` in the line, so the merge leaves the filed ticket open.
 
 **Merge on send**: a `CLAUDE.md` rule says to merge this repo's PRs on send, and the PR isn't a draft → `gh pr merge <url> --squash --delete-branch`. It fails → stop and show the output; the board move and cleanup don't run (GitHub: a merge into the default branch closes the ticket by itself).
 
 **Conflicting PRs**: `gh pr list --state open --limit 100 --json number,title,headRefName,mergeable`. Every PR whose `headRefName` is not `<branch>` and whose `mergeable` is `CONFLICTING` goes into the report with its number, title and branch. `UNKNOWN` (GitHub works it out only once asked, so this is usual right after a merge) → run the list again right before the report (step 11); still `UNKNOWN` → report that PR as not yet checked. Their branches stay as they are: each one is rebased by `/send` in its own ticket's session.
 
-**Done when:** you hold the URL of an `OPEN` PR for `<branch>` (or, merged on send, a `MERGED` one), or the reason there is none; and every other open PR is noted as conflicting or `UNKNOWN`, or left out as mergeable.
+**Done when:** you hold the URL of an `OPEN` PR for `<branch>` (or, merged on send, a `MERGED` one), or the reason there is none; every follow-up has exactly one `Follow-up:` line in the PR body, on a GitHub board with its ticket; and every other open PR is noted as conflicting or `UNKNOWN`, or left out as mergeable.
 
 ## 8. Board
 
@@ -154,7 +163,9 @@ Runs after a successful push on a host that takes a PR, even if the PR step fail
   - `leave` → don't move the item; report "close <ref> on the tracker yourself" with its link.
   - Else move the item to that state (Jira: the transition whose target status matches, any case) and add the comment `Closed without code: <reason>`. No such transition → report the available target statuses and change nothing.
 
-**Done when:** the ticket shows the new state, or the reason it doesn't is reported; on GitHub, a PR merged into a non-default base has its ticket closed, and any other PR caused no board write.
+**Follow-ups on a close**, once the ticket is closed or moved (or Quinn answered `leave`); until then they stay unfiled, so a second `/send` files none twice. `board: github` with a `number:` line → file each one's ticket as `${CLAUDE_SKILL_DIR}/GITHUB-SEND.md` says under "Follow-up tickets". Anything else → step 11 asks Quinn about them.
+
+**Done when:** the ticket shows the new state, or the reason it doesn't is reported; on a close, every follow-up is filed or kept for step 11's question; on GitHub, a PR merged into a non-default base has its ticket closed, and any other PR caused no board write.
 
 ## 9. Decision note
 
@@ -212,7 +223,7 @@ Last, with git and a ticket: the ticket worktree `<wt>` = `<dir>/.claude/worktre
 - deleted branches (local and, on a close, on origin), current branch or detached `HEAD`, removed paths
 - the ticket worktree: removed, or the `claude rm <session id>` line that removes it with its session, and any files that block that
 - what it could not fix, each with its cause, or "nothing left unfixed"
-- observations: "in the PR body", or listed here, one line each, when there is no PR (a close, a stop)
+- follow-ups, one line each, or "no follow-ups": with a filed ticket → `<KEY>-<m>: <what>` with the lookup's `key:` (`SKL-31: …`; without a key `#<m>: …`), and whether this run or an earlier one filed it; after a stop before step 7 → "not filed: no PR yet"; on a board that is no GitHub Project → listed, and the report's last line asks Quinn: `File a ticket for which of these follow-ups?`
 - session branches kept and why; fast-forwarded branches
 - every skipped step and why
 

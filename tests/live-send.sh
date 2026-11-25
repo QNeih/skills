@@ -2,7 +2,8 @@
 # /send through claude -p on the GitHub board in the code repo (stand-in gh, project fixture), against a local bare remote. The git
 # project's board has the key ACM (ids ACM-<n>, issue <n>); the project without git has none (ids are issue numbers). Close without a reason asks,
 # with one closes the issue as not planned with the reason; a PR body ends with `Closes <owner>/<repo>#<n>` and nothing is written to the
-# board; a leftover from the handoff fixed in its own commit; rebase onto a moved base, lint commit, test.sh, push and the
+# board; a leftover outside the ticket's change is filed as its own ticket, linked in the PR body and named in the report, and
+# not filed again when the reused PR's body already links it; a leftover from the handoff fixed in its own commit; rebase onto a moved base, lint commit, test.sh, push and the
 # "PR on <host> not supported" stop; a ticket worktree is removed, port change and the ticket files /work wrote into it and all; a failing test.sh is fixed in its own commit and the
 # branch pushed; without git: the issue closes, ticket files deleted.
 . "$(dirname "$0")/lib.sh"
@@ -98,8 +99,11 @@ git -C "$acme" checkout -q main && git -C "$acme" checkout -q -b feature/ACM-13
 echo 'let d = 4' > "$acme/src/d.js"
 git -C "$acme" add src/d.js && git -C "$acme" commit -qm "Add d" && git -C "$acme" push -q -u origin HEAD 2>/dev/null
 ticket "$acme" ACM-13 pushed-work main '- Keep d in its own file. Why: a.js is loaded on every page. Rejected: a line in a.js, it would grow the first load.'
+# A leftover outside the ticket's change that breaks nothing, as the handoff reports it
+echo 'Seen while working, outside this ticket and breaking nothing: README.md still names the old install command `make setup`.' >> "$acme/.handoffs/HANDOFF-ACM-13.md"
 touch "$FIX/github-origin"
 gh_can 'pr create' 'https://github.com/QuinnNei/acme/pull/7'
+gh_can 'issue create' 'https://github.com/QuinnNei/acme/issues/31'
 : > "$GH_LOG"
 run_send "$acme"
 rm -f "$FIX/github-origin"
@@ -112,6 +116,12 @@ gh_calls | grep -qE '^Closes QuinnNei/acme#13( --[a-z].*)?$' && pass "PR body: e
   && pass "PR: branch and ticket files cleaned up" || fail "PR: branch and ticket files cleaned up"
 grep -qxF -- '- Keep d in its own file. Why: a.js is loaded on every page. Rejected: a line in a.js, it would grow the first load.' "$VAULT"/raw/acme/*" ACM-13 "*.md 2>/dev/null \
   && pass "PR: the ticket's decision line is in its decision note" || { fail "PR: the ticket's decision line is in its decision note"; ls -R "$VAULT/raw" 2>&1; echo "$CLAUDE_OUT" | tail -20; }
+
+gh_calls | grep -q '^issue create --repo QuinnNei/acme --title ' && gh_calls | grep -q '^project item-add 4 ' \
+  && pass "follow-up: filed as a ticket on the Project" || { fail "follow-up: filed as a ticket on the Project"; gh_calls; echo "$CLAUDE_OUT" | tail -20; }
+gh_calls | grep -q '^Follow-up: QuinnNei/acme#31 ' && pass "follow-up: PR body links the ticket without a closing keyword" \
+  || { fail "follow-up: PR body links the ticket without a closing keyword"; gh_calls; }
+grep -q 'ACM-31' <<<"$CLAUDE_OUT" && pass "follow-up: report names the ticket" || { fail "follow-up: report names the ticket"; echo "$CLAUDE_OUT" | tail -20; }
 
 # Committed-but-unpushed work plus an uncommitted file; lint must cover both
 git -C "$acme" checkout -q main && git -C "$acme" checkout -q -b bugfix/ACM-12 && git -C "$acme" push -q -u origin HEAD 2>/dev/null
@@ -181,6 +191,21 @@ run_send "$acme"
   || { fail "failing tests: fixed in its own commit"; git -C "$remote" log -p main..feature/ACM-15 2>&1 | head -40; echo "$CLAUDE_OUT" | tail -20; }
 [ "$(git -C "$remote" show feature/ACM-15:test.sh 2>/dev/null)" = "$(git -C "$remote" show main:test.sh)" ] \
   && pass "failing tests: test.sh unchanged" || fail "failing tests: test.sh unchanged"
+
+# The same leftover on a reused open PR whose body already links its ticket: no second ticket
+git -C "$acme" checkout -q main && git -C "$acme" checkout -q -b feature/ACM-16
+echo 'let e = 5' > "$acme/src/e.js"
+git -C "$acme" add src/e.js && git -C "$acme" commit -qm "Add e" && git -C "$acme" push -q -u origin HEAD 2>/dev/null
+ticket "$acme" ACM-16 resent-work main
+echo 'Seen while working, outside this ticket and breaking nothing: README.md still names the old install command `make setup`.' >> "$acme/.handoffs/HANDOFF-ACM-16.md"
+touch "$FIX/github-origin"
+gh_can 'pr view' '{"url":"https://github.com/QuinnNei/acme/pull/8","state":"OPEN","body":"## Summary\n\n- Add e\n\nFollow-up: QuinnNei/acme#31 README.md still names the old install command `make setup`\nCloses QuinnNei/acme#16"}'
+: > "$GH_LOG"
+run_send "$acme"
+rm -f "$FIX/github-origin"
+gh_calls | grep -q '^pr view' && ! gh_calls | grep -qE '^(issue create|pr create)' \
+  && pass "reused PR: linked follow-up not filed again" || { fail "reused PR: linked follow-up not filed again"; gh_calls; echo "$CLAUDE_OUT" | tail -20; }
+grep -q 'ACM-31' <<<"$CLAUDE_OUT" && pass "reused PR: report names the earlier ticket" || { fail "reused PR: report names the earlier ticket"; echo "$CLAUDE_OUT" | tail -20; }
 
 # --- project without git: two tickets, the one In Progress on the board is sent ---
 fixture_project beta 'board: github' 'project: 5' 'repo: QuinnNei/beta'

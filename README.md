@@ -10,7 +10,7 @@ everything in between runs on its own and stops only where I have to decide.
     /ticket TEXT        add a ticket to the project's board (GitHub or Jira)
     /work KEY           claim the ticket, pick a route (fix, grill, build, wayfinder), start it
     /build              spec → tickets → test-first build in subagents → review
-    /send               commit, fix leftovers, rebase, lint, test, push, open the PR, move the board card
+    /send               commit, fix leftovers, rebase, lint, test, push, open the PR, file follow-up tickets, move the board card
 
 Built on Matt Pocock's skills (separate install): `/work`, `/build` and `/send`
 hand off to his `to-spec`, `to-tickets`, `implement-spec`, `implement`, `wayfinder`,
@@ -82,7 +82,7 @@ flowchart TD
 
     send(["/send"]):::cmd --> decisions["Check Decisions in ticket.md:<br/>fill when empty, repair lines"] --> commit["Commit by concern"] --> leftovers["Fix leftovers"] --> rebase["Rebase onto the base"] --> lint["npm run lint-fix"] --> test["test.sh or tests/run.sh"] --> push["Push"]
     rebase -- "conflict" --> conflicts["resolving-merge-conflicts"]:::pocock --> lint
-    push --> pr["Open or reuse PR;<br/>merge it where CLAUDE.md says so"] --> board["Move card:<br/>Jira → Code Review,<br/>GitHub → Done on merge"]
+    push --> pr["Open or reuse PR;<br/>unfixed leftovers → follow-up tickets<br/>(GitHub Project), else ask me;<br/>merge it where CLAUDE.md says so"] --> board["Move card:<br/>Jira → Code Review,<br/>GitHub → Done on merge"]
     decisions -- "a choice whose reason<br/>the session doesn't give" --> askwhy{"Why? Rejected?"}:::gate --> commit
     decisions -- "nothing on the branch:<br/>close with a reason" --> board
     board --> decision["Decision note into the brain:<br/>raw/Name"]
@@ -103,7 +103,7 @@ flowchart TD
 | **Ticket flow** | `ticket` | Adds one ticket to the project's board, in the language and pattern of the tickets already there: on GitHub an issue in the code repo, added to its Project (the id is the board's key and the issue number, `SKL-12`); on Jira a Jira issue. First asks what the text leaves open that would change the work. Given only an id, points to `/work`. | board (GitHub, Jira) |
 | | `work` | Claims a ticket on the project's board (GitHub Project, Jira, or any tracker with a connector), cuts its branch, imports it, and starts the route that works on it. First removes the project's finished worktrees (the term is defined in `GLOSSARY.md`) with their local branches. | board (GitHub, Jira, other), repo |
 | | `build` | Runs a multi-session feature in one session: spec, tickets, test-first build in subagents, code review. | repo |
-| | `send` | Ships the branch: commit, fix its own leftovers, rebase onto the base branch, lint, test, push, PR with the tracker link, board card moved, the ticket's decisions written into the brain as a decision note (each line with `Why:` and `Rejected:`; an empty `## Decisions` section is drafted from the session first, and it asks me when the session doesn't give the reasons), the ticket's dev servers stopped, branch and worktree cleaned up. Names the other open PRs that now conflict. A ticket branch with nothing on it is closed instead: the ticket closes with the reason, same cleanup. | GitHub, board, repo, vault |
+| | `send` | Ships the branch: commit, fix its own leftovers, rebase onto the base branch, lint, test, push, PR with the tracker link, one follow-up ticket per leftover it leaves unfixed (on a GitHub Project board; on any other board it lists them and asks), board card moved, the ticket's decisions written into the brain as a decision note (each line with `Why:` and `Rejected:`; an empty `## Decisions` section is drafted from the session first, and it asks me when the session doesn't give the reasons), the ticket's dev servers stopped, branch and worktree cleaned up. Names the other open PRs that now conflict. A ticket branch with nothing on it is closed instead: the ticket closes with the reason, same cleanup. | GitHub, board, repo, vault |
 | **Maintenance** | `sentry-fix` | Fixes Sentry errors in their own worktrees and opens draft PRs; finds the Sentry projects from the DSNs in the code. Without short ids it lists the top three errors and waits for my pick. | Sentry, GitHub |
 | | `dependabot-review` | Checks every open Dependabot PR in parallel: does it break the build, could it change behaviour. | GitHub |
 | **Setup and misc** | `new-project` | Sets up a project: folder and git, code repo, board, sidebar group. Creates only what's missing. The board follows the code host: a GitHub Project when the code is on GitHub, with a suggested key to confirm; for another host it asks for that tracker's link. An existing board stays. Offers `to-spec` or `wayfinder` for an empty project, and `/wiki` when the brain is a git repo. | GitHub, repo, vault |
