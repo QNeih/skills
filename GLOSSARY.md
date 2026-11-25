@@ -33,7 +33,7 @@ A ticket's own git worktree, `.claude/worktrees/<id>` in the project's main chec
 _Avoid_: ticket checkout, session worktree
 
 **Finished worktree**:
-A linked worktree that pruning removes, with its local branch. It is unlocked, has no session, and has no modified or untracked file (ignored **ticket files** don't count and go with it). Its commits are safe in one of three ways: (a) every commit is on an `origin` ref; (b) its branch tip is the head commit of a merged PR; (c) its ticket is closed on a GitHub board and every commit is on an `origin` ref. A detached worktree counts by (a) only. This entry is the one statement of the rule; `skills/work/prune-worktrees.sh` applies it.
+A linked worktree that pruning removes, with its local branch. It is unlocked, has no session, and has no modified or untracked file (ignored **ticket files** don't count and go with it). Its commits are safe: a worktree on a ticket branch (`feature|bugfix|hotfix/<id>`) only when (b) its branch tip is the head commit of a merged PR; every other worktree when (a) every commit is on an `origin` ref, or by (b). A detached worktree has no branch, so it counts by (a) only. The merged PR is looked up only when `origin` is on GitHub. This entry is the one statement of the rule; `skills/work/prune-worktrees.sh` applies it.
 _Avoid_: stale worktree, dead worktree
 
 **Ticket files**:

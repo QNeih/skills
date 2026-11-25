@@ -3,8 +3,8 @@
 # Run from inside the project (main checkout, a worktree or a subfolder).
 #   prune-worktrees.sh [--dry-run]    --dry-run fetches and prints the same lines, and removes nothing
 # Which worktree is a **finished worktree** is defined in the skills repo's GLOSSARY.md; `verdict`
-# below applies that rule. Criteria (b) and (c) cost a lookup: gh for the merged PR, and
-# tickets.sh, next to this script, for the ticket of a ticket branch (hotfix|bugfix|feature/<id>).
+# below applies that rule. A ticket branch is hotfix/*, bugfix/* or feature/*. The merged PR is
+# looked up with gh, only when origin's URL is on github.com.
 # Always kept: the main checkout (never listed), the worktree this script runs in, a locked
 # worktree, and the worktree of a session (`claude agents --json --all`, a session's cwd in it).
 # One line per linked worktree:
@@ -13,11 +13,9 @@
 #   claude rm <id> — <path>      finished, but session <id> works in it: that command removes both
 # When `claude agents` can't be read, finished worktrees are kept, since any could hold a session.
 # A lookup that fails is the keep reason: `fetch failed: <msg>` (only where the worktree would be
-# finished by its commits on origin alone), `PR lookup failed: <msg>`, `ticket lookup failed: <msg>`.
+# finished by its commits on origin alone) and `PR lookup failed: <msg>`.
 # Exit: 0; 1 when the folder is no git checkout or a removal failed.
 set -u
-here=$(cd "$(dirname "$0")" && pwd)
-
 dry=0
 case ${1:-} in
   '') ;;
@@ -43,8 +41,9 @@ if raw=$(cd "$dir" && "$claude" agents --json --all --cwd "$dir" 2>/dev/null) &&
   sessions_ok=1; sessions=$(jq -r '.[] | "\(.id)\t\(.cwd)"' <<<"$raw")
 fi
 
-lookup=$(cd "$dir" && bash "$here/project.sh")
-board=$(sed -n 's/^board: //p' <<<"$lookup"); key=$(sed -n 's/^key: //p' <<<"$lookup")
+# github=1 when origin is on github.com (https, ssh and scp-like URLs)
+github=0
+case $(git -C "$dir" remote get-url origin 2>/dev/null) in *github.com[:/]*) github=1 ;; esac
 
 # session_ids <path>: ids of the sessions whose cwd is the worktree or a folder in it
 session_ids() {
@@ -52,29 +51,17 @@ session_ids() {
   awk -F'\t' -v p="$1" '$2 == p || index($2, p "/") == 1 { print $1 }' <<<"$sessions"
 }
 
-# ticket_of <branch>: the ticket id of a ticket branch of this board, else nothing
-ticket_of() {
-  local id
-  case $1 in hotfix/*|bugfix/*|feature/*) id=${1#*/} ;; *) return 0 ;; esac
-  if [ -n "$key" ]; then
-    [ "${id%-*}" = "$key" ] || return 0
-    case ${id##*-} in ''|*[!0-9]*) return 0 ;; esac
-  else
-    case $id in ''|*[!0-9]*) return 0 ;; esac
-  fi
-  echo "$id"
-}
-
 # verdict <path> <branch or empty>: sets `why` to the reason the worktree is not finished,
 # empty when it is finished
 verdict() {
-  local path=$1 branch=$2 tip prs id ticket pushed=0
+  local path=$1 branch=$2 tip prs pushed=0 ticket=0
   tip=$(git -C "$path" rev-parse -q --verify HEAD 2>/dev/null) || { why="not finished"; return; }
   [ -n "$(git -C "$path" rev-list -1 HEAD --not --remotes=origin 2>/dev/null)" ] || pushed=1
+  case $branch in hotfix/*|bugfix/*|feature/*) ticket=1; pushed=0 ;; esac
   why=
-  # (a) every commit on an origin ref, read from refs the fetch just refreshed
+  # (a) every commit on an origin ref, read from refs the fetch just refreshed; no ticket branch
   [ "$pushed" -eq 0 ] || [ -n "$fetch_err" ] || return 0
-  if [ -n "$branch" ]; then
+  if [ -n "$branch" ] && [ "$github" -eq 1 ]; then
     # (b) the branch tip is the head commit of a merged PR
     if prs=$(cd "$dir" && gh pr list --head "$branch" --state merged --json headRefOid 2>"$errf") &&
        jq -e 'type == "array"' <<<"$prs" >/dev/null 2>&1; then
@@ -84,17 +71,8 @@ verdict() {
       why="PR lookup failed: $(head -1 "$errf" | grep . || echo "unreadable answer")"
     fi
   fi
-  [ -z "$fetch_err" ] || [ "$pushed" -eq 0 ] || why="fetch failed: $fetch_err"
-  [ -z "$why" ] || return 0
-  # (c) the ticket is closed and every commit is on an origin ref; here some commit is not
-  why="not finished"
-  [ -n "$branch" ] && [ "$board" = github ] || return 0
-  id=$(ticket_of "$branch"); [ -n "$id" ] || return 0
-  if ticket=$(cd "$dir" && bash "$here/tickets.sh" show "$id" 2>"$errf"); then
-    [ "$(jq -r '.state' <<<"$ticket" 2>/dev/null)" != CLOSED ] || why="unpushed commits"
-  else
-    why="ticket lookup failed: $(head -1 "$errf" | grep . || echo "no message")"
-  fi
+  [ "$pushed" -eq 0 ] || why="fetch failed: $fetch_err"
+  [ -n "$why" ] || why="not finished"
 }
 
 rc=0
