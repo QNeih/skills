@@ -18,12 +18,15 @@ grep -qF "$VAULT" "$PROJECTS_ROOT/acme/CLAUDE.md" && grep -qF "$PROJECTS_ROOT" "
 
 # Guard: stand-in real dirs, so nothing real is touched
 fake=$(cd "$src" && pwd -P)
-mkdir -p "$fake/vault" "$fake/home/.claude/skills" "$fake/projects/skills/.scratch" "$fake/projects/other/.scratch" \
+mkdir -p "$fake/vault/.git/objects" "$fake/home/.claude/skills" "$fake/projects/skills/.scratch" "$fake/projects/other/.scratch" \
   "$fake/projects/other/other/.claude/worktrees/OT-1/.handoffs" "$fake/projects/flat/.claude/worktrees/FL-1/.scratch"
 export REAL_VAULT="$fake/vault" REAL_HOME="$fake/home" REAL_PROJECTS_ROOT="$fake/projects"
 guard_start
 touch "$fake/projects/skills/.scratch/ok.md"
 out=$(guard_check) && pass "guard: quiet run passes" || fail "guard: quiet run passes: $out"
+guard_start
+touch "$fake/vault/.git/index" "$fake/vault/.git/objects/new"
+out=$(guard_check) && pass "guard: a vault sync's .git changes pass" || fail "guard: a vault sync's .git changes pass: $out"
 guard_start
 touch "$fake/vault/note.md" "$fake/projects/other/.scratch/x.md" "$fake/projects/other/other/.claude/worktrees/OT-1/.handoffs/HANDOFF-OT-1.md" \
   "$fake/projects/flat/.claude/worktrees/FL-1/.scratch/t.md"
