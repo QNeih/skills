@@ -142,10 +142,14 @@ case $cmd in
     for l in ${ls[@]+"${ls[@]}"}; do args+=(--label "$l"); done
     url=$(gh issue create "${args[@]}")
     n=${url##*/}
-    gh project item-add "$NUM" --owner "$OWNER" --url "$url" >/dev/null
+    # the issue exists from here on: a later failure names it, so the caller does not create it again
+    gh project item-add "$NUM" --owner "$OWNER" --url "$url" >/dev/null ||
+      die "create: issue $n exists ($url) but was not added to Project $NUM"
     if [ -n "$blocked" ]; then
       IFS=, read -ra bs <<<"$blocked"
-      for b in "${bs[@]}"; do block "$n" "$b"; done
+      for b in "${bs[@]}"; do
+        block "$n" "$b" || die "create: issue $n exists ($url) but is not marked as blocked by $b"
+      done
     fi
     echo "$n"
     ;;
