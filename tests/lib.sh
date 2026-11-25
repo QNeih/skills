@@ -159,12 +159,21 @@ guard_check() {
   [ -z "$changed" ] || { echo "guard: real files changed during the run:"; echo "$changed"; return 1; }
 }
 
+# find_claude: prints the claude binary to run; fails when there is none. The one on PATH wins.
+# A background session's shell has no ~/.local/bin on its PATH, so the installer's location is the fallback.
+# run_claude calls the binary by this path and leaves its folder out of the PATH it writes for the run:
+# the run's own shell needs no claude, and the folder's other binaries would get ahead of the profile's.
+find_claude() {
+  command -v claude && return
+  [ -x "$HOME/.local/bin/claude" ] && echo "$HOME/.local/bin/claude"
+}
+
 # run_claude <project dir> <prompt> [claude args...]: output in CLAUDE_OUT; a guard hit fails the test.
 # Call it directly, not in $(...), or the failure is lost.
 # CLAUDE_MODEL picks the model, ALLOWED_TOOLS (comma-separated) scopes the tools.
 run_claude() {
-  local dir=$1 prompt=$2; shift 2
-  command -v claude >/dev/null || { echo "claude is not on PATH: every live check would fail on empty output" >&2; exit 2; }
+  local dir=$1 prompt=$2 claude; shift 2
+  claude=$(find_claude) || { echo "claude is neither on PATH nor at $HOME/.local/bin/claude: every live check would fail on empty output" >&2; exit 2; }
   guard_start
   # Claude Code's Bash tool loads the login profile, which puts e.g. Homebrew's real gh ahead of the
   # stand-ins; CLAUDE_ENV_FILE is sourced after it, so it puts the test's PATH in front of the profile's.
@@ -175,7 +184,7 @@ run_claude() {
   printf 'export PATH=%q:"$PATH"\n' "$path" > "$FIX/claude-env.sh"
   # Hooks are off: the machine's own hooks act on real locations (a Stop hook that syncs the real vault
   # touches its .git on every run), which the guard then reports.
-  CLAUDE_OUT=$(cd "$dir" && CLAUDE_ENV_FILE="$FIX/claude-env.sh" claude -p "$prompt" --permission-mode acceptEdits --add-dir "$FIX" \
+  CLAUDE_OUT=$(cd "$dir" && CLAUDE_ENV_FILE="$FIX/claude-env.sh" "$claude" -p "$prompt" --permission-mode acceptEdits --add-dir "$FIX" \
     --settings '{"disableAllHooks":true}' \
     --allowedTools "${ALLOWED_TOOLS:-Skill,Read,Glob,Grep,Edit,Write,Bash(git *)}" \
     ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} --max-budget-usd "${CLAUDE_BUDGET:-1}" \
