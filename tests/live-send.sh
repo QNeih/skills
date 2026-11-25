@@ -122,6 +122,7 @@ git -C "$FIX/elsewhere" push -q origin main 2>/dev/null
 rm -f "$FIX/tests-ran"
 # A leftover the ticket's change left unfinished, as the handoff reports it
 echo 'Left unfinished by this ticket: src/b.js needs the extra last line `module.exports = { b }`.' >> "$acme/.handoffs/HANDOFF-ACM-12.md"
+: > "$GH_LOG"
 run_send "$acme"
 
 grep -qE 'PR on .+ not supported' <<<"$CLAUDE_OUT" && pass "non-GitHub origin: PR on <host> not supported" \
@@ -146,6 +147,8 @@ done
 [ -z "$(board_writes)" ] && pass "stop: no board write" || { fail "stop: no board write"; board_writes; }
 [ "$(git -C "$acme" branch --show-current)" = bugfix/ACM-12 ] && [ -f "$acme/.scratch/ACM-12-login-fails/ticket.md" ] \
   && pass "stop: no cleanup" || fail "stop: no cleanup"
+# The stop comes before the PR step: gh is asked nothing about PRs or labels
+! gh_calls | grep -qE '^(pr|label) ' && pass "stop: no PR or label call" || { fail "stop: no PR or label call"; gh_calls; }
 
 # Ticket worktree no background session was started in, its ticket files inside it, with a dev server's port moved:
 # the port change is dropped, the worktree removed

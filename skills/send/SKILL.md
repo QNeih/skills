@@ -42,7 +42,7 @@ Without git, go to step 8.
 
 ## 2. Preflight
 
-1. No `origin` remote → stop: "no origin to push to".
+1. No `origin` remote → stop: "no origin to push to". `<host>` = the host in `git remote get-url origin` (`git@<host>:…`, `https://<host>/…`, `ssh://[user@]<host>/…`); a local path is its own `<host>`. Print one line before any other step: `Host: <host>, PR` for `github.com`, else `Host: <host>, push only`. A **push-only** send pushes the branch and opens no PR: it ends at step 6, with no `gh pr` or `gh label` call and without steps 7–10. A close (item 8) pushes no code, so it runs the same on every host.
 2. `git fetch origin` (`cannot open '.git/FETCH_HEAD'` → rerun unsandboxed).
 3. `<base>`: `ticket.md`'s `base:`. Else a `hotfix/` branch → `main` or `master`, whichever is on `origin`; else `develop` if `origin/develop` exists, else `main` or `master`.
 4. `git diff --cached --quiet` fails → stop and ask: unstage (`git restore --staged .`) or say how to treat the staged hunks.
@@ -53,7 +53,7 @@ Without git, go to step 8.
    - No ticket → stop and print this line as is: `Nothing to send: <branch> has no changes against <base>.`
    - A ticket → this is a **close**. Reason: `$ARGUMENTS` without the word `draft`; empty → ask Quinn for one line and wait, changing nothing before the answer. Skip steps 3–7 and go to step 8 (Board); of step 4, only collect the observations, for the report.
 
-**Done when:** no staged hunks, `<base>` is known, and the change set and branch commits are listed, or a close has its reason.
+**Done when:** the `Host:` line is printed, no hunks are staged, `<base>` is known, and the change set and branch commits are listed, or a close has its reason.
 
 ## 3. Commit
 
@@ -107,9 +107,9 @@ Paths: `git diff --name-only origin/<base>...HEAD` that still exist. This covers
 ## 6. Push
 
 1. `git push --force-with-lease -u origin HEAD` (`Operation not permitted` → rerun unsandboxed). The lease is there because the rebase may have rewritten commits that `/work` already pushed. Fails → stop and show the output.
-2. `<host>` = the host in `git remote get-url origin` (`git@<host>:…`, `https://<host>/…`, `ssh://[user@]<host>/…`); a local path is its own `<host>`. Not `github.com` → stop and print `PR on <host> not supported`. No PR, no board move, no cleanup.
+2. Push-only (step 2) → the send ends here: print this line as is, `PR on <host> not supported`, then the report (step 11). The branch, the ticket and its files stay as they are.
 
-**Done when:** `origin/<branch>` equals `HEAD`, and `origin` is on GitHub or the stop is printed.
+**Done when:** `origin/<branch>` equals `HEAD`, and `<host>` is `github.com` or the stop is printed.
 
 ## 7. PR
 
@@ -132,7 +132,7 @@ gh pr create --base <base> --assignee @me [--label <label>] --title "<title>" --
 
 ## 8. Board
 
-Runs after a successful push, even if the PR step failed; on a close, right after step 2; without git, right after step 1. No ticket → skip and say so.
+Runs after a successful push on a host that takes a PR, even if the PR step failed; on a close, right after step 2; without git, right after step 1. No ticket → skip and say so.
 
 - **GitHub**: follow `${CLAUDE_SKILL_DIR}/GITHUB-SEND.md`. With a PR, the board write is only the close after a merge into a non-default base.
 - **Jira** → `Code Review`, through the claude.ai Atlassian MCP (`cloudId` from `getAccessibleAtlassianResources`):
