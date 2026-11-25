@@ -209,11 +209,14 @@ git -C "$acme" add src/e.js && git -C "$acme" commit -qm "Add e" && git -C "$acm
 ticket "$acme" ACM-16 resent-work main
 echo 'Seen while working, outside this ticket and breaking nothing: README.md still names the old install command `make setup`.' >> "$acme/.handoffs/HANDOFF-ACM-16.md"
 touch "$FIX/github-origin"
-gh_can 'pr view' '{"url":"https://github.com/QuinnNei/acme/pull/8","state":"OPEN","body":"## Summary\n\n- Add e\n\nFollow-up: QuinnNei/acme#31 README.md still names the old install command `make setup`\nCloses QuinnNei/acme#16"}'
+pr8='{"url":"https://github.com/QuinnNei/acme/pull/8","state":"OPEN","body":"## Summary\n\n- Add e\n\nFollow-up: QuinnNei/acme#31 README.md still names the old install command `make setup`\nCloses QuinnNei/acme#16"}'
+# the open PR answers both ways of asking for the branch's PR
+gh_can 'pr view' "$pr8"
+gh_can 'pr list --head feature/ACM-16' "[$pr8]"
 : > "$GH_LOG"
 run_send "$acme"
 rm -f "$FIX/github-origin"
-gh_calls | grep -q '^pr view' && ! gh_calls | grep -qE '^(issue create|pr create)' \
+gh_calls | grep -qE '^pr (view|list --head)' && ! gh_calls | grep -qE '^(issue create|pr create)' \
   && pass "reused PR: linked follow-up not filed again" || { fail "reused PR: linked follow-up not filed again"; gh_calls; echo "$CLAUDE_OUT" | tail -20; }
 grep -q 'ACM-31' <<<"$CLAUDE_OUT" && pass "reused PR: report names the earlier ticket" || { fail "reused PR: report names the earlier ticket"; echo "$CLAUDE_OUT" | tail -20; }
 
