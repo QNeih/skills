@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The claude -p harness parts that run without claude: skill install, fixture CLAUDE.md, guard.
+# The claude -p harness parts that run without claude: skill install, fixture CLAUDE.md, guard, claude lookup.
 . "$(dirname "$0")/lib.sh"
 fixture_new
 
@@ -49,8 +49,17 @@ out=$(HOME="$fake/home" PATH="$bare" find_claude)
 out=$(export HOME="$fake/home" PATH="$bare"; run_claude "$PROJECTS_ROOT/acme" "say hi"; echo "$CLAUDE_OUT")
 grep -qF "stand-in at $fake/home/.local/bin/claude got: -p say hi" <<<"$out" \
   && pass "lookup: run_claude runs the claude outside PATH" || fail "lookup: run_claude runs the claude outside PATH: $out"
-grep -qF "$fake/home/.local/bin" "$FIX/claude-env.sh" \
-  && fail "lookup: the run's PATH leaves ~/.local/bin out" || pass "lookup: the run's PATH leaves ~/.local/bin out"
+# the PATH the run's shell gets, when the profile's PATH is /profile
+run_path() { (PATH=/profile; . "$FIX/claude-env.sh"; echo "$PATH"); }
+out=$(run_path)
+[[ "$out" == "$bare:"* && "$out" == *":/profile:$fake/home/.local/bin" ]] \
+  && pass "lookup: a claude outside PATH has its folder last on the run's PATH, behind the test's and the profile's" \
+  || fail "lookup: a claude outside PATH has its folder last on the run's PATH, behind the test's and the profile's: $out"
+(export HOME="$fake/home" PATH="$fake/onpath:$bare"; run_claude "$PROJECTS_ROOT/acme" "say hi") >/dev/null
+out=$(run_path)
+[[ "$out" == "$fake/onpath:$bare"* && "$out" == *":/profile" ]] \
+  && pass "lookup: a claude on PATH adds no folder to the run's PATH" \
+  || fail "lookup: a claude on PATH adds no folder to the run's PATH: $out"
 out=$(export HOME="$fake/nohome" PATH="$bare"; run_claude "$PROJECTS_ROOT/acme" "say hi" 2>&1); code=$?
 [ "$code" -eq 2 ] && grep -qF "claude is neither on PATH nor at" <<<"$out" \
   && pass "lookup: no claude stops with exit 2 and a message" || fail "lookup: no claude stops with exit 2 and a message: $code $out"
