@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# /send through claude -p on the GitHub board in the code repo (stand-in gh, project fixture), against a local bare remote. The git
-# project's board has the key ACM (ids ACM-<n>, issue <n>); the project without git has none (ids are issue numbers). Close without a reason asks,
-# with one closes the issue as not planned with the reason; a PR body ends with `Closes <owner>/<repo>#<n>` and nothing is written to the
-# board; a leftover outside the ticket's change is filed as its own ticket, linked in the PR body and named in the report, and
-# not filed again when the reused PR's body already links it; a leftover from the handoff fixed in its own commit; rebase onto a moved base, lint commit, test.sh, push and the
-# "PR on <host> not supported" stop; a ticket worktree is removed, port change and the ticket files /work wrote into it and all; a failing test.sh is fixed in its own commit and the
-# branch pushed; without git: the issue closes, ticket files deleted.
+# /send through claude -p on the GitHub board in the code repo (stand-in gh, project fixture), against a local bare remote.
+# The git project's board has the key ACM (ids ACM-<n>, issue <n>); the project without git has none (ids are issue numbers).
+# - Close: without a reason it asks; with one the issue closes as not planned with the reason.
+# - PR: its body ends with `Closes <owner>/<repo>#<n>` and the sent ticket is not written to.
+# - Follow-up: a leftover outside the ticket's change is filed as its own ticket, linked in the PR body above the
+#   `Closes` line and named in the report; a reused PR whose body already links it files nothing.
+# - A leftover from the handoff is fixed in its own commit.
+# - Rebase onto a moved base, lint commit, test.sh, push and the "PR on <host> not supported" stop.
+# - A ticket worktree is removed, port change and the ticket files /work wrote into it and all.
+# - A failing test.sh is fixed in its own commit and the branch pushed.
+# - Without git: the issue closes, ticket files deleted.
 . "$(dirname "$0")/lib.sh"
 fixture_new; fixture_gh
 export CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
@@ -119,8 +123,14 @@ grep -qxF -- '- Keep d in its own file. Why: a.js is loaded on every page. Rejec
 
 gh_calls | grep -q '^issue create --repo QuinnNei/acme --title ' && gh_calls | grep -q '^project item-add 4 ' \
   && pass "follow-up: filed as a ticket on the Project" || { fail "follow-up: filed as a ticket on the Project"; gh_calls; echo "$CLAUDE_OUT" | tail -20; }
-gh_calls | grep -q '^Follow-up: QuinnNei/acme#31 ' && pass "follow-up: PR body links the ticket without a closing keyword" \
-  || { fail "follow-up: PR body links the ticket without a closing keyword"; gh_calls; }
+gh_calls | grep -q '^Follow-up: QuinnNei/acme#31 ' && pass "follow-up: PR body links the ticket" \
+  || { fail "follow-up: PR body links the ticket"; gh_calls; }
+! gh_calls | grep '^Follow-up:' | grep -qiE 'clos|fix|resolv' && pass "follow-up: its line has no closing keyword" \
+  || { fail "follow-up: its line has no closing keyword"; gh_calls | grep '^Follow-up:'; }
+# in the last body sent to gh, the follow-up line stands above the Closes line
+f=$(gh_calls | grep -n '^Follow-up: ' | tail -1 | cut -d: -f1) c=$(gh_calls | grep -n '^Closes QuinnNei/acme#13' | tail -1 | cut -d: -f1)
+[ -n "$f" ] && [ -n "$c" ] && [ "$f" -lt "$c" ] && pass "follow-up: its line stands before the Closes line" \
+  || { fail "follow-up: its line stands before the Closes line"; gh_calls; }
 grep -q 'ACM-31' <<<"$CLAUDE_OUT" && pass "follow-up: report names the ticket" || { fail "follow-up: report names the ticket"; echo "$CLAUDE_OUT" | tail -20; }
 
 # Committed-but-unpushed work plus an uncommitted file; lint must cover both

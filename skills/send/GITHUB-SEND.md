@@ -10,7 +10,7 @@ The PR body's last line `Closes <repo>#<n>` closes the issue when the PR merges 
 
 After a merge on send, the PR's base decides:
 
-- The base is the repo's default branch (`gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`) → write nothing to the board.
+- The base is the repo's default branch (`gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`) → leave the ticket as it is.
 - Another base (for example `develop`): `Closes` does not fire. Close the issue now:
 
 ```bash
@@ -19,7 +19,9 @@ bash ${CLAUDE_SKILL_DIR}/tickets.sh close <n> --comment "Merged in <PR url>"
 
 It prints `closed: <n>`. A failure → report its output.
 
-A PR left open → write nothing to the board.
+A PR left open → leave the ticket as it is.
+
+Follow-up tickets (below) are new tickets, filed whatever happens to the sent one.
 
 ## Follow-up tickets
 
@@ -32,7 +34,12 @@ bash ${CLAUDE_SKILL_DIR}/tickets.sh create --title "<title>" --body "<body>"
 - Title: what is to be done, in the language and style of the sent ticket's title.
 - Body: what is wrong and where; for a could not fix, its cause; last line `Found while sending <PR url>.`, on a close `Found while closing <repo>#<n>.`
 
-It prints the new issue number `<m>`; the ticket's id is `<KEY>-<m>`, else `#<m>`, and it sits in `Todo`. A failure → report the follow-up as not filed, with the output, and give its PR line no ref.
+It prints the new issue number `<m>`; the ticket's id is `<KEY>-<m>`, else `#<m>`.
+
+A failure, by its output:
+
+- It names a created issue (`create: issue <m> exists (<url>) but …`) → the ticket is filed: use `<m>`, and report the output verbatim as could not fix. Creating again would file it twice.
+- Anything else → not filed: report the output verbatim.
 
 ## Close without code
 
