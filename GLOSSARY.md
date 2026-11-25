@@ -32,6 +32,10 @@ _Avoid_: loose end, open point
 A ticket's own git worktree, `.claude/worktrees/<id>` in the project's main checkout, where all of the ticket's work happens so tickets can run in parallel.
 _Avoid_: ticket checkout, session worktree
 
+**Finished worktree**:
+A linked worktree that pruning removes, with its local branch. It is unlocked, has no session, and has no modified or untracked file (ignored **ticket files** don't count and go with it). Its commits are safe: a worktree on a ticket branch (`feature|bugfix|hotfix/<id>`) only when (b) its branch tip is the head commit of a merged PR; every other worktree when (a) every commit is on an `origin` ref, or by (b). A detached worktree has no branch, so it counts by (a) only. The merged PR is looked up only when `origin` is on GitHub. This entry is the one statement of the rule; `skills/work/prune-worktrees.sh` applies it.
+_Avoid_: stale worktree, dead worktree
+
 **Ticket files**:
 A ticket's local working state: its `.scratch/<id>-<slug>/` folder with `ticket.md`, and its handoff. They live in its ticket worktree, or in the project folder when there is no git, and go away when the ticket ships or closes.
 _Avoid_: scratch state, ticket notes
