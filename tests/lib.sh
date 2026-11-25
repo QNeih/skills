@@ -159,12 +159,22 @@ guard_check() {
   [ -z "$changed" ] || { echo "guard: real files changed during the run:"; echo "$changed"; return 1; }
 }
 
+# find_claude: prints the claude binary to run; with none, says so and fails. The one on PATH wins.
+# A background session's shell has no ~/.local/bin on its PATH, so the installer's location is the fallback.
+find_claude() {
+  local fallback="$HOME/.local/bin/claude"
+  command -v claude && return
+  [ -x "$fallback" ] && { echo "$fallback"; return; }
+  echo "claude is neither on PATH nor at $fallback: every live check would fail on empty output" >&2
+  return 1
+}
+
 # run_claude <project dir> <prompt> [claude args...]: output in CLAUDE_OUT; a guard hit fails the test.
 # Call it directly, not in $(...), or the failure is lost.
 # CLAUDE_MODEL picks the model, ALLOWED_TOOLS (comma-separated) scopes the tools.
 run_claude() {
-  local dir=$1 prompt=$2; shift 2
-  command -v claude >/dev/null || { echo "claude is not on PATH: every live check would fail on empty output" >&2; exit 2; }
+  local dir=$1 prompt=$2 claude; shift 2
+  claude=$(find_claude) || exit 2
   guard_start
   # Claude Code's Bash tool loads the login profile, which puts e.g. Homebrew's real gh ahead of the
   # stand-ins; CLAUDE_ENV_FILE is sourced after it, so it puts the test's PATH in front of the profile's.
@@ -172,10 +182,15 @@ run_claude() {
   local path=$PATH node_bin
   command -v npm >/dev/null || node_bin=$(ls -d "${NVM_DIR:-$HOME/.nvm}"/versions/node/*/bin 2>/dev/null | sort -V | tail -1)
   [ -n "${node_bin:-}" ] && path=$path:$node_bin
-  printf 'export PATH=%q:"$PATH"\n' "$path" > "$FIX/claude-env.sh"
+  # A skill in the run may call claude itself: a claude found outside PATH gets its folder as the very
+  # last entry, behind the profile's, so the stand-ins and the profile's order still win.
+  local claude_dir last=
+  claude_dir=$(dirname "$claude")
+  case ":$PATH:" in *":$claude_dir:"*) ;; *) last=$(printf ':%q' "$claude_dir") ;; esac
+  printf 'export PATH=%q:"$PATH"%s\n' "$path" "$last" > "$FIX/claude-env.sh"
   # Hooks are off: the machine's own hooks act on real locations (a Stop hook that syncs the real vault
   # touches its .git on every run), which the guard then reports.
-  CLAUDE_OUT=$(cd "$dir" && CLAUDE_ENV_FILE="$FIX/claude-env.sh" claude -p "$prompt" --permission-mode acceptEdits --add-dir "$FIX" \
+  CLAUDE_OUT=$(cd "$dir" && CLAUDE_ENV_FILE="$FIX/claude-env.sh" "$claude" -p "$prompt" --permission-mode acceptEdits --add-dir "$FIX" \
     --settings '{"disableAllHooks":true}' \
     --allowedTools "${ALLOWED_TOOLS:-Skill,Read,Glob,Grep,Edit,Write,Bash(git *)}" \
     ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} --max-budget-usd "${CLAUDE_BUDGET:-1}" \
