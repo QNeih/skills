@@ -50,6 +50,31 @@ expect "guard: names a file tool's blocked write" "$(guard_check "$FIX/record.js
 # a refusal outside the denied locations is not the guard's business
 record "rm: /etc/hosts: Operation not permitted"
 out=$(guard_check "$FIX/record.jsonl") && pass "guard: a refusal outside the real locations passes" || fail "guard: a refusal outside the real locations passes: $out"
+# a tool that puts the reason behind the path
+record "error: unable to open $fake/vault/own note.md for writing (Operation not permitted)
+fatal: cannot create $fake/projects/flat/src/gen.c (Operation not permitted)"
+out=$(guard_check "$FIX/record.jsonl")
+expect "guard: names the file before 'for writing'" "$out" "$fake/vault/own note.md"
+expect "guard: names the file before the bracketed reason" "$out" "$fake/projects/flat/src/gen.c"
+
+# a record that cannot be checked must not pass
+out=$(guard_check "$FIX/no-record.jsonl" 2>/dev/null) && fail "guard: a missing record fails" || pass "guard: a missing record fails"
+echo "sandbox_apply: Operation not permitted" > "$FIX/record.jsonl"
+out=$(guard_check "$FIX/record.jsonl") && fail "guard: a record without a JSON line fails" || pass "guard: a record without a JSON line fails"
+grep -q 'holds no JSON line' <<<"$out" && pass "guard: says the record cannot be checked" || fail "guard: says the record cannot be checked: $out"
+
+# a location reached through a symlink, and one whose name holds the profile's quoting characters
+ln -s "$fake/vault" "$FIX/vault-link"
+odd="$fake/pro\"j\\ects"; mkdir -p "$odd/app"
+REAL_VAULT="$FIX/vault-link" REAL_PROJECTS_ROOT="$odd"
+guard_start
+record "$(guard_exec bash -c 'for f; do echo hi > "$f"; done' _ "$FIX/vault-link/linked.md" "$odd/app/a.md" "$FIX/beside.md" 2>&1)"
+[ ! -e "$fake/vault/linked.md" ] && pass "sandbox: a write through a symlinked location is blocked" || fail "sandbox: a write through a symlinked location is blocked"
+[ ! -e "$odd/app/a.md" ] && [ -f "$FIX/beside.md" ] && pass "sandbox: a location with quote and backslash is blocked, the fixture is not" \
+  || fail "sandbox: a location with quote and backslash is blocked, the fixture is not: $(cat "$FIX/record.jsonl")"
+out=$(guard_check "$FIX/record.jsonl")
+expect "guard: names the file by its symlinked path" "$out" "$FIX/vault-link/linked.md"
+expect "guard: names the file under a quoted location" "$out" "$odd/app/a.md"
 
 REAL_HOME="$fake/missing"
 out=$(guard_start 2>&1) && fail "guard: a missing real location stops the run" || pass "guard: a missing real location stops the run"
@@ -82,5 +107,15 @@ out=$(run_path)
 out=$(export HOME="$fake/nohome" PATH="$bare"; run_claude "$PROJECTS_ROOT/acme" "say hi" 2>&1); code=$?
 [ "$code" -eq 2 ] && grep -qF "claude is neither on PATH nor at" <<<"$out" \
   && pass "lookup: no claude stops with exit 2 and a message" || fail "lookup: no claude stops with exit 2 and a message: $code $out"
+
+# The run's answer
+jq -cn '{type: "assistant", message: {content: [{type: "text", text: "working"}]}}, {type: "result", subtype: "success", result: "the answer"}' > "$FIX/record.jsonl"
+expect "answer: the result's text" "$(claude_answer "$FIX/record.jsonl")" "the answer"
+jq -cn '{type: "result", subtype: "error_max_budget_usd", is_error: true, errors: ["Reached maximum budget ($1)"]}' > "$FIX/record.jsonl"
+out=$(claude_answer "$FIX/record.jsonl")
+expect "answer: a run without an answer gives how it ended" "$out" "claude ended without an answer: error_max_budget_usd"
+expect "answer: and its error text" "$out" 'Reached maximum budget ($1)'
+echo "sandbox_apply: Operation not permitted" > "$FIX/record.jsonl"
+expect "answer: a run that died gives what it printed" "$(claude_answer "$FIX/record.jsonl")" "sandbox_apply: Operation not permitted"
 
 done_testing

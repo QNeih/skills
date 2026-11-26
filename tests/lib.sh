@@ -161,35 +161,56 @@ real_vault() {
   [ -n "${REAL_VAULT:-}" ] && { echo "$REAL_VAULT"; return; }
   grep -i vault "$HOME/.claude/CLAUDE.md" 2>/dev/null | grep -o '`/[^`]*`' | head -1 | tr -d '`'
 }
-# guard_start: sets GUARD_DENIED (the denied locations, real paths) and GUARD_PROFILE (the
-# sandbox-exec profile that denies writes to them); fails when a location is missing
+# guard_start: sets GUARD_PROFILE (the sandbox-exec profile that denies writes to the real
+# locations) and GUARD_NAMES (each location as given and as its real path, the two forms an error
+# can name it by); fails when a location is missing
 guard_start() {
-  local home=${REAL_HOME:-$HOME} p real
-  GUARD_DENIED=(); GUARD_PROFILE='(version 1)(allow default)'
+  local home=${REAL_HOME:-$HOME} p real skills
+  GUARD_NAMES=(); GUARD_PROFILE='(version 1)(allow default)'
   for p in "$(real_vault)" "$home/.claude/skills" "${REAL_PROJECTS_ROOT:-$HOME/Projects}"; do
     # the profile matches real paths, so symlinks are resolved
     real=$(cd "$p" 2>/dev/null && pwd -P) || { echo "guard: real location not found: '$p'; set REAL_VAULT, REAL_HOME or REAL_PROJECTS_ROOT" >&2; return 1; }
-    GUARD_DENIED+=("$real")
-    GUARD_PROFILE+="(deny file-write* (subpath \"$real\"))"
+    GUARD_NAMES+=("$real"); [ "$p" = "$real" ] || GUARD_NAMES+=("$p")
+    GUARD_PROFILE+="(deny file-write* (subpath $(guard_quote "$real")))"
+    [ "$p" != "$home/.claude/skills" ] || skills=$real
   done
   # skills/synced/ is Claude Code's own skill-sync cache, rewritten on every start; a later rule wins
-  GUARD_PROFILE+="(allow file-write* (subpath \"${GUARD_DENIED[1]}/synced\"))"
+  GUARD_PROFILE+="(allow file-write* (subpath $(guard_quote "$skills/synced")))"
 }
+# guard_quote <path>: the path as a string of the sandbox profile language
+guard_quote() { local s=${1//\\/\\\\}; printf '"%s"' "${s//\"/\\\"}"; }
 # guard_exec <command...>: runs the command, and every process it starts, inside the sandbox
 guard_exec() { sandbox-exec -p "$GUARD_PROFILE" "$@"; }
 # guard_check <record>: the record is the run's stream-json output. Fails when one of its tool
 # results holds a blocked write ("Operation not permitted") to a denied location; prints each path
-# under a denied location that such an error line names.
+# under a denied location that such an error line names. A record it cannot read fails too.
 guard_check() {
-  local denied
-  denied=$(jq -rR 'fromjson? | .. | objects | select(.type == "tool_result") | .content
-                   | if type == "string" then . else (.[]? | .text? // empty) end' "$1" \
-    | grep -i 'operation not permitted' \
-    | GUARD_ROOTS=$(printf '%s\n' "${GUARD_DENIED[@]}") awk '
+  local results denied
+  results=$(jq -rR 'fromjson? | objects | "record-line", (.. | objects | select(.type == "tool_result") | .content
+                    | if type == "string" then . else (.[]? | .text? // empty) end)' "$1") \
+    || { echo "guard: cannot read the run's record '$1'"; return 1; }
+  [ -n "$results" ] || { echo "guard: the run's record '$1' holds no JSON line, so its writes cannot be checked"; return 1; }
+  # A path runs from the location's name to the end of the line, less what the common error shapes
+  # put behind it: ": <reason>", a closing quote, " (Operation not permitted)", " for writing".
+  denied=$(grep -i 'operation not permitted' <<<"$results" \
+    | GUARD_ROOTS=$(printf '%s\n' "${GUARD_NAMES[@]}") awk '
         BEGIN { n = split(ENVIRON["GUARD_ROOTS"], roots, "\n") }
         { for (i = 1; i <= n; i++) for (rest = $0; (j = index(rest, roots[i])) > 0; rest = substr(rest, j + length(roots[i]))) {
-            path = substr(rest, j); sub(/['\''":].*/, "", path); print path } }' | sort -u)
+            path = substr(rest, j)
+            sub(/: .*/, "", path); sub(/[\047"]($|[ ,;)].*)/, "", path)
+            sub(/ \([Oo]peration not permitted.*/, "", path); sub(/ for (writing|reading|appending).*/, "", path)
+            print path } }' | sort -u)
   [ -z "$denied" ] || { echo "guard: the run tried to write to real locations (blocked):"; echo "$denied"; return 1; }
+}
+# claude_answer <record>: the run's final answer. A run that ended without one gives how it ended
+# (the result's subtype and errors); a run that died before any result gives what it printed.
+claude_answer() {
+  local out
+  out=$(jq -rR 'fromjson? | objects | select(.type == "result")
+                | if (.result // "") != "" then .result
+                  else "claude ended without an answer: \(.subtype // "no subtype")", (.errors[]? | tostring), (.error? // empty | tostring) end' "$1")
+  [ -n "$out" ] || out=$(grep -v '^{' "$1")
+  printf '%s\n' "$out"
 }
 
 # find_claude: prints the claude binary to run; with none, says so and fails. The one on PATH wins.
@@ -232,9 +253,7 @@ run_claude() {
     ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} --max-budget-usd "${CLAUDE_BUDGET:-1}" \
     --output-format stream-json --verbose \
     --no-session-persistence "$@" </dev/null) > "$CLAUDE_RECORD" 2>&1
-  CLAUDE_OUT=$(jq -rR 'fromjson? | select(.type == "result") | .result // empty' "$CLAUDE_RECORD")
-  # a run that died before its answer: show what it printed instead (e.g. a sandbox that could not start)
-  [ -n "$CLAUDE_OUT" ] || CLAUDE_OUT=$(grep -v '^{' "$CLAUDE_RECORD")
+  CLAUDE_OUT=$(claude_answer "$CLAUDE_RECORD")
   local g; g=$(guard_check "$CLAUDE_RECORD") || { fail "guard"; echo "$g"; }
 }
 # claude_said: every text the assistant printed during the last run_claude, not only the final answer
