@@ -127,8 +127,8 @@ fixture_worktree() {
 # --- claude -p harness (live tests) ---
 # Runs use Quinn's real config (a temp CLAUDE_CONFIG_DIR is not logged in), so:
 # skills are installed as t-<name> (personal skills win name clashes), the fixture
-# project's CLAUDE.md overrides the vault and projects root, and a guard fails the
-# test if anything real changed during the run.
+# project's CLAUDE.md overrides the vault and projects root, and the run happens in a
+# sandbox that blocks every write to a real location; a blocked write fails the test.
 
 # fixture_claude_md <project dir>
 fixture_claude_md() {
@@ -148,29 +148,69 @@ install_skill() {
   awk -v n="t-$2" 'NR > 1 && /^---$/ { fm = 1 } !fm && /^name:/ { $0 = "name: " n } { print }' "$1/SKILL.md" > "$t/SKILL.md"
 }
 
-# Real locations the guard watches; overridable so the guard itself can be tested.
+# --- Guard: the run cannot write to a real location ---
+# The denied locations are the real vault, the real ~/.claude/skills and the whole real projects
+# root; REAL_VAULT, REAL_HOME and REAL_PROJECTS_ROOT override them so the guard itself can be tested.
+# The fixture under /tmp and Claude's own config stay writable.
+# Limits:
+# - A sandbox cannot start inside another sandbox (`sandbox_apply: Operation not permitted`), so the
+#   harness breaks when Claude Code's own Bash sandbox is on.
+# - A blocked write is reported only when its error reaches a tool result and names the full path:
+#   a script that hides its error, or a write through a relative path, is blocked but not reported.
 real_vault() {
   [ -n "${REAL_VAULT:-}" ] && { echo "$REAL_VAULT"; return; }
   grep -i vault "$HOME/.claude/CLAUDE.md" 2>/dev/null | grep -o '`/[^`]*`' | head -1 | tr -d '`'
 }
-guard_start() { GUARD_MARK=$(mktemp /tmp/skills-guard.XXXXXX); }
-# guard_check: lists real files changed since guard_start; fails if any
-guard_check() {
-  local home=${REAL_HOME:-$HOME} root=${REAL_PROJECTS_ROOT:-$HOME/Projects} vault changed c d watched=()
-  vault=$(real_vault)
-  [ -d "$vault" ] || { echo "guard: real vault not found; set REAL_VAULT"; return 1; }
-  # flat and nested checkouts, and their ticket worktrees
-  for c in "$root"/* "$root"/*/*; do
-    for d in .scratch .handoffs; do watched+=("$c/$d" "$c"/.claude/worktrees/*/"$d"); done
+# guard_start: sets GUARD_PROFILE (the sandbox-exec profile that denies writes to the real
+# locations) and GUARD_NAMES (each location as given and as its real path, the two forms an error
+# can name it by); fails when a location is missing
+guard_start() {
+  local home=${REAL_HOME:-$HOME} p real skills
+  GUARD_NAMES=(); GUARD_PROFILE='(version 1)(allow default)'
+  for p in "$(real_vault)" "$home/.claude/skills" "${REAL_PROJECTS_ROOT:-$HOME/Projects}"; do
+    # the profile matches real paths, so symlinks are resolved
+    real=$(cd "$p" 2>/dev/null && pwd -P) || { echo "guard: real location not found: '$p'; set REAL_VAULT, REAL_HOME or REAL_PROJECTS_ROOT" >&2; return 1; }
+    GUARD_NAMES+=("$real"); [ "$p" = "$real" ] || GUARD_NAMES+=("$p")
+    GUARD_PROFILE+="(deny file-write* (subpath $(guard_quote "$real")))"
+    [ "$p" != "$home/.claude/skills" ] || skills=$real
   done
-  changed=$( { # the vault's .git is left out: any session's vault sync rewrites it; a write to the vault still shows as its file
-               find "$vault" -newer "$GUARD_MARK" | grep -v -e "^$vault/\.git$" -e "^$vault/\.git/"
-               # skills/synced/ is Claude Code's own skill-sync cache, rewritten on every start
-               find -L "$home/.claude/skills" -newer "$GUARD_MARK" | grep -v "^$home/.claude/skills/synced/"
-               find "${watched[@]}" -newer "$GUARD_MARK" | grep -v "^$root/skills/"
-             } 2>/dev/null)
-  rm -f "$GUARD_MARK"
-  [ -z "$changed" ] || { echo "guard: real files changed during the run:"; echo "$changed"; return 1; }
+  # skills/synced/ is Claude Code's own skill-sync cache, rewritten on every start; a later rule wins
+  GUARD_PROFILE+="(allow file-write* (subpath $(guard_quote "$skills/synced")))"
+}
+# guard_quote <path>: the path as a string of the sandbox profile language
+guard_quote() { local s=${1//\\/\\\\}; printf '"%s"' "${s//\"/\\\"}"; }
+# guard_exec <command...>: runs the command, and every process it starts, inside the sandbox
+guard_exec() { sandbox-exec -p "$GUARD_PROFILE" "$@"; }
+# guard_check <record>: the record is the run's stream-json output. Fails when one of its tool
+# results holds a blocked write ("Operation not permitted") to a denied location; prints each path
+# under a denied location that such an error line names. A record it cannot read fails too.
+guard_check() {
+  local results denied
+  results=$(jq -rR 'fromjson? | objects | "record-line", (.. | objects | select(.type == "tool_result") | .content
+                    | if type == "string" then . else (.[]? | .text? // empty) end)' "$1") \
+    || { echo "guard: cannot read the run's record '$1'"; return 1; }
+  [ -n "$results" ] || { echo "guard: the run's record '$1' holds no JSON line, so its writes cannot be checked"; return 1; }
+  # A path runs from the location's name to the end of the line, less what the common error shapes
+  # put behind it: ": <reason>", a closing quote, " (Operation not permitted)", " for writing".
+  denied=$(grep -i 'operation not permitted' <<<"$results" \
+    | GUARD_ROOTS=$(printf '%s\n' "${GUARD_NAMES[@]}") awk '
+        BEGIN { n = split(ENVIRON["GUARD_ROOTS"], roots, "\n") }
+        { for (i = 1; i <= n; i++) for (rest = $0; (j = index(rest, roots[i])) > 0; rest = substr(rest, j + length(roots[i]))) {
+            path = substr(rest, j)
+            sub(/: .*/, "", path); sub(/[\047"]($|[ ,;)].*)/, "", path)
+            sub(/ \([Oo]peration not permitted.*/, "", path); sub(/ for (writing|reading|appending).*/, "", path)
+            print path } }' | sort -u)
+  [ -z "$denied" ] || { echo "guard: the run tried to write to real locations (blocked):"; echo "$denied"; return 1; }
+}
+# claude_answer <record>: the run's final answer. A run that ended without one gives how it ended
+# (the result's subtype and errors); a run that died before any result gives what it printed.
+claude_answer() {
+  local out
+  out=$(jq -rR 'fromjson? | objects | select(.type == "result")
+                | if (.result // "") != "" then .result
+                  else "claude ended without an answer: \(.subtype // "no subtype")", (.errors[]? | tostring), (.error? // empty | tostring) end' "$1")
+  [ -n "$out" ] || out=$(grep -v '^{' "$1")
+  printf '%s\n' "$out"
 }
 
 # find_claude: prints the claude binary to run; with none, says so and fails. The one on PATH wins.
@@ -183,13 +223,15 @@ find_claude() {
   return 1
 }
 
-# run_claude <project dir> <prompt> [claude args...]: output in CLAUDE_OUT; a guard hit fails the test.
+# run_claude <project dir> <prompt> [claude args...]: the final answer in CLAUDE_OUT, the whole run
+# (stream-json, tool results included) in the file CLAUDE_RECORD; a guard hit fails the test.
 # Call it directly, not in $(...), or the failure is lost.
 # CLAUDE_MODEL picks the model, ALLOWED_TOOLS (comma-separated) scopes the tools.
 run_claude() {
   local dir=$1 prompt=$2 claude; shift 2
   claude=$(find_claude) || exit 2
-  guard_start
+  command -v sandbox-exec >/dev/null || { echo "sandbox-exec is not on PATH (macOS only): without the sandbox the run could write to real files unseen" >&2; exit 2; }
+  guard_start || exit 2
   # Claude Code's Bash tool loads the login profile, which puts e.g. Homebrew's real gh ahead of the
   # stand-ins; CLAUDE_ENV_FILE is sourced after it, so it puts the test's PATH in front of the profile's.
   # The profile skips ~/.zshrc, so an nvm-installed npm is missing there too: add nvm's newest node.
@@ -202,12 +244,19 @@ run_claude() {
   claude_dir=$(dirname "$claude")
   case ":$PATH:" in *":$claude_dir:"*) ;; *) last=$(printf ':%q' "$claude_dir") ;; esac
   printf 'export PATH=%q:"$PATH"%s\n' "$path" "$last" > "$FIX/claude-env.sh"
-  # Hooks are off: the machine's own hooks act on real locations (a Stop hook that syncs the real vault
-  # touches its .git on every run), which the guard then reports.
-  CLAUDE_OUT=$(cd "$dir" && CLAUDE_ENV_FILE="$FIX/claude-env.sh" "$claude" -p "$prompt" --permission-mode acceptEdits --add-dir "$FIX" \
+  CLAUDE_RECORD="$FIX/claude-record.jsonl"
+  # Hooks are off: the machine's own hooks act on real locations (a Stop hook syncs the real vault),
+  # which the sandbox would block.
+  (cd "$dir" && CLAUDE_ENV_FILE="$FIX/claude-env.sh" guard_exec "$claude" -p "$prompt" --permission-mode acceptEdits --add-dir "$FIX" \
     --settings '{"disableAllHooks":true}' \
     --allowedTools "${ALLOWED_TOOLS:-Skill,Read,Glob,Grep,Edit,Write,Bash(git *)}" \
     ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} --max-budget-usd "${CLAUDE_BUDGET:-1}" \
-    --no-session-persistence "$@" </dev/null 2>&1)
-  local g; g=$(guard_check) || { fail "guard"; echo "$g"; }
+    --output-format stream-json --verbose \
+    --no-session-persistence "$@" </dev/null) > "$CLAUDE_RECORD" 2>&1
+  CLAUDE_OUT=$(claude_answer "$CLAUDE_RECORD")
+  local g; g=$(guard_check "$CLAUDE_RECORD") || { fail "guard"; echo "$g"; }
+}
+# claude_said: every text the assistant printed during the last run_claude, not only the final answer
+claude_said() {
+  jq -rR 'fromjson? | select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' "$CLAUDE_RECORD"
 }

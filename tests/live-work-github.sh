@@ -17,8 +17,8 @@ setup() {
 }
 # run_ticket <dir> <prompt>: CLAUDE_OUT = every text the assistant printed, not only the last one
 run_ticket() {
-  run_claude "$1" "$2" --output-format stream-json --verbose
-  CLAUDE_OUT=$(jq -rR 'fromjson? | select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' <<<"$CLAUDE_OUT")
+  run_claude "$1" "$2"
+  CLAUDE_OUT=$(claude_said)
 }
 bq() { printf 'api graphql -F owner=QuinnNei -F name=acme -F number=%s' "$1"; }
 blk() { printf '{"data":{"repository":{"issue":{"blockedBy":{"nodes":[%s]}}}}}' "$1"; }

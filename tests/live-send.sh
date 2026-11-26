@@ -19,8 +19,8 @@ export CLAUDE_BUDGET=${CLAUDE_BUDGET:-2}
 setup() { fixture_claude_md "$1"; install_skill "$REPO_DIR/skills/send" send "$1"; }
 # run_send <dir>: CLAUDE_OUT = every text the assistant printed
 run_send() {
-  run_claude "$1" "/t-send${2:+ $2}" --output-format stream-json --verbose
-  CLAUDE_OUT=$(jq -rR 'fromjson? | select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' <<<"$CLAUDE_OUT")
+  run_claude "$1" "/t-send${2:+ $2}"
+  CLAUDE_OUT=$(claude_said)
 }
 # only_line_commit <branch> <diff line>: a commit on the pushed branch whose whole diff is that one line
 only_line_commit() {
