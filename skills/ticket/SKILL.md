@@ -2,7 +2,6 @@
 name: ticket
 description: Add one ticket to the project's board (GitHub issue, or Jira issue), written in the board's own conventions.
 argument-hint: "<what the ticket is about>"
-disable-model-invocation: true
 ---
 
 # Ticket
