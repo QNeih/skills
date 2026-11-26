@@ -13,7 +13,7 @@
 . "$(dirname "$0")/lib.sh"
 fixture_new; fixture_gh
 export CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
-export ALLOWED_TOOLS="Skill,Read,Glob,Grep,Edit,Write,Bash(git *),Bash(bash *),Bash(PROJECTS_ROOT=*),Bash(VAULT=*),Bash(gh *),Bash(npm *),Bash(rm *),Bash(rmdir *),Bash(ls *),Bash(find *),Bash(cd *),Bash(claude agents *),Bash(~/.local/bin/claude agents *)"
+export ALLOWED_TOOLS="Skill,Read,Glob,Grep,Edit,Write,Bash(git *),Bash(bash *),Bash(PROJECTS_ROOT=*),Bash(VAULT=*),Bash(gh *),Bash(npm *),Bash(rm *),Bash(rmdir *),Bash(ls *),Bash(find *),Bash(cd *),Bash(claude agents *)"
 export CLAUDE_BUDGET=${CLAUDE_BUDGET:-2}
 
 setup() { fixture_claude_md "$1"; install_skill "$REPO_DIR/skills/send" send "$1"; }
