@@ -123,7 +123,7 @@ cd "$PROJECTS_ROOT/acme/acme" || exit 1
 expect "no key: #<n> is the number" "$(t status '#5' done)" "5: Done"
 err=$(t show ACM-2 2>&1) && fail "no key: a keyed id fails" || expect "no key: a keyed id says why" "$err" "tickets.sh: ACM-2 is no ticket of this board: its tickets are plain numbers"
 # With a key: <KEY>-<n>, #<n> and <n> name the same issue; output stays the number
-bash "$REPO_DIR/skills/work/board.sh" set . key ACM >/dev/null
+bash "$REPO_DIR/skills/work/settings.sh" set . key ACM >/dev/null
 expect "key: <KEY>-<n> shows the issue" "$(t show ACM-2 | jq -c .number)" "2"
 expect "key: status takes <KEY>-<n>, prints the number" "$(t status ACM-5 in-progress)" "5: In Progress"
 expect "key: the bare number still works" "$(t status 5 todo)" "5: Todo"

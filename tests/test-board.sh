@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Board script (board.sh) with the stand-in gh: create makes the Project, its link to the code repo,
-# the labels and the settings file without doing anything twice, and commits nothing; set edits one
-# settings line.
+# the labels and the settings file without doing anything twice, and commits nothing.
 . "$(dirname "$0")/lib.sh"
 SK="$REPO_DIR/skills/work"
 fixture_new
@@ -129,7 +128,7 @@ expect "from a worktree: settings in the main checkout" "$out" "settings: $P5/.c
 [ ! -e "$P5/.claude/worktrees/2/.claude/project.md" ] && pass "from a worktree: none in the worktree" || fail "from a worktree: none in the worktree"
 # and the saved owner and key are used on the next run
 reset_gh
-bash "$SK/board.sh" set "$P5" key EPS >/dev/null
+bash "$SK/settings.sh" set "$P5" key EPS >/dev/null
 sed -i.bak '/^project:/d' "$P5/.claude/project.md" && rm "$P5/.claude/project.md.bak"
 gh_can 'project list --owner lisegmbh' "$(projects '{"number":10,"title":"eps (EPS)"}')"
 out=$(bash "$SK/board.sh" create "$P5")
@@ -143,32 +142,12 @@ reset_gh
 err=$(bash "$SK/board.sh" create "$P6" 2>&1 >/dev/null) && fail "no origin: fails" || pass "no origin: fails"
 expect "no origin: says why" "$err" "board.sh: $P6 has no origin: the board needs the code repo on GitHub"
 expect "no origin: nothing asked of GitHub" "$([ -z "$(gh_calls)" ] && echo none)" "none"
-bash "$SK/board.sh" set "$P6" repo Org/zeta-code >/dev/null
+bash "$SK/settings.sh" set "$P6" repo Org/zeta-code >/dev/null
 gh_can 'project create --owner Org' '2'
 bash "$SK/board.sh" create "$P6" >/dev/null
 expect "repo setting: Project linked to it" "$(gh_calls)" "project link 2 --owner Org --repo Org/zeta-code"
 expect "repo setting: labels go to it" "$(gh_calls)" "label create urgent --repo Org/zeta-code --force"
 
-# set: exactly one settings line changes
-printf -- '---\nboard: github\nproject: 7\nsentry: acme-web\nclose: merge\n---\nbody stays\n' > "$P/.claude/project.md"
-before=$(settings "$P")
-out=$(bash "$SK/board.sh" set "$P" close pr)
-after=$(settings "$P")
-expect "set: prints the file" "$out" "saved: close in $P/.claude/project.md"
-expect "set: line replaced" "$after" "close: pr"
-[ "$(diff <(echo "$before") <(echo "$after") | grep -c '^[<>]')" = 2 ] && pass "set: exactly one line differs" || fail "set: exactly one line differs"
-bash "$SK/board.sh" set "$P" key SKL >/dev/null
-expect "set: missing line added" "$(settings "$P")" "key: SKL"
-expect "set: body kept" "$(settings "$P")" "body stays"
-[ "$(grep -c '^key:' "$P/.claude/project.md")" = 1 ] && pass "set: one key line" || fail "set: one key line"
-# set creates the settings file: a board that is a link needs no GitHub Project
-P7="$PROJECTS_ROOT/eta"
-fixture_repo "$P7"
-reset_gh
-bash "$SK/board.sh" set "$P7" board "https://boards.acme.test/org/eta" >/dev/null
-expect "set: creates the settings file" "$(settings "$P7")" "board: https://boards.acme.test/org/eta"
-expect "set: front matter" "$(head -1 "$P7/.claude/project.md")" "---"
-expect "set: no gh call" "$([ -z "$(gh_calls)" ] && echo none)" "none"
 # suggest-key: first letter, then following consonants; never a key another board under the projects root uses
 export PROJECTS_ROOT="$FIX/keys"
 S="$PROJECTS_ROOT/skills"; fixture_repo "$S"
@@ -177,10 +156,10 @@ C="$PROJECTS_ROOT/construct"; fixture_repo "$C"
 expect "suggest-key: construct -> CNS" "$(bash "$SK/board.sh" suggest-key "$C")" "suggestion: CNS"
 T="$PROJECTS_ROOT/Tür an Tür"; fixture_repo "$T"
 expect "suggest-key: accents and spaces dropped" "$(bash "$SK/board.sh" suggest-key "$T")" "suggestion: TRN"
-bash "$SK/board.sh" set "$C" key SKL >/dev/null
-fixture_repo "$PROJECTS_ROOT/nest/nest"; bash "$SK/board.sh" set "$PROJECTS_ROOT/nest/nest" key sks >/dev/null
+bash "$SK/settings.sh" set "$C" key SKL >/dev/null
+fixture_repo "$PROJECTS_ROOT/nest/nest"; bash "$SK/settings.sh" set "$PROJECTS_ROOT/nest/nest" key sks >/dev/null
 expect "suggest-key: skips keys of flat and nested boards, any case" "$(bash "$SK/board.sh" suggest-key "$S")" "suggestion: SLS"
-bash "$SK/board.sh" set "$S" key SLS >/dev/null
+bash "$SK/settings.sh" set "$S" key SLS >/dev/null
 expect "suggest-key: the project's own key is no conflict" "$(bash "$SK/board.sh" suggest-key "$S")" "suggestion: SLS"
 X="$PROJECTS_ROOT/x"; fixture_repo "$X"
 expect "suggest-key: one letter -> no suggestion" "$(bash "$SK/board.sh" suggest-key "$X" | wc -l | tr -d ' ')" "0"

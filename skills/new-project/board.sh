@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # File parts of the board step (BOARD.md): a project's GitHub board and its settings file,
-# <main checkout>/.claude/project.md. PROJECT_DIR is the checkout, or any folder inside it.
+# <main checkout>/.claude/project.md, read and written through settings.sh next to this script.
+# PROJECT_DIR is the checkout, or any folder inside it.
 #   board.sh create PROJECT_DIR [--owner OWNER] [--key KEY]
 #       make what is missing: the Project titled `<name> (<KEY>)` (`<name>` without a key), its
 #       link to the code repo, the labels urgent, bug and hotfix in the code repo, and the settings
@@ -12,11 +13,8 @@
 #       the ` (<KEY>)` part: a title's key is taken over when no key is known, and a title
 #       without the key gets it added. A KEY given later, for a board that has none, is added to
 #       the title and the settings too.
-#       Safe to rerun: what exists is kept. Commits nothing.
+#       Safe to rerun: what exists is kept. Commits nothing (`settings.sh publish` does).
 #       Prints `settings:`, `repo:`, `number:`, `owner:` and `key:` lines.
-#   board.sh set PROJECT_DIR KEY VALUE
-#       set one line of the settings file (replaced, or added at the end of the front matter);
-#       creates the file when it is missing
 #   board.sh suggest-key PROJECT_DIR
 #       prints `suggestion: <KEY>`: 2-4 capitals from the checkout folder's name (accents and
 #       non-letters dropped), the first letter, then following consonants (skills -> SKL), then
@@ -24,6 +22,7 @@
 #       (flat and nested) use, in any case. Prints nothing when no key fits (a one-letter name).
 #       Env: PROJECTS_ROOT.
 set -eu
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 die() { echo "board.sh: $*" >&2; exit 1; }
 
 # Main checkout of the folder (also from worktrees and subfolders); no git → the folder itself
@@ -43,26 +42,12 @@ origin_repo() {
   awk -F'[/:]' 'NF >= 2 { print $(NF-1) "/" $NF }' <<<"$u"
 }
 
-# prop FILE KEY: front matter property of a settings file, quotes stripped
-prop() {
-  awk -v k="$2" 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit }
-    index($0, k ":") == 1 { v = substr($0, length(k) + 2); gsub(/^[ \t"\x27]+|[ \t"\x27]+$/, "", v); print v; exit }' "$1" 2>/dev/null || true
-}
+# prop DIR KEY: a setting of the project at DIR
+prop() { bash "$here/settings.sh" get "$1" "$2"; }
+# set_line KEY VALUE: one setting of the project at $dir
+set_line() { bash "$here/settings.sh" set "$dir" "$1" "$2" >/dev/null; }
 
-# set_line KEY VALUE: one front matter line of the settings file; creates file and front matter when missing
-set_line() {
-  local key=$1 value=$2
-  mkdir -p "$(dirname "$settings")"
-  if [ "$(head -1 "$settings" 2>/dev/null)" != --- ]; then
-    { printf -- '---\n---\n'; cat "$settings" 2>/dev/null || true; } > "$settings.tmp" && mv "$settings.tmp" "$settings"
-  fi
-  awk -v key="$key" -v line="$key: $value" '
-    NR > 1 && !end && index($0, key ":") == 1 { print line; set = 1; next }
-    NR > 1 && !end && $0 == "---" { if (!set) print line; end = 1 }
-    { print }' "$settings" > "$settings.tmp" && mv "$settings.tmp" "$settings"
-}
-
-usage="usage: board.sh create PROJECT_DIR [--owner OWNER] [--key KEY] | set PROJECT_DIR KEY VALUE | suggest-key PROJECT_DIR"
+usage="usage: board.sh create PROJECT_DIR [--owner OWNER] [--key KEY] | suggest-key PROJECT_DIR"
 cmd=${1:-}
 case $cmd in
 create)
@@ -78,14 +63,14 @@ create)
   dir=$(main_dir "$dir"); settings="$dir/.claude/project.md"
   # NFC, so a folder name with decomposed umlauts finds the Project titled with composed ones
   name=$(perl -CSA -MUnicode::Normalize -le 'print NFC shift' "$(basename "$dir")")
-  repo=$(prop "$settings" repo); [ -n "$repo" ] || repo=$(origin_repo "$dir")
+  repo=$(prop "$dir" repo); [ -n "$repo" ] || repo=$(origin_repo "$dir")
   [ -n "$repo" ] || die "$dir has no origin: the board needs the code repo on GitHub"
-  [ -n "$owner" ] || owner=$(prop "$settings" owner)
+  [ -n "$owner" ] || owner=$(prop "$dir" owner)
   [ -n "$owner" ] || owner=${repo%%/*}
-  [ -n "$key" ] || key=$(prop "$settings" key)
+  [ -n "$key" ] || key=$(prop "$dir" key)
 
   # titled: whether the Project's title carries the key (yes, no, or unknown when found by number)
-  number=$(prop "$settings" project); titled=unknown
+  number=$(prop "$dir" project); titled=unknown
   if [ -z "$number" ]; then
     # The owner's Projects titled <name> or <name> (<some key>), one per line: number TAB key
     found=$(gh project list --owner "$owner" -L 200 --format json | jq -r --arg n "$name" '
@@ -109,7 +94,7 @@ create)
   fi
   [ -n "$number" ] || die "no Project number from gh"
   # A key the title lacks, or a new key for a Project found by its number: the title gets it
-  if [ -n "$key" ] && { [ $titled = no ] || { [ $titled = unknown ] && [ "$key" != "$(prop "$settings" key)" ]; }; }; then
+  if [ -n "$key" ] && { [ $titled = no ] || { [ $titled = unknown ] && [ "$key" != "$(prop "$dir" key)" ]; }; }; then
     gh project edit "$number" --owner "$owner" --title "$name ($key)" >/dev/null
   fi
 
@@ -130,19 +115,13 @@ query($owner:String!,$name:String!){repository(owner:$owner,name:$name){projects
   echo "settings: $settings"; echo "repo: $repo"; echo "number: $number"; echo "owner: $owner"
   [ -z "$key" ] || echo "key: $key"
   ;;
-set)
-  dir=${2:?$usage}; key=${3:?missing KEY}; value=${4:?missing VALUE}
-  dir=$(main_dir "$dir"); settings="$dir/.claude/project.md"
-  set_line "$key" "$value"
-  echo "saved: $key in $settings"
-  ;;
 suggest-key)
   dir=${2:?$usage}; dir=$(main_dir "$dir"); own="$dir/.claude/project.md"
   [ -n "${PROJECTS_ROOT:-}" ] || die "suggest-key: PROJECTS_ROOT must be set"
   used=()
   for other in "$PROJECTS_ROOT"/*/.claude/project.md "$PROJECTS_ROOT"/*/*/.claude/project.md; do
     [ -f "$other" ] && ! [ "$other" -ef "$own" ] || continue
-    k=$(prop "$other" key); [ -z "$k" ] || used+=("$k")
+    k=$(prop "${other%/.claude/project.md}" key); [ -z "$k" ] || used+=("$k")
   done
   perl -CSA -MUnicode::Normalize -e '
     my ($name, @used) = @ARGV; my %used = map { uc($_) => 1 } @used;

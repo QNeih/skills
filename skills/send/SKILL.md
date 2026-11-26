@@ -167,8 +167,8 @@ Runs after a successful push on a host that takes a PR, even if the PR step fail
   2. `getTransitionsForJiraIssue` → the transition whose target status is `Code Review` (any case) → `transitionJiraIssue`.
   3. No such transition → report the available target statuses. MCP tools missing or unauthenticated → tell Quinn to run `/mcp` → "claude.ai Atlassian".
 - **Another tracker** → through its connector, move the item to its review state (with a PR) or its done state (without git), and add the PR link. No connector reachable → name the missing one.
-- **Close on Jira or another tracker** (instead of the Jira and Another tracker bullets): the state comes from `close:` in the settings file `<dir>/.claude/project.md`.
-  - No `close:` line → ask Quinn once: "Which state does closing a ticket without code move it to in <project>? Name the state, or `leave`." Save the answer as `close: "<answer>"` in that file's front matter, before the closing `---`. With git and `<dir>` on its default branch → commit that file alone there and push it; another branch, or the push fails → report it as could not fix, with the cause. No settings file (`board: none` or `project: none`) → ask, don't save.
+- **Close on Jira or another tracker** (instead of the Jira and Another tracker bullets): the state comes from `close:` in the settings file: `bash ${CLAUDE_SKILL_DIR}/settings.sh get <dir> close`.
+  - No `close:` line → ask Quinn once: "Which state does closing a ticket without code move it to in <project>? Name the state, or `leave`." Save the answer with `bash ${CLAUDE_SKILL_DIR}/settings.sh publish <dir> close "<answer>"`. A `could not fix:` line → report it as could not fix, with its cause. No settings file (`board: none` or `project: none`) → ask, don't save.
   - `leave` → don't move the item; report "close <ref> on the tracker yourself" with its link.
   - Else move the item to that state (Jira: the transition whose target status matches, any case) and add the comment `Closed without code: <reason>`. No such transition → report the available target statuses and change nothing.
 

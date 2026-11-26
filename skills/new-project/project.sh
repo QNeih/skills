@@ -41,11 +41,8 @@ main_dir() {
   fi
 }
 
-# Front matter property of a file, quotes stripped
-prop() {
-  awk -v k="$2" 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit }
-    index($0, k ":") == 1 { v = substr($0, length(k) + 2); gsub(/^[ \t"\x27]+|[ \t"\x27]+$/, "", v); print v; exit }' "$1" 2>/dev/null
-}
+# prop DIR KEY: a setting of the project at DIR, read through settings.sh next to this script
+prop() { bash "$(dirname "${BASH_SOURCE[0]}")/settings.sh" get "$1" "$2"; }
 
 # owner/name of the origin of git folder $1 (https, ssh and scp-like URLs), else nothing
 origin_repo() {
@@ -70,11 +67,11 @@ report() {
     echo "reason: no settings file $settings: the board step has not run"
     exit 0
   fi
-  board=$(prop "$settings" board)
+  board=$(prop "$dir" board)
   echo "board: ${board:-github}"
-  repo=$(prop "$settings" repo); [ -n "$repo" ] || repo=$(origin_repo "$dir")
-  owner=$(prop "$settings" owner); [ -n "$owner" ] || owner=${repo%%/*}
-  number=$(prop "$settings" project); key=$(prop "$settings" key)
+  repo=$(prop "$dir" repo); [ -n "$repo" ] || repo=$(origin_repo "$dir")
+  owner=$(prop "$dir" owner); [ -n "$owner" ] || owner=${repo%%/*}
+  number=$(prop "$dir" project); key=$(prop "$dir" key)
   [ -z "$repo" ] || echo "repo: $repo"
   [ -z "$number" ] || echo "number: $number"
   [ -z "$owner" ] || echo "owner: $owner"

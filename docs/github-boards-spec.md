@@ -31,14 +31,16 @@ Copies of one script are identical in every skill that carries it; `tests/shared
 | --- | --- |
 | `project.sh` | The lookup. Finds the main checkout from any folder inside it (nested when the checkout's parent folder has its name, else flat) or by `--name` under the projects root. Prints `dir:`, `project:`, `wiki:` (nested, when the folder exists), `board:`, `repo:`, `number:`, `owner:`, `key:`. Without a settings file: `board: none` and a `reason:`. Outside a checkout and without a settings file: `project: none` and a `reason:`. |
 | `board.sh create` | Makes what is missing: the Project (found again by the `project` setting, else by title), its link to the code repo, the labels `urgent`, `bug`, `hotfix`, the settings file. Commits nothing. |
-| `board.sh set` | Sets one line of the settings file; creates the file when missing. |
+| `settings.sh get` | Prints one setting of the settings file, quotes at its ends stripped; nothing when the file or the line is missing. The only reader of the front matter: `project.sh`, `board.sh` and `sentry-projects.sh` read through it. |
+| `settings.sh set` | Sets one line of the settings file; creates the file when missing. Commits nothing. |
+| `settings.sh publish` | Optionally sets a line, then commits the settings file alone on the default branch and pushes it. On another branch, or when the push fails, it leaves the file saved and uncommitted and prints `could not fix:` with the cause (exit 1). |
 | `tickets.sh` | `list`, `show`, `status`, `create`, `block`, `close` on issues in the code repo and their Project items. Takes `<n>`, `#<n>` or `<KEY>-<n>`; prints `<n>`. |
 
 ## Skills
 
 | Skill | On a GitHub board |
 | --- | --- |
-| Board step (`BOARD.md`) | No board yet → asks where the tasks are managed; `github` → `board.sh create`, then asks for a key when the board has none; the settings file is committed on the default branch and pushed. |
+| Board step (`BOARD.md`) | No board yet → asks where the tasks are managed; `github` → `board.sh create`, then asks for a key when the board has none; the settings file is published with `settings.sh publish` (committed on the default branch and pushed). |
 | `/work` pick | `tickets.sh list`: `Todo` items without an open blocker, `urgent` label first, then lowest number. |
 | `/work` claim | Status → In Progress. No assignee. |
 | `/work` branch | Name from the labels (`bug`, `hotfix`) and the id. Nothing stored on the ticket. |
@@ -47,7 +49,7 @@ Copies of one script are identical in every skill that carries it; `tests/shared
 | `/send` | PR body ends with `Closes <repo>#<n>`. A merge into the default branch closes the issue and the Project sets Done. A merge into another base closes nothing, so `/send` closes the issue. |
 | `/send` close | Closes the issue as not planned, with the reason as a comment. |
 | `/new-project` | Folder, code repo, board step. A new project is flat. A wiki comes from `/wiki`, on request. |
-| `/sentry-fix` | Uses the lookup's `dir:` and `project:`, and reads `sentry:` from the settings file. |
+| `/sentry-fix` | Uses the lookup's `dir:` and `project:`, and reads `sentry:` from the settings file and saves a missing one with `settings.sh publish`. |
 | Jira | `board: jira` and `key:` in the settings file; flow unchanged. |
 
 ## Setup (one time)
