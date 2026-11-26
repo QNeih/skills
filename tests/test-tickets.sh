@@ -72,6 +72,12 @@ grep -q '^api graphql -F issueId=ID12 -F blockingIssueId=ID9 ' <<<"$log" \
   && pass "create: blocked by other-repo ticket" || fail "create: blocked by other-repo ticket"
 : > "$GH_LOG"
 t create --title "Plain" --body "b" >/dev/null
+# the issue is created but adding it to the Project fails: the error names the issue
+mkdir -p "$FIX/failbin"
+printf '#!/usr/bin/env bash\ncase "$*" in "project item-add"*) echo "gh: no access" >&2; exit 1 ;; esac\nexec "%s" "$@"\n' "$FIX/bin/gh" > "$FIX/failbin/gh"
+chmod +x "$FIX/failbin/gh"
+err=$(PATH="$FIX/failbin:$PATH" t create --title "Half" --body "b" 2>&1) && fail "create: a failed Project add fails" \
+  || expect "create: a failed Project add names the created issue" "$err" "tickets.sh: create: issue 12 exists (https://github.com/QuinnNei/acme/issues/12) but was not added to Project 4"
 grep -q 'addBlockedBy\|--label' "$GH_LOG" && fail "create: no labels or blockers when none given" || pass "create: no labels or blockers when none given"
 
 # close: with comment; not planned when no code

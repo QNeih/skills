@@ -28,6 +28,10 @@ _Avoid_: preview server, app server
 Something still wrong or unfinished on a ticket's branch before its PR opens. The session fixes it when the ticket's change caused it, or when a build, a test or data breaks.
 _Avoid_: loose end, open point
 
+**Follow-up**:
+A leftover that `/send` leaves unfixed: one that breaks nothing and lies outside the ticket's change, or one whose fix failed. On a GitHub Project board it becomes its own ticket; on any other board Quinn is asked.
+_Avoid_: observation ticket, open point
+
 **Ticket worktree**:
 A ticket's own git worktree, `.claude/worktrees/<id>` in the project's main checkout, where all of the ticket's work happens so tickets can run in parallel.
 _Avoid_: ticket checkout, session worktree
