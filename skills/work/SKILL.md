@@ -56,11 +56,11 @@ The board file's **Claim**.
 
 Each ticket works in its own **ticket worktree** `<wt>` = `<dir>/.claude/worktrees/<id>`, the folder the dashboard's `claude --bg -w <id>` also uses, so tickets can run in parallel. The main checkout's branch is never changed.
 
-1. Branch name and `<base>` from the board file's **Branch**. `origin` exists → `git fetch origin`, run in the folder this session started in, without `-C` (`cannot open '.git/FETCH_HEAD'` → rerun unsandboxed). `<start point>`: `origin/<base>` when it exists, else `<base>`; neither → stop and ask.
-2. Where this session works (`git rev-parse --show-toplevel`). A session in a worktree runs every git command there, as one plain command per call: no `-C <dir>` to the main checkout, no `&&`, `;` or pipe; the main checkout's session may use `git -C <dir>` as below.
-   - `<wt>` → stay.
+1. Branch name and `<base>` from the board file's **Branch**. `origin` exists → `git fetch origin` (`cannot open '.git/FETCH_HEAD'` → rerun unsandboxed). `<start point>`: `origin/<base>` when it exists, else `<base>`; neither → stop and ask.
+2. Where this session works (`git rev-parse --show-toplevel`).
+   - `<wt>` → stay. This session started in the worktree: it runs every git command and all route work right there, as one plain command per call: no `git -C <dir>` to the main checkout, no `&&`, `;` or pipe.
    - Another ticket's worktree (`<dir>/.claude/worktrees/<other id>`) → stop: ask Quinn to start this ticket in its own session.
-   - Any other linked worktree (`git rev-parse --git-dir` differs from `--git-common-dir`) → stay: it is this session's own.
+   - Any other linked worktree (`git rev-parse --git-dir` differs from `--git-common-dir`) → stay: it is this session's own, and the `<wt>` rule above applies.
    - The main checkout → `<wt>` missing: `git -C <dir> worktree add <wt> -b <branch> <start point>` (branch exists → `git -C <dir> worktree add <wt> <branch>`, and say so). Then `cd <wt>`. From here on the ticket's code work happens in `<wt>`: commands as `cd <wt> && …` or `git -C <wt> …`, file edits by absolute path under `<wt>`. `<dir>` stays the main checkout; the **ticket files** go in `<wt>` too (step 5). No EnterWorktree: it would make the main checkout read-only for this session.
 3. `git status --porcelain --untracked-files=no` prints anything → stop and ask: stash, commit, or discard.
 4. `git branch --show-current` is not `<branch>` (a worktree the dashboard made is on `worktree-<id>`) → `git checkout -b <branch> <start point>`; branch exists → `git checkout <branch>` and say so. The branch it left is `worktree-<id>` → delete it: `git rev-list -1 worktree-<id> --not <branch> --remotes` prints nothing (no commit of its own) → `git branch -D worktree-<id>`; prints a commit → keep it and report it as could not fix, with its cause.
@@ -119,7 +119,7 @@ Route: /<skill> — <one-line reason>
 Then start the route in this session, with the `ticket.md` path as its input. With git, all of the route's code work happens in the worktree from step 4, by path as step 4 says:
 
 - `/implement` → right away, hand the coding to one sub-agent: Agent tool, with model and effort from the `## Model routing` section of the shared rules, task type "routine edits". The call fails → that section's rules say which model to rerun it on.
-  - Its brief, every path absolute: read `~/.claude/skills/implement/SKILL.md` and do its implementing, testing and commit, since the review runs in this session afterwards; input the `ticket.md` path; work in the worktree from step 4, running git there without `-C` to the main checkout, one plain command per call (no `&&`, `;` or pipe); commit messages describe the change only: no `Co-Authored-By` trailer, no "Generated with" footer, no tool, IDE or assistant names; report what changed, the test results and what it could not fix, and why.
+  - Its brief, every path absolute: read `~/.claude/skills/implement/SKILL.md` and do its implementing, testing and commit, since the review runs in this session afterwards; input the `ticket.md` path; work in the worktree from step 4, running git in it (from a session started inside it, plain `git`; otherwise `git -C <wt>`), never `git -C` to the main checkout, one plain command per call (no `&&`, `;` or pipe); commit messages describe the change only: no `Co-Authored-By` trailer, no "Generated with" footer, no tool, IDE or assistant names; report what changed, the test results and what it could not fix, and why.
   - When it reports, send the review's findings worth fixing to that sub-agent with SendMessage.
 - `/diagnosing-bugs`, `/grill-with-docs`, `/wayfinder` → read `~/.claude/skills/<name>/SKILL.md` and follow it, opening with a question to Quinn.
 - `/wayfinder` adds, while this session orchestrates its map:
