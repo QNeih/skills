@@ -10,6 +10,7 @@
 # - A ticket worktree is removed, port change and the ticket files /work wrote into it and all.
 # - A failing test.sh is fixed in its own commit and the branch pushed.
 # - Without git: the issue closes, ticket files deleted.
+# A failing PR-step check keeps the run's record and gh calls in /tmp.
 . "$(dirname "$0")/lib.sh"
 fixture_new; fixture_gh
 export CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
@@ -20,7 +21,14 @@ setup() { fixture_claude_md "$1"; install_skill "$REPO_DIR/skills/send" send "$1
 # run_send <dir>: CLAUDE_OUT = every text the assistant printed
 run_send() {
   run_claude "$1" "/t-send${2:+ $2}"
-  CLAUDE_OUT=$(claude_said)
+  CLAUDE_OUT=$(claude_said) KEPT=
+}
+# keep_run <label>: saves the last run's record (CLAUDE_RECORD) and gh calls as /tmp/live-send-<label>.*.jsonl and .gh.log,
+# which stay after the fixture is removed, so a failure that comes once in many runs can be read afterwards. One save per run.
+keep_run() {
+  [ -z "$KEPT" ] && KEPT=$(mktemp "/tmp/live-send-$1.XXXXXX") && rm -f "$KEPT" \
+    && cp "$CLAUDE_RECORD" "$KEPT.jsonl" && gh_calls > "$KEPT.gh.log"
+  echo "     transcript: $KEPT.jsonl, gh calls: $KEPT.gh.log"
 }
 # only_line_commit <branch> <diff line>: a commit on the pushed branch whose whole diff is that one line
 only_line_commit() {
@@ -55,7 +63,7 @@ cat > "$FIX/bin/git" <<SH
 #!/usr/bin/env bash
 if [ -f "$FIX/github-origin" ]; then
   case "\$*" in
-    *"remote get-url origin") echo https://github.com/QuinnNei/acme.git; exit 0 ;;
+    *get-url*origin|*"remote.origin.url") echo https://github.com/QuinnNei/acme.git; exit 0 ;;
     *"remote -v"|*"remote --verbose") printf 'origin\thttps://github.com/QuinnNei/acme.git (fetch)\norigin\thttps://github.com/QuinnNei/acme.git (push)\n'; exit 0 ;;
   esac
 fi
@@ -112,12 +120,12 @@ gh_can 'issue create' 'https://github.com/QuinnNei/acme/issues/31'
 run_send "$acme"
 rm -f "$FIX/github-origin"
 ! grep -qi 'nothing to send' <<<"$CLAUDE_OUT" && gh_calls | grep -q '^pr create ' \
-  && pass "pushed commits: reach the PR step" || { fail "pushed commits: reach the PR step"; echo "$CLAUDE_OUT" | tail -20; }
+  && pass "pushed commits: reach the PR step" || { fail "pushed commits: reach the PR step"; echo "$CLAUDE_OUT" | tail -20; keep_run github-pr; }
 gh_calls | grep -qE '^Closes QuinnNei/acme#13( --[a-z].*)?$' && pass "PR body: ends with the Closes line" \
-  || { fail "PR body: ends with the Closes line"; gh_calls; }
+  || { fail "PR body: ends with the Closes line"; gh_calls; keep_run github-closes; }
 [ -z "$(board_writes)" ] && pass "PR: no board write" || { fail "PR: no board write"; board_writes; }
 [ -z "$(git -C "$acme" branch --list feature/ACM-13)" ] && [ ! -e "$acme/.scratch/ACM-13-pushed-work" ] \
-  && pass "PR: branch and ticket files cleaned up" || fail "PR: branch and ticket files cleaned up"
+  && pass "PR: branch and ticket files cleaned up" || { fail "PR: branch and ticket files cleaned up"; keep_run github-cleanup; }
 grep -qxF -- '- Keep d in its own file. Why: a.js is loaded on every page. Rejected: a line in a.js, it would grow the first load.' "$VAULT"/raw/acme/*" ACM-13 "*.md 2>/dev/null \
   && pass "PR: the ticket's decision line is in its decision note" || { fail "PR: the ticket's decision line is in its decision note"; ls -R "$VAULT/raw" 2>&1; echo "$CLAUDE_OUT" | tail -20; }
 
@@ -149,8 +157,8 @@ echo 'Left unfinished by this ticket: src/b.js needs the extra last line `module
 : > "$GH_LOG"
 run_send "$acme"
 
-grep -qE 'PR on .+ not supported' <<<"$CLAUDE_OUT" && pass "non-GitHub origin: PR on <host> not supported" \
-  || { fail "non-GitHub origin: PR on <host> not supported"; echo "$CLAUDE_OUT" | tail -20; }
+grep -qF "PR on $remote not supported" <<<"$CLAUDE_OUT" && pass "non-GitHub origin: PR on <host> not supported" \
+  || { fail "non-GitHub origin: PR on <host> not supported"; echo "$CLAUDE_OUT" | tail -20; keep_run local-stop; }
 pushed=$(git -C "$remote" rev-parse bugfix/ACM-12 2>/dev/null)
 [ -n "$pushed" ] && [ "$pushed" = "$(git -C "$acme" rev-parse HEAD)" ] && pass "push: remote has HEAD" || fail "push: remote has HEAD"
 git -C "$remote" merge-base --is-ancestor main bugfix/ACM-12 2>/dev/null && pass "rebase: the pushed branch holds origin's new base commit" \
@@ -170,9 +178,9 @@ done
 [ -z "$(git -C "$acme" status --porcelain | grep -vE '\.(scratch|handoffs)/')" ] && pass "commit: tree clean" || fail "commit: tree clean"
 [ -z "$(board_writes)" ] && pass "stop: no board write" || { fail "stop: no board write"; board_writes; }
 [ "$(git -C "$acme" branch --show-current)" = bugfix/ACM-12 ] && [ -f "$acme/.scratch/ACM-12-login-fails/ticket.md" ] \
-  && pass "stop: no cleanup" || fail "stop: no cleanup"
+  && pass "stop: no cleanup" || { fail "stop: no cleanup"; keep_run local-cleanup; }
 # The stop comes before the PR step: gh is asked nothing about PRs or labels
-! gh_calls | grep -qE '^(pr|label) ' && pass "stop: no PR or label call" || { fail "stop: no PR or label call"; gh_calls; }
+! gh_calls | grep -qE '^(pr|label) ' && pass "stop: no PR or label call" || { fail "stop: no PR or label call"; gh_calls; keep_run local-pr; }
 
 # Ticket worktree no background session was started in, its ticket files inside it, with a dev server's port moved:
 # the port change is dropped, the worktree removed
