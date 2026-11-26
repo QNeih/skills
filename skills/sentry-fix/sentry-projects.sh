@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
 # Sentry projects of a repo. Prints `sentry: <org>/<project>` lines, or `sentry: none` and
 # `reason:`; always exits 0 so callers read the reason.
-#   sentry-projects.sh <repo dir> [settings file: <main checkout>/.claude/project.md]
-# The settings file's `sentry` property (one or more `org/project`, comma-separated) wins. Otherwise every
-# DSN in the repo's tracked files (`*.ingest*.sentry.io/<id>`) maps to its project via `sentry api`.
+#   sentry-projects.sh <repo dir>
+# The `sentry` setting of the settings file (read through settings.sh; one or more `org/project`,
+# comma-separated) wins. Otherwise every DSN in the repo's tracked files
+# (`*.ingest*.sentry.io/<id>`) maps to its project via `sentry api`.
 set -u
-dir=${1:-} settings=${2:-}
+dir=${1:-}
 none() { echo "sentry: none"; echo "reason: $1"; exit 0; }
 
-if [ -n "$settings" ] && [ -f "$settings" ]; then
-  override=$(awk 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit }
-    index($0, "sentry:") == 1 { v = substr($0, 8); gsub(/["\x27]/, "", v); print v; exit }' "$settings")
-  if [ -n "$override" ]; then
-    tr ', ' '\n\n' <<<"$override" | grep . | sed 's/^/sentry: /'
-    exit 0
-  fi
+[ -d "$dir" ] || none "$dir is not a folder"
+override=$(bash "$(dirname "${BASH_SOURCE[0]}")/settings.sh" get "$dir" sentry | tr -d "\"'")
+if [ -n "$override" ]; then
+  tr ', ' '\n\n' <<<"$override" | grep . | sed 's/^/sentry: /'
+  exit 0
 fi
 
 git -C "$dir" rev-parse 2>/dev/null || none "$dir is not a git repo"

@@ -22,11 +22,11 @@ Works in any repo whose Sentry DSNs are committed, from any folder. Everything i
 - `project: none`, or the caller named another project (the dashboard starts `/sentry-fix <project>`) → run the lookup with `--name <project name>`.
 - Still no `dir` → ask Quinn for the project folder once.
 
-**Done when:** `<local>` is a git checkout. `<settings>` is the project's settings file `<local>/.claude/project.md`, present or not.
+**Done when:** `<local>` is a git checkout.
 
 ## 2. Derive the Sentry setup
 
-1. **Projects**: `${CLAUDE_SKILL_DIR}/sentry-projects.sh <local> [<settings>]` prints one `sentry: <org>/<project>` line per project (the settings file's `sentry` property wins over DSNs). `sentry: none` → show the reason; if no DSN is committed, or none belongs to a Sentry organization Quinn can see, ask Quinn once for `<org>/<project>` and write it into `<settings>` front matter as `sentry: <org>/<project>` (no file yet → create it with that one line between two `---` lines). `skipped:` lines → mention them in the report. Auth errors → stop with the fix (`sentry auth login`).
+1. **Projects**: `${CLAUDE_SKILL_DIR}/sentry-projects.sh <local>` prints one `sentry: <org>/<project>` line per project (the settings file's `sentry` setting wins over DSNs). `sentry: none` → show the reason; if no DSN is committed, or none belongs to a Sentry organization Quinn can see, ask Quinn once for `<org>/<project>` and save it with `bash ${CLAUDE_SKILL_DIR}/settings.sh publish <local> sentry <org>/<project>`. A `could not fix:` line → put it in the report, with its cause, and carry on with the answer. `skipped:` lines → mention them in the report. Auth errors → stop with the fix (`sentry auth login`).
 2. **Environment** per project: `sentry api projects/<org>/<project>/environments/` lists `staging` → filter on `environment:staging`; else no environment filter.
 3. **Releases** per project: `sentry release list <org>/<project> --limit 1 --json` returns one → fixed issues get resolved `--in @next`; none → they stay unresolved and the report says `PR open`.
 4. **Base branch** `<base>`: `git -C <local> symbolic-ref --short refs/remotes/origin/HEAD` without its `origin/` (e.g. `main`). Unset → `git -C <local> remote set-head origin --auto` and read it again.

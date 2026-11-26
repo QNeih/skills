@@ -24,19 +24,11 @@ Read the lookup's `board:` line:
     - `yes` → `<KEY>` is `<ABC>`; run the same `create` again with `--key <KEY>` added.
     - Another key → `<KEY>` is that key in capitals; run the same `create` again with `--key <KEY>` added.
     - `none` → the board has no key: ticket ids are plain issue numbers. Nothing more to run.
-- `jira` → `bash ${CLAUDE_SKILL_DIR}/board.sh set <dir> board jira`, then `set <dir> key <KEY>` with the Jira project key; ask for the key when Quinn gave none.
-- A link or text → `bash ${CLAUDE_SKILL_DIR}/board.sh set <dir> board "<answer>"`. The board is the answer.
+- `jira` → `bash ${CLAUDE_SKILL_DIR}/settings.sh set <dir> board jira`, then `set <dir> key <KEY>` with the Jira project key; ask for the key when Quinn gave none.
+- A link or text → `bash ${CLAUDE_SKILL_DIR}/settings.sh set <dir> board "<answer>"`. The board is the answer.
 
-`create` and `set` write the settings file and commit nothing. With git, a session started in a linked worktree (it refuses every `git -C <dir>`) leaves the settings file as it is and reports it as could not fix, with that cause. Any other session runs the status check: when `git -C <dir> status --porcelain -- .claude/project.md` prints a line and `<dir>` is on its default branch, commit that file alone and push it, so every worktree and colleague reads the same board, one command per call:
-
-```bash
-git -C <dir> add .claude/project.md
-git -C <dir> commit -m "Add board settings" -- .claude/project.md
-git -C <dir> push -u origin HEAD
-```
-
-`<dir>` is on another branch, or the push fails → leave the file as it is and report it as could not fix, with the cause.
+`create` and `set` write the settings file and commit nothing. With git, a session started in a linked worktree (it refuses every `git -C <dir>`) leaves the settings file as it is and reports it as could not fix, with that cause. Any other session publishes it, so every worktree and colleague reads the same board: `bash ${CLAUDE_SKILL_DIR}/settings.sh publish <dir>`. A `could not fix:` line → report it as could not fix, with its cause; the file stays as saved.
 
 Then run the lookup again and use its lines.
 
-**Done when:** the board is GitHub with a `number:`, Jira with a known `key:`, or a link or text saved in the settings file; and the settings file is committed and pushed, or reported as could not fix.
+**Done when:** the board is GitHub with a `number:`, Jira with a known `key:`, or a link or text saved in the settings file; and the settings file is published (`settings.sh publish` printed no `could not fix:` line), or reported as could not fix.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sentry projects of a repo (skills/sentry-fix/sentry-projects.sh): DSN derivation and the settings file's override.
+# Sentry projects of a repo (skills/sentry-fix/sentry-projects.sh): DSN derivation and the settings file's override (read through settings.sh).
 # `sentry` is a stub on PATH; no live service is called.
 . "$(dirname "$0")/lib.sh"
 SCRIPT="$REPO_DIR/skills/sentry-fix/sentry-projects.sh"
@@ -42,20 +42,21 @@ expect "dsn: from another folder" "$out" "sentry: acme/web"
 # Override in the project's settings file (.claude/project.md) wins; sentry is not called
 fixture_project Acme "sentry: acme/web"
 rm -f "$FIX/sentry-calls"
-out=$(run "$r" "$PROJECTS_ROOT/Acme/Acme/.claude/project.md")
+out=$(run "$PROJECTS_ROOT/Acme/Acme")
 expect "override: project" "$out" "sentry: acme/web"
 [ "$(grep -c '^sentry:' <<<"$out")" -eq 1 ] && pass "override: narrows to one" || fail "override: narrows to one: $out"
 [ ! -f "$FIX/sentry-calls" ] && pass "override: no sentry call" || fail "override: no sentry call"
 
 fixture_project_flat Multi "sentry: \"acme/web, globex/other\""
-out=$(run "$r" "$PROJECTS_ROOT/Multi/.claude/project.md")
+out=$(run "$PROJECTS_ROOT/Multi")
 expect "override list: first" "$out" "sentry: acme/web"
 expect "override list: second" "$out" "sentry: globex/other"
 
-# settings file without the override, or a settings path with no file → derived
+# settings file without the override derives
 fixture_project Plain "repo: acme/plain"
-expect "settings without override derive" "$(run "$r" "$PROJECTS_ROOT/Plain/Plain/.claude/project.md")" "sentry: acme/api"
-expect "missing settings file derives" "$(run "$r" "$r/.claude/project.md")" "sentry: acme/api"
+echo "https://k@o11.ingest.us.sentry.io/4502" > "$PROJECTS_ROOT/Plain/Plain/sentry.conf"
+commit_all "$PROJECTS_ROOT/Plain/Plain"
+expect "settings without override derive" "$(run "$PROJECTS_ROOT/Plain/Plain")" "sentry: acme/api"
 
 # No DSN committed
 fixture_repo "$PROJECTS_ROOT/bare"
