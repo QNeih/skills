@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Project lookup (skills/work/project.sh): nested and flat layout, worktree, settings file, no settings file, key, Jira, lookup by name.
+# Project lookup (skills/work/project.sh): nested and flat layout, worktree, settings file, no settings file, key, origin host and PR, Jira, lookup by name.
 . "$(dirname "$0")/lib.sh"
 LOOKUP="$REPO_DIR/skills/work/project.sh"
 fixture_new
@@ -53,6 +53,8 @@ expect "flat: board defaults to github" "$out" "board: github"
 expect "flat: repo defaults to the origin (https)" "$out" "repo: QNeih/solo"
 expect "flat: owner defaults to the repo's owner" "$out" "owner: QNeih"
 expect "flat: number" "$out" "number: 3"
+expect "https origin on github.com: host" "$out" "host: github.com"
+expect "https origin on github.com: PR" "$out" "pr: yes"
 absent "$out" key "no key setting"
 # A wiki folder next to a flat checkout is another project's folder
 mkdir -p "$PROJECTS_ROOT/wiki"
@@ -75,6 +77,8 @@ fixture_project beta "owner: lisegmbh"
 git -C "$PROJECTS_ROOT/beta/beta" remote add origin git@github.com:Org/beta.git
 out=$(lookup "$PROJECTS_ROOT/beta/beta")
 expect "repo from the origin (scp-like)" "$out" "repo: Org/beta"
+expect "scp-like origin on github.com: host" "$out" "host: github.com"
+expect "scp-like origin on github.com: PR" "$out" "pr: yes"
 expect "owner setting wins over the repo's owner" "$out" "owner: lisegmbh"
 absent "$out" number "no project setting"
 
@@ -84,6 +88,25 @@ out=$(lookup "$PROJECTS_ROOT/delta/delta")
 expect "no origin: number still printed" "$out" "number: 3"
 absent "$out" repo "no origin"
 absent "$out" owner "no origin"
+absent "$out" host "no origin"
+absent "$out" pr "no origin"
+
+# Origins off github.com: the host as the lookup reads it, and no PR, even with a GitHub repo setting
+fixture_project_flat local "repo: QNeih/local"
+git -C "$PROJECTS_ROOT/local" remote add origin "$FIX/local.git"
+out=$(lookup "$PROJECTS_ROOT/local")
+expect "local path origin: the path is the host" "$out" "host: $FIX/local.git"
+expect "local path origin: no PR, despite the repo setting" "$out" "pr: no"
+git -C "$PROJECTS_ROOT/local" remote set-url origin file:///srv/git/local.git
+expect "file URL origin: the path is the host" "$(lookup "$PROJECTS_ROOT/local")" "host: /srv/git/local.git"
+git -C "$PROJECTS_ROOT/local" remote set-url origin ssh://git@gitlab.example.com:2222/team/local.git
+out=$(lookup "$PROJECTS_ROOT/local")
+expect "ssh URL with user and port: host" "$out" "host: gitlab.example.com"
+expect "ssh URL off github.com: no PR" "$out" "pr: no"
+git -C "$PROJECTS_ROOT/local" remote set-url origin https://GitHub.com/QNeih/local.git
+expect "host in upper case: lower-cased, PR" "$(lookup "$PROJECTS_ROOT/local")" "pr: yes"
+git -C "$PROJECTS_ROOT/local" remote set-url origin https://user@dev.azure.com/org/proj/_git/local
+expect "https URL with user: host" "$(lookup "$PROJECTS_ROOT/local")" "host: dev.azure.com"
 
 # Jira: board and key from the settings
 fixture_project_flat construct "board: jira" "key: CON"

@@ -18,6 +18,8 @@
 #   project:  the checkout folder's name. `none` plus `reason:` when the folder is neither a git
 #             checkout nor holds a settings file, or when no folder matches NAME; the lookup
 #             ends there
+#   host:     the host of the checkout's origin URL, lower case (a local path as it is); only with an origin
+#   pr:       with host: `yes` when the host is github.com (the only host that takes a PR), else `no`
 #   wiki:     the sibling wiki folder; only in the nested layout, only when it exists
 #   board:    the `board` setting, `github` when the settings file has none. Without a settings
 #             file: `none` plus a `reason:` saying the board step has not run, and no line below
@@ -51,16 +53,35 @@ origin_repo() {
   awk -F'[/:]' 'NF >= 2 { print $(NF-1) "/" $NF }' <<<"$u"
 }
 
+# Host of the origin of git checkout $1: the host of a URL (https, ssh, scp-like), a local path as it is; nothing without an origin
+origin_host() {
+  [ -e "$1/.git" ] || return 0
+  local u; u=$(git -C "$1" remote get-url origin 2>/dev/null) || return 0
+  case "$u" in
+    file://*) u=${u#file://} ;;
+    *://*) u=${u#*://}; u=${u%%/*}; u=${u##*@}; u=${u%%:*}; u=$(tr '[:upper:]' '[:lower:]' <<<"$u") ;;
+    /*|.*) ;;
+    *:*) u=${u%%:*}; u=${u##*@}; u=$(tr '[:upper:]' '[:lower:]' <<<"$u") ;;
+  esac
+  echo "$u"
+}
+
 none() { echo "project: none"; echo "reason: $1"; exit 0; }
 
 # Print the lookup lines for the main checkout $1
 report() {
-  local dir=$1 name parent settings board repo owner number key
+  local dir=$1 name parent settings board repo owner number key host
   name=$(basename "$dir"); parent=$(dirname "$dir"); settings="$dir/.claude/project.md"
   echo "dir: $dir"
   [ -f "$settings" ] || [ -e "$dir/.git" ] ||
     none "$dir is no git checkout and has no settings file .claude/project.md"
   echo "project: $name"
+  # The origin's host alone decides whether a PR can be opened: only github.com takes one
+  host=$(origin_host "$dir")
+  if [ -n "$host" ]; then
+    echo "host: $host"
+    if [ "$host" = github.com ]; then echo "pr: yes"; else echo "pr: no"; fi
+  fi
   if [ "$(basename "$parent")" = "$name" ] && [ -d "$parent/wiki" ]; then echo "wiki: $parent/wiki"; fi
   if [ ! -f "$settings" ]; then
     echo "board: none"

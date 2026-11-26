@@ -25,7 +25,7 @@ The projects root is set in `~/.claude/CLAUDE.md` (a project `CLAUDE.md` may rep
 PROJECTS_ROOT=<projects root> bash ${CLAUDE_SKILL_DIR}/project.sh
 ```
 
-`<dir>` is its `dir:` line: the main checkout, or the project folder without git. **Git** means `git -C <dir> rev-parse` succeeds. Its `board:` line is the board: `github`, `jira`, or another tracker's link or text; `repo:` is the GitHub board's repo (`owner/name`, the code repo). `board: none` or `project: none` → no board from the lookup; go on.
+`<dir>` is its `dir:` line: the main checkout, or the project folder without git. **Git** means `git -C <dir> rev-parse` succeeds. Its `board:` line is the board: `github`, `jira`, or another tracker's link or text; `repo:` is the GitHub board's repo (`owner/name`, the code repo); `host:` and `pr:` decide the PR (step 2). `board: none` or `project: none` → no board from the lookup; go on.
 
 Find the ticket. Its **ticket files** are `.scratch/<id>-<slug>/ticket.md` (title line `# <id>: …`, then `ref:`, `base:`, `board:`, and on Jira and other boards `branch:`) and `.handoffs/HANDOFF-<id>.md`. Note where they were found: step 10 deletes them there.
 
@@ -51,7 +51,7 @@ Without git, go to step 8.
 
 ## 2. Preflight
 
-1. No `origin` remote → stop: "no origin to push to". `<host>` = the host in `git remote get-url origin` (`git@<host>:…`, `https://<host>/…`, `ssh://[user@]<host>/…`); a local path is its own `<host>`. Print one line before any other step: `Host: <host>, PR` for `github.com`, else `Host: <host>, push only`. A **push-only** send pushes the branch and opens no PR: it ends at step 6, with no `gh pr` or `gh label` call and without steps 7–10. A close (item 8) pushes no code, so it runs the same on every host.
+1. **Host**: `<host>` is the lookup's `host:` line (step 1), and its `pr:` line decides; a git checkout without a `host:` line has no `origin`: stop with "no origin to push to". The lookup's `repo:` serves only the `Closes` line. Print the **Host line** now, as this step's first output: `Host: <host>, PR` for `pr: yes`, `Host: <host>, push only` for `pr: no`. A **push-only** send pushes the branch and opens no PR: it ends at step 6, with no `gh pr` or `gh label` call and without steps 7–10. A close (item 8) pushes no code, so it runs the same on every host.
 2. `git fetch origin` (`cannot open '.git/FETCH_HEAD'` → rerun unsandboxed).
 3. `<base>`: `ticket.md`'s `base:`. Else a `hotfix/` branch → `main` or `master`, whichever is on `origin`; else `develop` if `origin/develop` exists, else `main` or `master`.
 4. `git diff --cached --quiet` fails → stop and ask: unstage (`git restore --staged .`) or say how to treat the staged hunks.
@@ -125,9 +125,9 @@ Paths: `git diff --name-only origin/<base>...HEAD` that still exist. This covers
 ## 6. Push
 
 1. `git push --force-with-lease -u origin HEAD` (`Operation not permitted` → rerun unsandboxed). The lease is there because the rebase may have rewritten commits that `/work` already pushed. Fails → stop and show the output.
-2. Push-only (step 2) → the send ends here: print this line as is, `PR on <host> not supported`, then the report (step 11). The branch, the ticket and its files stay as they are.
+2. The Host line says push only → the send ends here: print `PR on <host> not supported`, then the report (step 11). The branch, the ticket and its files stay as they are.
 
-**Done when:** `origin/<branch>` equals `HEAD`, and `<host>` is `github.com` or the stop is printed.
+**Done when:** `origin/<branch>` equals `HEAD`, and the Host line says PR or the stop is printed.
 
 ## 7. PR
 
