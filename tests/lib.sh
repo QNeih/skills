@@ -32,15 +32,29 @@ fixture_repo() {
 }
 
 # --- Stand-in gh and project fixture (the GitHub boards) ---
-# fixture_gh: a fake gh first on PATH. It appends each call's arguments (space-joined) as one
-# line to $GH_LOG and prints the canned answer whose key is the longest prefix of the call;
+# fixture_gh: a fake gh first on PATH. It appends each call's arguments (space-joined) to
+# $GH_LOG and prints the canned answer whose key is the longest prefix of the call;
 # no match prints nothing and succeeds. Needs fixture_new first. Sets GH_DIR, GH_LOG.
+# A body passed as a file (--body-file <path>, --body-file=<path>, -F <path>, or - for stdin) is
+# logged as its text in place of the path, so the log reads the same as for --body <text>.
+# A call is one log line unless an argument holds a line break (a multi-line body): then it
+# spans as many lines as the argument has.
 fixture_gh() {
   export GH_DIR="$FIX/gh-canned" GH_LOG="$FIX/gh.log"
   mkdir -p "$FIX/bin" "$GH_DIR"; : > "$GH_LOG"
   cat > "$FIX/bin/gh" <<'GH'
 #!/usr/bin/env bash
-call="$*"
+# body_text <value of a body-file flag>: the file's text (stdin for -); any other value unchanged,
+# so gh api's -F key=value fields stay as they are
+body_text() { if [ "$1" = - ]; then cat; elif [ -f "$1" ]; then cat "$1"; else printf '%s' "$1"; fi; }
+args=() prev=""
+for a in "$@"; do
+  case $prev in --body-file|-F) args+=("$(body_text "$a")") ;;
+  *) case $a in --body-file=*) args+=("--body-file=$(body_text "${a#*=}")") ;; *) args+=("$a") ;; esac ;;
+  esac
+  prev=$a
+done
+call="${args[*]}"
 printf '%s\n' "$call" >> "$GH_LOG"
 best=""
 for k in "$GH_DIR"/*.key; do
@@ -77,7 +91,7 @@ gh_seq() {
   printf '%s' "$1" > "$GH_DIR/$n.key"; : > "$GH_DIR/$n.json"; shift
   printf '%s\n' "$@" > "$GH_DIR/$n.seq"
 }
-# gh_calls: the logged calls, one per line
+# gh_calls: the logged calls in order; a call takes one line, more when an argument has line breaks
 gh_calls() { cat "$GH_LOG"; }
 
 # fixture_settings <checkout> [settings line...]: <checkout>/.claude/project.md with the lines
