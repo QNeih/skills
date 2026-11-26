@@ -25,7 +25,7 @@ bash ${CLAUDE_SKILL_DIR}/project.sh
 ```
 
 - Follow `${CLAUDE_SKILL_DIR}/BOARD.md` to get the board (no board yet → it asks the board question), then read the board's file.
-- `<dir>` is the `dir:` line: the main checkout, or the project folder without git. **Git** means `git -C <dir> rev-parse` succeeds; without git, skip every git step and write no branch anywhere.
+- `<dir>` is the `dir:` line: the main checkout, or the project folder without git. **Git** means `git rev-parse` succeeds in the project folder; without git, skip every git step and write no branch anywhere.
 - With git, prune the project's **finished worktrees**:
   - Run `bash ${CLAUDE_SKILL_DIR}/prune-worktrees.sh` from the same folder.
   - Print its output to Quinn: one line per worktree, removed or kept with the reason.
@@ -56,8 +56,8 @@ The board file's **Claim**.
 
 Each ticket works in its own **ticket worktree** `<wt>` = `<dir>/.claude/worktrees/<id>`, the folder the dashboard's `claude --bg -w <id>` also uses, so tickets can run in parallel. The main checkout's branch is never changed.
 
-1. Branch name and `<base>` from the board file's **Branch**. `origin` exists → `git -C <dir> fetch origin` (`cannot open '.git/FETCH_HEAD'` → rerun unsandboxed). `<start point>`: `origin/<base>` when it exists, else `<base>`; neither → stop and ask.
-2. Where this session works (`git rev-parse --show-toplevel`):
+1. Branch name and `<base>` from the board file's **Branch**. `origin` exists → `git fetch origin`, run in the folder this session started in, without `-C` (`cannot open '.git/FETCH_HEAD'` → rerun unsandboxed). `<start point>`: `origin/<base>` when it exists, else `<base>`; neither → stop and ask.
+2. Where this session works (`git rev-parse --show-toplevel`). A session in a worktree runs every git command there, as one plain command per call: no `-C <dir>` to the main checkout, no `&&`, `;` or pipe; the main checkout's session may use `git -C <dir>` as below.
    - `<wt>` → stay.
    - Another ticket's worktree (`<dir>/.claude/worktrees/<other id>`) → stop: ask Quinn to start this ticket in its own session.
    - Any other linked worktree (`git rev-parse --git-dir` differs from `--git-common-dir`) → stay: it is this session's own.
@@ -119,7 +119,7 @@ Route: /<skill> — <one-line reason>
 Then start the route in this session, with the `ticket.md` path as its input. With git, all of the route's code work happens in the worktree from step 4, by path as step 4 says:
 
 - `/implement` → right away, hand the coding to one sub-agent: Agent tool, with model and effort from the `## Model routing` section of the shared rules, task type "routine edits". The call fails → that section's rules say which model to rerun it on.
-  - Its brief, every path absolute: read `~/.claude/skills/implement/SKILL.md` and do its implementing, testing and commit, since the review runs in this session afterwards; input the `ticket.md` path; work in the worktree from step 4; commit messages describe the change only: no `Co-Authored-By` trailer, no "Generated with" footer, no tool, IDE or assistant names; report what changed, the test results and what it could not fix, and why.
+  - Its brief, every path absolute: read `~/.claude/skills/implement/SKILL.md` and do its implementing, testing and commit, since the review runs in this session afterwards; input the `ticket.md` path; work in the worktree from step 4, running git there without `-C` to the main checkout, one plain command per call (no `&&`, `;` or pipe); commit messages describe the change only: no `Co-Authored-By` trailer, no "Generated with" footer, no tool, IDE or assistant names; report what changed, the test results and what it could not fix, and why.
   - When it reports, send the review's findings worth fixing to that sub-agent with SendMessage.
 - `/diagnosing-bugs`, `/grill-with-docs`, `/wayfinder` → read `~/.claude/skills/<name>/SKILL.md` and follow it, opening with a question to Quinn.
 - `/wayfinder` adds, while this session orchestrates its map:

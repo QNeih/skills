@@ -30,10 +30,12 @@ Read the lookup's `board:` line:
 `create` and `set` write the settings file and commit nothing. With git, when `git -C <dir> status --porcelain -- .claude/project.md` prints a line: `<dir>` is on its default branch → commit that file alone and push it, so every worktree and colleague reads the same board:
 
 ```bash
-git -C <dir> add .claude/project.md && git -C <dir> commit -m "Add board settings" -- .claude/project.md && git -C <dir> push -u origin HEAD
+git -C <dir> add .claude/project.md
+git -C <dir> commit -m "Add board settings" -- .claude/project.md
+git -C <dir> push -u origin HEAD
 ```
 
-`<dir>` is on another branch, or the push fails → leave the file as it is and report it as could not fix, with the cause.
+One command per call. `<dir>` is on another branch, this session runs in a linked worktree (it refuses git in `<dir>`), or the push fails → leave the file as it is and report it as could not fix, with the cause.
 
 Then run the lookup again and use its lines.
 
