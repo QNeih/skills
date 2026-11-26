@@ -52,6 +52,11 @@ out=$(run "$PROJECTS_ROOT/Multi")
 expect "override list: first" "$out" "sentry: acme/web"
 expect "override list: second" "$out" "sentry: globex/other"
 
+fixture_project_flat Quoted "sentry: \"acme/web\", 'globex/other'"
+out=$(run "$PROJECTS_ROOT/Quoted")
+expect "override list: quotes around each item dropped, first" "$out" "sentry: acme/web"
+expect "override list: quotes around each item dropped, second" "$out" "sentry: globex/other"
+
 # settings file without the override derives
 fixture_project Plain "repo: acme/plain"
 echo "https://k@o11.ingest.us.sentry.io/4502" > "$PROJECTS_ROOT/Plain/Plain/sentry.conf"

@@ -14,7 +14,8 @@
 #         nothing to publish: FILE                  the file has no uncommitted change
 #         not published: DIR is no git repository   the file is saved, nothing to commit to
 #       Prints `could not fix: CAUSE` and exits 1, leaving the file saved and uncommitted, when
-#       the checkout is on a branch other than the default branch, or the push fails.
+#       the checkout is on a branch other than the default branch, or the commit or the push fails.
+#       KEY and VALUE must each be one line; a newline is refused and the file stays as it was.
 set -eu
 
 # Main checkout of the folder (also from worktrees and subfolders); no git → the folder itself
@@ -35,6 +36,7 @@ get_line() {
 
 # set_line KEY VALUE: one front matter line of the settings file; creates file and front matter when missing
 set_line() {
+  case $1$2 in *$'\n'*) echo "settings.sh: KEY and VALUE must each be one line" >&2; exit 1 ;; esac
   mkdir -p "$(dirname "$settings")"
   if [ "$(head -1 "$settings" 2>/dev/null)" != --- ]; then
     { printf -- '---\n---\n'; cat "$settings" 2>/dev/null || true; } > "$settings.tmp" && mv "$settings.tmp" "$settings"
@@ -66,9 +68,18 @@ publish() {
     return 1
   fi
   git -C "$dir" add .claude/project.md
-  git -C "$dir" commit -q -m "Update project settings" -- .claude/project.md
+  if ! err=$(git -C "$dir" commit -q -m "Update project settings" -- .claude/project.md 2>&1); then
+    git -C "$dir" reset -q -- .claude/project.md
+    echo "could not fix: commit failed: $(head -1 <<<"$err"); $settings stays uncommitted"
+    return 1
+  fi
   if ! err=$(git -C "$dir" push -q -u origin HEAD 2>&1); then
-    git -C "$dir" reset -q --soft HEAD~1
+    # undo the commit; when it was the repo's first, there is no parent to go back to
+    if git -C "$dir" rev-parse -q --verify HEAD~1 >/dev/null; then
+      git -C "$dir" reset -q --soft HEAD~1
+    else
+      git -C "$dir" update-ref -d HEAD
+    fi
     git -C "$dir" reset -q -- .claude/project.md
     echo "could not fix: push of $branch failed: $(head -1 <<<"$err"); $settings stays uncommitted"
     return 1

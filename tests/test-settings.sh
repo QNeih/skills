@@ -7,11 +7,11 @@ fixture_new
 S() { bash "$SK/settings.sh" "$@"; }
 G() { git -C "$1" -c user.name=t -c user.email=t@acme.test "${@:2}"; }
 settings() { cat "$1/.claude/project.md"; }
-# fixture_origin <checkout>: a bare origin the checkout's main branch is pushed to
+# fixture_origin <checkout>: a bare origin the checkout's current branch is pushed to
 fixture_origin() {
   git init -q --bare --template= -b main "$FIX/origin-$(basename "$1").git"
   git -C "$1" remote add origin "$FIX/origin-$(basename "$1").git"
-  git -C "$1" push -q -u origin main
+  git -C "$1" push -q -u origin HEAD
 }
 
 # get: value without its quotes, nothing for a missing line or file, the main checkout from a worktree
@@ -46,6 +46,16 @@ expect "set: body kept" "$(settings "$P")" "body stays"
 S set "$P" close 'a\nb "c"' >/dev/null
 expect "set: backslashes and quotes kept as given" "$(settings "$P")" 'close: a\nb "c"'
 expect "set: commits nothing" "$(G "$P" status --porcelain)" " M .claude/project.md"
+# a newline in KEY or VALUE would write extra front matter lines: refused, file unchanged
+before=$(settings "$P")
+out=$(S set "$P" close $'pr\nowner: evil' 2>&1) && rc=0 || rc=$?
+[ "$rc" != 0 ] && pass "set: a newline in VALUE fails" || fail "set: a newline in VALUE fails"
+expect "set: says why" "$out" "settings.sh: KEY and VALUE must each be one line"
+expect "set: VALUE with a newline leaves the file unchanged" "$(settings "$P")" "$before"
+S set "$P" $'ke\ny' v >/dev/null 2>&1 && fail "set: a newline in KEY fails" || pass "set: a newline in KEY fails"
+expect "set: KEY with a newline leaves the file unchanged" "$(settings "$P")" "$before"
+S publish "$P" close $'pr\nowner: evil' >/dev/null 2>&1 && fail "publish: a newline in VALUE fails" || pass "publish: a newline in VALUE fails"
+expect "publish: VALUE with a newline leaves the file unchanged" "$(settings "$P")" "$before"
 # set creates the settings file: a board that is a link needs no GitHub Project
 P2="$PROJECTS_ROOT/eta"
 fixture_repo "$P2"
@@ -75,6 +85,9 @@ expect "publish without a line: origin has it" "$(git --git-dir="$FIX/origin-pub
 fixture_worktree "$P3" PUB-1
 out=$(S publish "$P3/.claude/worktrees/PUB-1" close pr)
 expect "publish: from a worktree publishes the main checkout" "$out" "published: $P3/.claude/project.md"
+expect "publish: from a worktree the commit is on the main checkout's branch" "$(G "$P3" log -1 --format=%s main)" "Update project settings"
+expect "publish: from a worktree the commit holds only the settings file" "$(G "$P3" show --name-only --format= main)" ".claude/project.md"
+expect "publish: from a worktree the line is in the commit" "$(G "$P3" show main:.claude/project.md)" "close: pr"
 # the file is new: it is added by the commit
 P4="$PROJECTS_ROOT/fresh"
 fixture_repo "$P4"; fixture_origin "$P4"
@@ -96,21 +109,75 @@ expect "other branch: file keeps the line" "$(settings "$P5")" "key: BRN"
 G "$P5" checkout -q --detach
 out=$(S publish "$P5" key BRN2) && rc=0 || rc=$?
 expect "detached head: could not fix" "$out" "could not fix: $P5 is on a detached HEAD, not the default branch main; $P5/.claude/project.md stays uncommitted"
+[ "$(G "$P5" rev-parse HEAD)" = "$head" ] && pass "detached head: no commit" || fail "detached head: no commit"
 
 # publish when the push fails: the file stays as saved and uncommitted
 P6="$PROJECTS_ROOT/nopush"
 fixture_project_flat nopush 'board: github'
 fixture_origin "$P6"
 G "$P6" remote set-url origin "$FIX/does-not-exist.git"
+echo "other work" > "$P6/other.txt"; G "$P6" add other.txt
 head=$(G "$P6" rev-parse HEAD)
 out=$(S publish "$P6" key NOP) && rc=0 || rc=$?
 grep -q "^could not fix: push of main failed: .*; $P6/.claude/project.md stays uncommitted$" <<<"$out" && pass "push fails: could not fix with the cause" || { fail "push fails: could not fix with the cause"; echo "$out"; }
 [ "$rc" = 1 ] && pass "push fails: exits 1" || fail "push fails: exits 1 (got $rc)"
 expect "push fails: file keeps the line" "$(settings "$P6")" "key: NOP"
 [ "$(G "$P6" rev-parse HEAD)" = "$head" ] && pass "push fails: commit undone" || fail "push fails: commit undone"
-expect "push fails: file is a plain modification" "$(G "$P6" status --porcelain)" " M .claude/project.md"
+expect "push fails: file is an unstaged modification" "$(G "$P6" status --porcelain)" " M .claude/project.md"
+expect "push fails: an unrelated staged file is still staged" "$(G "$P6" status --porcelain)" "A  other.txt"
+G "$P6" reset -q -- other.txt; rm "$P6/other.txt"
 G "$P6" remote set-url origin "$FIX/origin-nopush.git"
 expect "push fails: a later publish succeeds" "$(S publish "$P6")" "published: $P6/.claude/project.md"
+
+# publish when the commit fails (a rejecting pre-commit hook): could not fix, file unstaged
+P8="$PROJECTS_ROOT/hooked"
+fixture_project_flat hooked 'board: github'
+fixture_origin "$P8"
+mkdir -p "$P8/.git/hooks"; printf '#!/bin/sh\necho "hook says no" >&2\nexit 1\n' > "$P8/.git/hooks/pre-commit"; chmod +x "$P8/.git/hooks/pre-commit"
+echo "other work" > "$P8/other.txt"; G "$P8" add other.txt
+head=$(G "$P8" rev-parse HEAD)
+out=$(S publish "$P8" key HOK) && rc=0 || rc=$?
+expect "commit fails: could not fix with the cause" "$out" "could not fix: commit failed: hook says no; $P8/.claude/project.md stays uncommitted"
+[ "$rc" = 1 ] && pass "commit fails: exits 1" || fail "commit fails: exits 1 (got $rc)"
+expect "commit fails: file keeps the line" "$(settings "$P8")" "key: HOK"
+[ "$(G "$P8" rev-parse HEAD)" = "$head" ] && pass "commit fails: no commit" || fail "commit fails: no commit"
+expect "commit fails: file is an unstaged modification" "$(G "$P8" status --porcelain)" " M .claude/project.md"
+expect "commit fails: an unrelated staged file is still staged" "$(G "$P8" status --porcelain)" "A  other.txt"
+
+# publish with a failing push when the settings commit would be the repo's first commit
+P9="$PROJECTS_ROOT/unborn"
+mkdir -p "$P9"; git init -q -b main --template= "$P9"
+git init -q --bare --template= -b main "$FIX/origin-unborn.git"
+git -C "$P9" remote add origin "$FIX/does-not-exist.git"
+git -C "$P9" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+out=$(S publish "$P9" board github) && rc=0 || rc=$?
+grep -q "^could not fix: push of main failed: .*; $P9/.claude/project.md stays uncommitted$" <<<"$out" && pass "first commit, push fails: could not fix" || { fail "first commit, push fails: could not fix"; echo "$out"; }
+[ "$rc" = 1 ] && pass "first commit, push fails: exits 1" || fail "first commit, push fails: exits 1 (got $rc)"
+git -C "$P9" rev-parse -q --verify HEAD >/dev/null && fail "first commit, push fails: commit undone" || pass "first commit, push fails: commit undone"
+expect "first commit, push fails: file is untracked again" "$(G "$P9" status --porcelain)" "?? .claude/"
+expect "first commit, push fails: file keeps the line" "$(settings "$P9")" "board: github"
+git -C "$P9" remote set-url origin "$FIX/origin-unborn.git"
+expect "first commit: a later publish succeeds" "$(S publish "$P9")" "published: $P9/.claude/project.md"
+
+# default branch: what origin/HEAD names decides, whatever its name; else main, else master
+P10="$PROJECTS_ROOT/trunky"
+fixture_project_flat trunky 'board: github'
+G "$P10" branch -m trunk
+fixture_origin "$P10"
+G "$P10" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/trunk
+expect "origin/HEAD: publishes from the branch it names" "$(S publish "$P10" key TRK)" "published: $P10/.claude/project.md"
+P11="$PROJECTS_ROOT/mainish"
+fixture_project_flat mainish 'board: github'
+fixture_origin "$P11"
+G "$P11" update-ref refs/remotes/origin/trunk HEAD
+G "$P11" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/trunk
+out=$(S publish "$P11" key MNI) && rc=0 || rc=$?
+expect "origin/HEAD: main is not the default when it names another branch" "$out" "could not fix: $P11 is on main, not the default branch trunk; $P11/.claude/project.md stays uncommitted"
+P12="$PROJECTS_ROOT/masterish"
+fixture_project_flat masterish 'board: github'
+G "$P12" branch -m master
+fixture_origin "$P12"
+expect "master fallback: publishes from master" "$(S publish "$P12" key MST)" "published: $P12/.claude/project.md"
 
 # no git: saved, not published
 P7="$FIX/plain/proj"; mkdir -p "$P7"

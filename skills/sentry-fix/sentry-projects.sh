@@ -10,6 +10,7 @@ dir=${1:-}
 none() { echo "sentry: none"; echo "reason: $1"; exit 0; }
 
 [ -d "$dir" ] || none "$dir is not a folder"
+# quotes around single items of a list (`"a/b", "c/d"`) are dropped too; `get` strips only the ends
 override=$(bash "$(dirname "${BASH_SOURCE[0]}")/settings.sh" get "$dir" sentry | tr -d "\"'")
 if [ -n "$override" ]; then
   tr ', ' '\n\n' <<<"$override" | grep . | sed 's/^/sentry: /'
