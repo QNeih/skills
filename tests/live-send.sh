@@ -222,6 +222,7 @@ grep -q 'ACM-31' <<<"$CLAUDE_OUT" && pass "reused PR: report names the earlier t
 
 # --- project without git: two tickets, the one In Progress on the board is sent ---
 fixture_project beta 'board: github' 'project: 5' 'repo: QuinnNei/beta'
+fixture_note beta
 beta="$PROJECTS_ROOT/beta/beta"
 rm -rf "$beta/.git"
 gh_can 'project item-list 5 --owner QuinnNei -L 200 --format json' '{"items":[
